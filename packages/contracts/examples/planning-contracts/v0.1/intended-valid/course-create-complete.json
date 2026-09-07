@@ -1,0 +1,89 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "33333333-3333-4333-8333-333333333333",
+  "revision": 1,
+  "plan_type": "course",
+  "operation": "create",
+  "title": "Create Introduction to Artificial Intelligence",
+  "summary": "Create a syllabus-aligned course with assignments and quizzes.",
+  "warnings": [],
+  "assumptions": ["Dates and Moodle-specific defaults are supplied outside the planning contract."],
+  "content": {
+    "course": {
+      "title": "Introduction to Artificial Intelligence",
+      "course_code": "AI101",
+      "summary": "An introductory course covering core AI concepts."
+    },
+    "sections": [
+      {
+        "ref": "section-01",
+        "position": 1,
+        "title": "Foundations of AI",
+        "summary": "Core definitions and applications.",
+        "source_refs": [{ "source": "syllabus-main", "page": 2, "section": "Week 1" }],
+        "activities": [
+          {
+            "ref": "assignment-01",
+            "type": "assignment",
+            "title": "AI Concepts Assignment",
+            "description": "Explain key AI concepts and their applications.",
+            "instructions": ["Select three AI applications.", "Compare their advantages and limitations."],
+            "learning_objectives": ["Explain fundamental applications of artificial intelligence."],
+            "grade": 100,
+            "source_refs": [{ "source": "syllabus-main", "section": "Assessment" }]
+          },
+          {
+            "ref": "quiz-01",
+            "type": "quiz",
+            "title": "AI Fundamentals Quiz",
+            "description": "Assessment covering foundational concepts.",
+            "source_refs": [{ "source": "syllabus-main", "section": "Week 1" }],
+            "questions": [
+              {
+                "ref": "question-01",
+                "type": "multichoice",
+                "question": "Which statement best describes supervised learning?",
+                "choices": [
+                  { "ref": "choice-a", "text": "Learning from labeled examples" },
+                  { "ref": "choice-b", "text": "Learning without data" },
+                  { "ref": "choice-c", "text": "Random output generation" },
+                  { "ref": "choice-d", "text": "Programming every response manually" }
+                ],
+                "correct_choice_refs": ["choice-a"],
+                "feedback": "Supervised learning uses labeled examples.",
+                "default_mark": 1,
+                "source_refs": [{ "source": "syllabus-main", "page": 3 }]
+              },
+              {
+                "ref": "question-02",
+                "type": "truefalse",
+                "question": "Machine learning is a subset of artificial intelligence.",
+                "correct_answer": true,
+                "feedback": "Machine learning is generally treated as a subfield of AI.",
+                "default_mark": 1,
+                "source_refs": []
+              },
+              {
+                "ref": "question-03",
+                "type": "shortanswer",
+                "question": "What does NLP stand for?",
+                "accepted_answers": ["Natural Language Processing"],
+                "case_sensitive": false,
+                "default_mark": 1,
+                "source_refs": []
+              },
+              {
+                "ref": "question-04",
+                "type": "essay",
+                "question": "Discuss two benefits and two risks of using AI in education.",
+                "grading_guidance": ["Identifies two benefits.", "Identifies two risks.", "Provides supporting explanation."],
+                "default_mark": 5,
+                "source_refs": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

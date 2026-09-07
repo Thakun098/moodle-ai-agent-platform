@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:quiz-update-content:0.1",
+  "title": "QuizUpdateContent v0.1",
+  "description": "Unambiguous desired quiz update content. Existing questions remain unchanged unless represented in questions_to_update; removal is unsupported.",
+  "$comment": "Frozen Planning Contracts v0.1 targeted correction. Execution target IDs and ref-to-Moodle-ID mapping belong outside this planning content.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "description": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "source_refs": { "type": "array", "items": { "$ref": "urn:moodle-agent-poc:schema:planning:source-reference:0.1" } },
+    "questions_to_add": {
+      "type": "array",
+      "description": "Complete QuestionPlan objects to create and add. An empty array means no additions.",
+      "items": {
+        "oneOf": [
+          { "$ref": "urn:moodle-agent-poc:schema:planning:multiple-choice-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:true-false-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:short-answer-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:essay-question-plan:0.1" }
+        ]
+      }
+    },
+    "questions_to_update": {
+      "type": "array",
+      "description": "Complete desired QuestionPlan replacements for existing mapped questions. An empty array means no question updates.",
+      "items": {
+        "oneOf": [
+          { "$ref": "urn:moodle-agent-poc:schema:planning:multiple-choice-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:true-false-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:short-answer-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:essay-question-plan:0.1" }
+        ]
+      }
+    }
+  },
+  "required": ["title", "description", "source_refs", "questions_to_add", "questions_to_update"]
+}

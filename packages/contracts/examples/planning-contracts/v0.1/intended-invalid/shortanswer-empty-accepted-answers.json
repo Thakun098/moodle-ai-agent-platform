@@ -1,0 +1,9 @@
+{
+  "ref": "question-03",
+  "type": "shortanswer",
+  "question": "What does NLP stand for?",
+  "accepted_answers": [],
+  "case_sensitive": false,
+  "default_mark": 1,
+  "source_refs": []
+}

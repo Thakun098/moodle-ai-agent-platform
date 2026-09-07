@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "33333333-3333-4333-a333-333333333333",
+  "revision": 1,
+  "plan_type": "assignment",
+  "operation": "create",
+  "title": "Create AI Concepts Assignment",
+  "summary": "Create an assignment plan for the selected learning objectives.",
+  "warnings": [],
+  "assumptions": [],
+  "content": {}
+}

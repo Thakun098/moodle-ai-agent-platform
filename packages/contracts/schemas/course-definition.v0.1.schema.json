@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:course-definition:0.1",
+  "title": "CourseDefinition v0.1",
+  "$comment": "Frozen Planning Contracts v0.1 component.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Required human-readable course title." },
+    "course_code": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Optional human-readable course code from the supplied material." },
+    "summary": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Optional educational summary of the course." }
+  },
+  "required": ["title"]
+}

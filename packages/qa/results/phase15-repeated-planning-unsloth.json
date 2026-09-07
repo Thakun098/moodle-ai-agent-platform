@@ -1,0 +1,141 @@
+{
+  "batch": "phase15-repeated-planning",
+  "provider": "unsloth",
+  "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+  "temperature": 0,
+  "fixtureCount": 3,
+  "repetitions": 3,
+  "trials": 9,
+  "successes": 5,
+  "planningContractValidityRate": 0.5555555555555556,
+  "latencyMs": {
+    "min": 17370,
+    "max": 31257,
+    "mean": 24789.8,
+    "p95": 31257
+  },
+  "observations": [
+    {
+      "fixtureId": "synthetic-basic",
+      "repetition": 1,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": true,
+      "schemaAndDomainValid": true,
+      "totalMs": 26717,
+      "rateLimitRetries": 0,
+      "sections": 4,
+      "warnings": 0,
+      "assumptions": 1
+    },
+    {
+      "fixtureId": "synthetic-basic",
+      "repetition": 2,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": false,
+      "schemaAndDomainValid": false,
+      "totalMs": 25605,
+      "failureClass": "PlanningError",
+      "error": "Generated CoursePlan failed schema contract validation: /content/sections/2: must NOT have additional properties; /plan_type: must be equal to constant; /content: must have required property 'ref'; /content: must have required property 'type'; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'instructions'; /content: must have required property 'learning_objectives'; /content: must have required property 'grade'; /content: must have required property 'source_refs'; /content: must NOT have additional properties; /content: must NOT have additional properties; /content: must have required property 'ref'; /content: must have required property 'type'; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'source_refs'; /content: must have required property 'questions'; /content: must NOT have additional properties; /content: must NOT have additional properties; /operation: must be equal to constant; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'source_refs'; /content: must have required property 'questions_to_add'; /content: must have required property 'questions_to_update'; /content: must NOT have additional properties; /content: must NOT have additional properties; /: must match exactly one schema in oneOf; /plan_type: must be equal to constant; /: must match exactly one schema in oneOf"
+    },
+    {
+      "fixtureId": "synthetic-basic",
+      "repetition": 3,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": true,
+      "schemaAndDomainValid": true,
+      "totalMs": 24745,
+      "rateLimitRetries": 0,
+      "sections": 4,
+      "warnings": 0,
+      "assumptions": 1
+    },
+    {
+      "fixtureId": "representative-software-engineering",
+      "repetition": 1,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": true,
+      "schemaAndDomainValid": true,
+      "totalMs": 31257,
+      "rateLimitRetries": 0,
+      "sections": 2,
+      "warnings": 2,
+      "assumptions": 1
+    },
+    {
+      "fixtureId": "representative-software-engineering",
+      "repetition": 2,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": true,
+      "schemaAndDomainValid": true,
+      "totalMs": 23860,
+      "rateLimitRetries": 0,
+      "sections": 2,
+      "warnings": 2,
+      "assumptions": 0
+    },
+    {
+      "fixtureId": "representative-software-engineering",
+      "repetition": 3,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": true,
+      "schemaAndDomainValid": true,
+      "totalMs": 17370,
+      "rateLimitRetries": 0,
+      "sections": 2,
+      "warnings": 2,
+      "assumptions": 1
+    },
+    {
+      "fixtureId": "representative-project-management",
+      "repetition": 1,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": false,
+      "schemaAndDomainValid": false,
+      "totalMs": 41990,
+      "failureClass": "PlanningError",
+      "error": "Generated CoursePlan failed schema contract validation: /content/sections/6/activities/1: must have required property 'instructions'; /content/sections/6/activities/1: must have required property 'learning_objectives'; /content/sections/6/activities/1: must have required property 'grade'; /content/sections/6/activities/1/ref: must match pattern \"^assignment-[a-z0-9]+(?:-[a-z0-9]+)*$\"; /content/sections/6/activities/1/type: must be equal to constant; /content/sections/6/activities/1: must have required property 'questions'; /content/sections/6/activities/1: must match exactly one schema in oneOf; /plan_type: must be equal to constant; /content: must have required property 'ref'; /content: must have required property 'type'; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'instructions'; /content: must have required property 'learning_objectives'; /content: must have required property 'grade'; /content: must have required property 'source_refs'; /content: must NOT have additional properties; /content: must NOT have additional properties; /content: must have required property 'ref'; /content: must have required property 'type'; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'source_refs'; /content: must have required property 'questions'; /content: must NOT have additional properties; /content: must NOT have additional properties; /operation: must be equal to constant; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'source_refs'; /content: must have required property 'questions_to_add'; /content: must have required property 'questions_to_update'; /content: must NOT have additional properties; /content: must NOT have additional properties; /: must match exactly one schema in oneOf; /plan_type: must be equal to constant; /: must match exactly one schema in oneOf"
+    },
+    {
+      "fixtureId": "representative-project-management",
+      "repetition": 2,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": false,
+      "schemaAndDomainValid": false,
+      "totalMs": 43697,
+      "failureClass": "PlanningError",
+      "error": "Generated CoursePlan failed schema contract validation: /content/sections/6/activities/1: must have required property 'instructions'; /content/sections/6/activities/1: must have required property 'learning_objectives'; /content/sections/6/activities/1: must have required property 'grade'; /content/sections/6/activities/1/ref: must match pattern \"^assignment-[a-z0-9]+(?:-[a-z0-9]+)*$\"; /content/sections/6/activities/1/type: must be equal to constant; /content/sections/6/activities/1: must have required property 'questions'; /content/sections/6/activities/1: must match exactly one schema in oneOf; /plan_type: must be equal to constant; /content: must have required property 'ref'; /content: must have required property 'type'; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'instructions'; /content: must have required property 'learning_objectives'; /content: must have required property 'grade'; /content: must have required property 'source_refs'; /content: must NOT have additional properties; /content: must NOT have additional properties; /content: must have required property 'ref'; /content: must have required property 'type'; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'source_refs'; /content: must have required property 'questions'; /content: must NOT have additional properties; /content: must NOT have additional properties; /operation: must be equal to constant; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'source_refs'; /content: must have required property 'questions_to_add'; /content: must have required property 'questions_to_update'; /content: must NOT have additional properties; /content: must NOT have additional properties; /: must match exactly one schema in oneOf; /plan_type: must be equal to constant; /: must match exactly one schema in oneOf"
+    },
+    {
+      "fixtureId": "representative-project-management",
+      "repetition": 3,
+      "provider": "unsloth",
+      "model": "llmfan46/gemma-4-E4B-it-ultra-uncensored-heretic-GGUF:Q5_K_M",
+      "temperature": 0,
+      "success": false,
+      "schemaAndDomainValid": false,
+      "totalMs": 30424,
+      "failureClass": "PlanningError",
+      "error": "Generated CoursePlan failed schema contract validation: /content/sections/6/activities/1: must have required property 'instructions'; /content/sections/6/activities/1: must have required property 'learning_objectives'; /content/sections/6/activities/1: must have required property 'grade'; /content/sections/6/activities/1/ref: must match pattern \"^assignment-[a-z0-9]+(?:-[a-z0-9]+)*$\"; /content/sections/6/activities/1/type: must be equal to constant; /content/sections/6/activities/1: must have required property 'questions'; /content/sections/6/activities/1: must match exactly one schema in oneOf; /plan_type: must be equal to constant; /content: must have required property 'ref'; /content: must have required property 'type'; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'instructions'; /content: must have required property 'learning_objectives'; /content: must have required property 'grade'; /content: must have required property 'source_refs'; /content: must NOT have additional properties; /content: must NOT have additional properties; /content: must have required property 'ref'; /content: must have required property 'type'; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'source_refs'; /content: must have required property 'questions'; /content: must NOT have additional properties; /content: must NOT have additional properties; /operation: must be equal to constant; /content: must have required property 'title'; /content: must have required property 'description'; /content: must have required property 'source_refs'; /content: must have required property 'questions_to_add'; /content: must have required property 'questions_to_update'; /content: must NOT have additional properties; /content: must NOT have additional properties; /: must match exactly one schema in oneOf; /plan_type: must be equal to constant; /: must match exactly one schema in oneOf"
+    }
+  ],
+  "aiQuality": {
+    "status": "not_evaluated",
+    "reason": "Technical planning validity is recorded automatically; human AI-quality scoring remains a separate rubric."
+  }
+}

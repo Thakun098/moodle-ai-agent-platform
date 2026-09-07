@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "44444444-4444-4444-b444-444444444444",
+  "revision": 2,
+  "plan_type": "assignment",
+  "operation": "update",
+  "title": "Update AI Concepts Assignment",
+  "summary": "Revise the assignment intent for a more practical activity.",
+  "warnings": [
+    "The source does not define a new due date."
+  ],
+  "assumptions": [],
+  "content": {}
+}

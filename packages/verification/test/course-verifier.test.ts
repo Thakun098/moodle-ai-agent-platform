@@ -1,0 +1,65 @@
+import { describe, expect, it, vi } from "vitest";
+import type { CoursePlanEnvelope } from "@moodle-agent-poc/contracts";
+import { verifyCoursePlan } from "../src/course-verifier.js";
+
+const plan: CoursePlanEnvelope = {
+  schema_version: "0.1", plan_id: "plan-v", revision: 1, plan_type: "course", operation: "create",
+  title: "Verify", summary: "Verify", warnings: [], assumptions: [],
+  content: {
+    course: { title: "Verify Course", course_code: "VER101" },
+    sections: [{
+      ref: "section-01", position: 1, title: "Week 1", source_refs: [], activities: [
+        { ref: "assignment-01", type: "assignment", title: "A1", description: "Desc", instructions: ["Do it"], learning_objectives: ["Learn"], grade: 10, source_refs: [] },
+        { ref: "quiz-01", type: "quiz", title: "Q1", description: "Quiz desc", source_refs: [], questions: [
+          { ref: "question-01", type: "truefalse", question: "Sky blue?", correct_answer: true, feedback: "Yes", default_mark: 1, source_refs: [] }
+        ] }
+      ]
+    }]
+  }
+};
+
+function repos() {
+  const verificationRepo = { recordVerification: vi.fn(async (x) => x) };
+  const runRepo = { completeRun: vi.fn(async () => ({})), failRun: vi.fn(async () => ({})) };
+  const mappingRepo = { listRunMappings: vi.fn(async () => [
+    { localRef: "course", moodleId: 10 }, { localRef: "section-01", moodleId: 20 },
+    { localRef: "assignment-01", moodleId: 30 }, { localRef: "quiz-01", moodleId: 40 },
+    { localRef: "question-01", moodleId: 50 },
+  ]) };
+  return { verificationRepo, runRepo, mappingRepo } as any;
+}
+
+function manager(courseName = "Verify Course") {
+  return {
+    discoverTools: vi.fn(async () => []),
+    callTool: vi.fn(async (name: string) => {
+      if (name === "moodle_get_course_structure") return { status: "success", data: {
+        course: { id: 10, fullname: courseName },
+        sections: [{ section_id: 20, section_num: 1, name: "Week 1", activities: [
+          { activity_id: 30, module_name: "assign", name: "A1", intro: "Desc\n\nInstructions:\n1. Do it\n\nLearning Objectives:\n- Learn", grade: 10 },
+          { activity_id: 40, module_name: "quiz", name: "Q1", intro: "Quiz desc", grade: 100 },
+        ] }]
+      } };
+      return { status: "success", data: [{ question_bank_entry_id: 50, qtype: "truefalse", question_text: "Sky blue?", default_mark: 1 }] };
+    })
+  } as any;
+}
+
+describe("Phase 14 course verifier", () => {
+  it("passes deterministic course read-back and completes run", async () => {
+    const r = repos();
+    const result = await verifyCoursePlan({ runId: "run-v", planEnvelope: plan, mcpClientManager: manager(), repositories: r });
+    expect(result).toEqual({ plan_id: "plan-v", revision: 1, passed: true, issues: [] });
+    expect(r.verificationRepo.recordVerification).toHaveBeenCalledOnce();
+    expect(r.runRepo.completeRun).toHaveBeenCalledOnce();
+    expect(r.runRepo.failRun).not.toHaveBeenCalled();
+  });
+
+  it("records deterministic mismatch and fails run", async () => {
+    const r = repos();
+    const result = await verifyCoursePlan({ runId: "run-v", planEnvelope: plan, mcpClientManager: manager("Wrong"), repositories: r });
+    expect(result.passed).toBe(false);
+    if (!result.passed) expect(result.issues.some((x) => x.path === "/course/fullname")).toBe(true);
+    expect(r.runRepo.failRun).toHaveBeenCalledOnce();
+  });
+});

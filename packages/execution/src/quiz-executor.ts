@@ -1,0 +1,438 @@
+import crypto from "node:crypto";
+import {
+  executeRuntimeToolCall,
+  type McpClientManager,
+  type SafeToolExecutionOptions,
+  type SafeToolRepositories,
+} from "@moodle-agent-poc/agent-runtime";
+import type {
+  ExistingSectionTarget,
+  QuestionPlan,
+  QuizCreatePlanEnvelope,
+  QuizUpdatePlanEnvelope,
+  QuizUpdateTarget,
+} from "@moodle-agent-poc/contracts";
+import type {
+  ExistingQuizQuestionState,
+  ExistingQuizState,
+} from "@moodle-agent-poc/planning";
+import {
+  formatQuestionName,
+  serializeQuestionToMcpArgs,
+} from "./serializers.js";
+
+export class QuizExecutionError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly details?: unknown
+  ) {
+    super(message);
+    this.name = "QuizExecutionError";
+  }
+}
+
+interface MoodleQuizDetailsData {
+  activity_id: number;
+  quiz_id: number;
+  course_id: number;
+  name: string;
+  intro: string;
+  grade: number;
+  questions_count: number;
+}
+
+interface MoodleQuestionSlotData {
+  slot_id: number;
+  slot_number: number;
+  page: number;
+  max_mark: number;
+  question_bank_entry_id: number;
+  question_id: number;
+  version: number;
+  name: string;
+  qtype: "multichoice" | "truefalse" | "shortanswer" | "essay";
+  question_text: string;
+  default_mark: number;
+  answers: Array<{ id: number; text: string; fraction: number; feedback: string }>;
+}
+
+interface CourseStructureData {
+  course: { id: number };
+  sections: Array<{
+    section_id: number;
+    activities: Array<{
+      activity_id: number;
+      instance_id: number;
+      module_name: string;
+    }>;
+  }>;
+}
+
+export interface QuizExecutorOptions extends SafeToolExecutionOptions {}
+
+export interface QuizExecutionConfigBase {
+  runId: string;
+  mcpClientManager: McpClientManager;
+  repositories: SafeToolRepositories;
+  options?: QuizExecutorOptions;
+}
+
+export interface QuizUpdateExecutionConfig extends QuizExecutionConfigBase {
+  planEnvelope: QuizUpdatePlanEnvelope;
+  target: QuizUpdateTarget;
+}
+
+export interface QuizCreateExecutionConfig extends QuizExecutionConfigBase {
+  planEnvelope: QuizCreatePlanEnvelope;
+  target: ExistingSectionTarget;
+}
+
+export interface QuizExecutionResult {
+  runId: string;
+  planId: string;
+  revision: number;
+  status: "completed";
+  activityId: number;
+  quizId: number;
+  verified: true;
+  questionsCount: number;
+}
+
+async function callRead(
+  manager: McpClientManager,
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const result = await manager.callTool(toolName, args);
+  if (result.status === "error") {
+    throw new QuizExecutionError(result.code, result.message, result.details);
+  }
+  return result.data;
+}
+
+export async function readQuizState(
+  manager: McpClientManager,
+  activityId: number
+): Promise<{ quiz: MoodleQuizDetailsData; questions: MoodleQuestionSlotData[] }> {
+  const quiz = (await callRead(manager, "moodle_get_quiz", {
+    activity_id: activityId,
+  })) as MoodleQuizDetailsData;
+  const questions = (await callRead(manager, "moodle_get_quiz_questions", {
+    activity_id: activityId,
+  })) as MoodleQuestionSlotData[];
+  return { quiz, questions: [...questions].sort((a, b) => a.slot_number - b.slot_number) };
+}
+
+export function toExistingQuizState(
+  quiz: MoodleQuizDetailsData,
+  questions: MoodleQuestionSlotData[]
+): ExistingQuizState {
+  return {
+    ref: "quiz",
+    title: quiz.name,
+    description: quiz.intro,
+    source_refs: [],
+    questions: [...questions]
+      .sort((a, b) => a.slot_number - b.slot_number)
+      .map((q, index): ExistingQuizQuestionState => ({
+        ref: `question-${String(index + 1).padStart(2, "0")}`,
+        slot_number: q.slot_number,
+        question_bank_entry_id: q.question_bank_entry_id,
+        version: q.version,
+        name: q.name,
+        type: q.qtype,
+        question: q.question_text,
+        default_mark: q.default_mark,
+        answers: q.answers.map((a) => ({
+          text: a.text,
+          fraction: a.fraction,
+          feedback: a.feedback,
+        })),
+        source_refs: [],
+      })),
+  };
+}
+
+export async function resolveQuizActivityId(
+  manager: McpClientManager,
+  target: QuizUpdateTarget
+): Promise<number> {
+  const structure = (await callRead(manager, "moodle_get_course_structure", {
+    course_id: target.course_id,
+  })) as CourseStructureData;
+  if (structure.course.id !== target.course_id) {
+    throw new QuizExecutionError("QUIZ_TARGET_MISMATCH", "Course structure response does not match target course_id.");
+  }
+  const section = structure.sections.find((s) => s.section_id === target.section_id);
+  if (!section) {
+    throw new QuizExecutionError("QUIZ_TARGET_MISMATCH", `Section ${target.section_id} was not found in course ${target.course_id}.`);
+  }
+  const activity = section.activities.find(
+    (a) => a.module_name === "quiz" && a.instance_id === target.quiz_id
+  );
+  if (!activity) {
+    throw new QuizExecutionError(
+      "QUIZ_TARGET_MISMATCH",
+      `Quiz instance ${target.quiz_id} was not found in section ${target.section_id}.`
+    );
+  }
+  return activity.activity_id;
+}
+
+function serializeQuestionUpdate(
+  questionBankEntryId: number,
+  question: QuestionPlan,
+  ordinal: number
+): Record<string, unknown> {
+  const created = serializeQuestionToMcpArgs(1, question, ordinal);
+  const { activity_id: _ignored, ...rest } = created;
+  return { question_bank_entry_id: questionBankEntryId, ...rest };
+}
+
+function questionMatches(actual: MoodleQuestionSlotData, expected: QuestionPlan): boolean {
+  if (
+    actual.qtype !== expected.type ||
+    actual.question_text !== expected.question ||
+    actual.default_mark !== expected.default_mark
+  ) {
+    return false;
+  }
+  if (expected.type === "multichoice") {
+    const correct = expected.correct_choice_refs[0];
+    return expected.choices.every((choice) => {
+      const found = actual.answers.find((a) => a.text === choice.text);
+      return !!found && found.fraction === (choice.ref === correct ? 1 : 0);
+    });
+  }
+  if (expected.type === "truefalse") {
+    const trueAns = actual.answers.find((a) => a.text.toLowerCase() === "true");
+    const falseAns = actual.answers.find((a) => a.text.toLowerCase() === "false");
+    if (!trueAns || !falseAns) return false;
+    return expected.correct_answer ? trueAns.fraction > 0 && falseAns.fraction <= 0 : falseAns.fraction > 0 && trueAns.fraction <= 0;
+  }
+  if (expected.type === "shortanswer") {
+    const accepted = actual.answers.filter((a) => a.fraction > 0).map((a) => a.text);
+    return expected.accepted_answers.every((x) => accepted.includes(x));
+  }
+  return true;
+}
+
+async function executeCreateQuestionAndSlot(
+  safeContext: Parameters<typeof executeRuntimeToolCall>[0],
+  activityId: number,
+  question: QuestionPlan,
+  ordinal: number
+): Promise<number> {
+  safeContext.stepNumber = (safeContext.stepNumber ?? 0) + 1;
+  const created = await executeRuntimeToolCall(safeContext, {
+    toolCallId: crypto.randomUUID(),
+    toolName: "moodle_create_quiz_question",
+    arguments: serializeQuestionToMcpArgs(activityId, question, ordinal),
+    context: { targetType: "question", localRef: question.ref },
+  });
+  if (created.status === "error") {
+    throw new QuizExecutionError(created.code, created.message, created.details);
+  }
+  const qbe = Number((created.data as { question_bank_entry_id: number }).question_bank_entry_id);
+  safeContext.stepNumber = (safeContext.stepNumber ?? 0) + 1;
+  const slotted = await executeRuntimeToolCall(safeContext, {
+    toolCallId: crypto.randomUUID(),
+    toolName: "moodle_add_question_to_quiz",
+    arguments: {
+      activity_id: activityId,
+      question_bank_entry_id: qbe,
+      max_mark: question.default_mark,
+    },
+    context: { localRef: question.ref },
+  });
+  if (slotted.status === "error") {
+    throw new QuizExecutionError(slotted.code, slotted.message, slotted.details);
+  }
+  return qbe;
+}
+
+export async function executeQuizUpdate(
+  config: QuizUpdateExecutionConfig
+): Promise<QuizExecutionResult> {
+  const { runId, planEnvelope, target, mcpClientManager, repositories, options = {} } = config;
+  if (planEnvelope.plan_type !== "quiz" || planEnvelope.operation !== "update") {
+    throw new QuizExecutionError("INCOMPATIBLE_PLAN_OPERATION", "Expected quiz/update plan.");
+  }
+  const activityId = await resolveQuizActivityId(mcpClientManager, target);
+  const before = await readQuizState(mcpClientManager, activityId);
+  if (before.quiz.quiz_id !== target.quiz_id || before.quiz.course_id !== target.course_id) {
+    throw new QuizExecutionError("QUIZ_TARGET_MISMATCH", "Resolved quiz does not match execution target.");
+  }
+
+  await mcpClientManager.discoverTools();
+  await repositories.runRepo?.updateStatus(runId, "executing");
+  const runDeadline = Date.now() + (options.runTimeoutMs ?? 300_000);
+  const safeContext = {
+    runId,
+    planId: planEnvelope.plan_id,
+    revision: planEnvelope.revision,
+    stepNumber: 0,
+    mcpClientManager,
+    repositories,
+    options,
+    runDeadline,
+    recentSignatures: [] as string[],
+  };
+
+  try {
+    safeContext.stepNumber++;
+    const metadata = await executeRuntimeToolCall(safeContext, {
+      toolCallId: crypto.randomUUID(),
+      toolName: "moodle_update_quiz",
+      arguments: {
+        activity_id: activityId,
+        name: planEnvelope.content.title,
+        intro: planEnvelope.content.description,
+      },
+      context: { localRef: "quiz-update" },
+    });
+    if (metadata.status === "error") throw new QuizExecutionError(metadata.code, metadata.message, metadata.details);
+
+    const existingByRef = new Map(
+      before.questions.map((q, index) => [`question-${String(index + 1).padStart(2, "0")}`, q])
+    );
+
+    let updateOrdinal = 1;
+    for (const question of planEnvelope.content.questions_to_update) {
+      const current = existingByRef.get(question.ref);
+      if (!current) {
+        throw new QuizExecutionError(
+          "QUESTION_REF_NOT_FOUND",
+          `Question update ref '${question.ref}' does not resolve to an existing quiz slot.`
+        );
+      }
+      safeContext.stepNumber++;
+      const updated = await executeRuntimeToolCall(safeContext, {
+        toolCallId: crypto.randomUUID(),
+        toolName: "moodle_update_quiz_question",
+        arguments: serializeQuestionUpdate(current.question_bank_entry_id, question, updateOrdinal++),
+        context: { localRef: question.ref },
+      });
+      if (updated.status === "error") throw new QuizExecutionError(updated.code, updated.message, updated.details);
+    }
+
+    let addOrdinal = before.questions.length + 1;
+    const addedIds = new Map<string, number>();
+    for (const question of planEnvelope.content.questions_to_add) {
+      const qbe = await executeCreateQuestionAndSlot(safeContext, activityId, question, addOrdinal++);
+      addedIds.set(question.ref, qbe);
+    }
+
+    const after = await readQuizState(mcpClientManager, activityId);
+    if (after.quiz.name !== planEnvelope.content.title || after.quiz.intro !== planEnvelope.content.description) {
+      throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", "Quiz metadata read-back does not match approved plan.");
+    }
+    for (const question of planEnvelope.content.questions_to_update) {
+      const current = existingByRef.get(question.ref)!;
+      const actual = after.questions.find((q) => q.question_bank_entry_id === current.question_bank_entry_id);
+      if (!actual || !questionMatches(actual, question)) {
+        throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", `Updated question '${question.ref}' failed read-back verification.`);
+      }
+    }
+    for (const question of planEnvelope.content.questions_to_add) {
+      const qbe = addedIds.get(question.ref)!;
+      const actual = after.questions.find((q) => q.question_bank_entry_id === qbe);
+      if (!actual || !questionMatches(actual, question)) {
+        throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", `Added question '${question.ref}' failed read-back verification.`);
+      }
+    }
+
+    await repositories.runRepo?.completeRun(runId, {
+      plan_id: planEnvelope.plan_id,
+      revision: planEnvelope.revision,
+      activity_id: activityId,
+      quiz_id: target.quiz_id,
+      verified: true,
+    });
+    return {
+      runId,
+      planId: planEnvelope.plan_id,
+      revision: planEnvelope.revision,
+      status: "completed",
+      activityId,
+      quizId: target.quiz_id,
+      verified: true,
+      questionsCount: after.questions.length,
+    };
+  } catch (err) {
+    await repositories.runRepo?.failRun(runId, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+}
+
+export async function executeQuizCreate(
+  config: QuizCreateExecutionConfig
+): Promise<QuizExecutionResult> {
+  const { runId, planEnvelope, target, mcpClientManager, repositories, options = {} } = config;
+  if (planEnvelope.plan_type !== "quiz" || planEnvelope.operation !== "create") {
+    throw new QuizExecutionError("INCOMPATIBLE_PLAN_OPERATION", "Expected quiz/create plan.");
+  }
+  await mcpClientManager.discoverTools();
+  await repositories.runRepo?.updateStatus(runId, "executing");
+  const safeContext = {
+    runId,
+    planId: planEnvelope.plan_id,
+    revision: planEnvelope.revision,
+    stepNumber: 1,
+    mcpClientManager,
+    repositories,
+    options,
+    runDeadline: Date.now() + (options.runTimeoutMs ?? 300_000),
+    recentSignatures: [] as string[],
+  };
+  try {
+    const created = await executeRuntimeToolCall(safeContext, {
+      toolCallId: crypto.randomUUID(),
+      toolName: "moodle_create_quiz",
+      arguments: {
+        course_id: target.course_id,
+        section_id: target.section_id,
+        name: planEnvelope.content.title,
+        intro: planEnvelope.content.description,
+      },
+      context: { targetType: "quiz", localRef: planEnvelope.content.ref },
+    });
+    if (created.status === "error") throw new QuizExecutionError(created.code, created.message, created.details);
+    const data = created.data as { activity_id: number; quiz_id: number };
+    let ordinal = 1;
+    for (const question of planEnvelope.content.questions) {
+      await executeCreateQuestionAndSlot(safeContext, data.activity_id, question, ordinal++);
+    }
+    const after = await readQuizState(mcpClientManager, data.activity_id);
+    if (
+      after.quiz.quiz_id !== data.quiz_id ||
+      after.quiz.course_id !== target.course_id ||
+      after.quiz.name !== planEnvelope.content.title ||
+      after.quiz.intro !== planEnvelope.content.description ||
+      after.questions.length !== planEnvelope.content.questions.length
+    ) {
+      throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", "Created quiz failed deterministic read-back verification.");
+    }
+    await repositories.runRepo?.completeRun(runId, {
+      plan_id: planEnvelope.plan_id,
+      revision: planEnvelope.revision,
+      activity_id: data.activity_id,
+      quiz_id: data.quiz_id,
+      verified: true,
+    });
+    return {
+      runId,
+      planId: planEnvelope.plan_id,
+      revision: planEnvelope.revision,
+      status: "completed",
+      activityId: data.activity_id,
+      quizId: data.quiz_id,
+      verified: true,
+      questionsCount: after.questions.length,
+    };
+  } catch (err) {
+    await repositories.runRepo?.failRun(runId, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+}

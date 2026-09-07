@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "77777777-7777-4777-8777-777777777777",
+  "revision": 1,
+  "plan_type": "course",
+  "operation": "create",
+  "title": "Create Foundations of AI",
+  "summary": "Create the initial course plan from the supplied syllabus.",
+  "warnings": [
+    "One warning is valid.",
+    5
+  ],
+  "assumptions": [],
+  "content": {}
+}

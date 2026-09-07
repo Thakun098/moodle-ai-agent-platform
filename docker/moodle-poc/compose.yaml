@@ -1,0 +1,89 @@
+name: moodle-agent-poc
+
+services:
+  db:
+    image: mariadb:11.4
+    container_name: moodle-agent-poc-db
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin
+      - --innodb_file_per_table=On
+      - --wait-timeout=28800
+      - --skip-log-bin
+    environment:
+      MYSQL_ROOT_PASSWORD: moodle_agent_root_dev
+      MYSQL_DATABASE: moodle
+      MYSQL_USER: moodle
+      MYSQL_PASSWORD: moodle_agent_dev
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -pmoodle_agent_root_dev --silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - moodle_db_data:/var/lib/mysql
+    networks:
+      - moodle_agent_net
+
+  init:
+    build:
+      context: ../../..
+      dockerfile: ai-platform/docker/moodle-poc/Dockerfile
+    image: moodle-agent-poc:5.1.6
+    container_name: moodle-agent-poc-init
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &moodle_env
+      MOODLE_DOCKER_RUNNING: "1"
+      MOODLE_DOCKER_DBTYPE: mariadb
+      MOODLE_DOCKER_DBNAME: moodle
+      MOODLE_DOCKER_DBUSER: moodle
+      MOODLE_DOCKER_DBPASS: moodle_agent_dev
+      MOODLE_DOCKER_DBCOLLATION: utf8mb4_bin
+      MOODLE_DOCKER_WEB_HOST: localhost
+      MOODLE_DOCKER_WEB_PORT: "8000"
+      APACHE_DOCUMENT_ROOT: /var/www/html/public
+      MOODLE_ADMIN_USER: admin
+      MOODLE_ADMIN_PASS: MoodleAgentPOC2026
+      MOODLE_ADMIN_EMAIL: admin@example.com
+      MOODLE_SITE_FULLNAME: MoodleAgentPOC
+      MOODLE_SITE_SHORTNAME: AgentPOC
+    command: ["/usr/local/bin/install-moodle-poc"]
+    volumes:
+      - moodle_data:/var/www/moodledata
+      - ./install-moodle.sh:/usr/local/bin/install-moodle-poc:ro
+    networks:
+      - moodle_agent_net
+
+  web:
+    image: moodle-agent-poc:5.1.6
+    container_name: moodle-agent-poc-web
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment: *moodle_env
+    ports:
+      - "127.0.0.1:8000:80"
+    volumes:
+      - moodle_data:/var/www/moodledata
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - moodle_agent_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  moodle_db_data:
+    name: moodle-agent-poc-db-data
+  moodle_data:
+    name: moodle-agent-poc-data
+
+networks:
+  moodle_agent_net:
+    name: moodle-agent-poc-net

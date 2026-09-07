@@ -1,0 +1,36 @@
+{
+  "name": "@moodle-agent-poc/api",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node --env-file=../../.env dist/server.js"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^10.1.1",
+    "@moodle-agent-poc/agent-runtime": "workspace:*",
+    "@moodle-agent-poc/contracts": "workspace:*",
+    "@moodle-agent-poc/execution": "workspace:*",
+    "@moodle-agent-poc/materials": "workspace:*",
+    "@moodle-agent-poc/planning": "workspace:*",
+    "@moodle-agent-poc/syllabus": "workspace:*",
+    "@moodle-agent-poc/verification": "workspace:*",
+    "fastify": "^5.12.1"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7",
+    "zod": "^3.24.2"
+  }
+}

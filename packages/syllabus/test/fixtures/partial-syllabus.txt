@@ -1,0 +1,11 @@
+Week 1 — Algorithms Overview
+* Big-O notation
+* Sorting algorithms
+
+Week 2 — Data Structures
+* Linked Lists
+* Stacks and Queues
+
+Week 3 — Graph Algorithms
+* Graph representations
+* Breadth-first search

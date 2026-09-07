@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:course-plan-content:0.1",
+  "title": "CoursePlan Content v0.1",
+  "$comment": "Frozen derived composition; it refines PlanEnvelope.content without changing PlanEnvelope root fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "course": { "$ref": "urn:moodle-agent-poc:schema:planning:course-definition:0.1" },
+    "sections": { "type": "array", "minItems": 1, "items": { "$ref": "urn:moodle-agent-poc:schema:planning:section-plan:0.1" } }
+  },
+  "required": ["course", "sections"]
+}

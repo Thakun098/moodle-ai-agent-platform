@@ -1,0 +1,18 @@
+{
+  "ref": "quiz-01",
+  "type": "quiz",
+  "title": "AI Quiz",
+  "description": "Foundational assessment.",
+  "source_refs": [],
+  "questions": [
+    {
+      "ref": "question-01",
+      "type": "matching",
+      "question": "Machine learning is a subset of AI.",
+      "correct_answer": true,
+      "feedback": "Machine learning is a subfield of AI.",
+      "default_mark": 1,
+      "source_refs": []
+    }
+  ]
+}

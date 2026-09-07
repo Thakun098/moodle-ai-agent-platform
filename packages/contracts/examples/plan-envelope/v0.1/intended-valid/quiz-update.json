@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "66666666-6666-4666-9666-666666666666",
+  "revision": 1,
+  "plan_type": "quiz",
+  "operation": "update",
+  "title": "Update AI Fundamentals Quiz",
+  "summary": "Update the quiz intent while preserving its plan family.",
+  "warnings": [
+    "Existing question state is not represented in this common envelope."
+  ],
+  "assumptions": [
+    "The target quiz context will be supplied separately."
+  ],
+  "content": {}
+}

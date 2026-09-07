@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "66666666-6666-4666-8666-666666666666",
+  "revision": 1,
+  "plan_type": "assignment",
+  "operation": "update",
+  "title": "Update assignment",
+  "summary": "Content intentionally uses a quiz shape.",
+  "warnings": [],
+  "assumptions": [],
+  "content": {
+    "ref": "quiz-01",
+    "type": "quiz",
+    "title": "Quiz content",
+    "description": "This content does not match plan_type assignment.",
+    "source_refs": [],
+    "questions": []
+  }
+}

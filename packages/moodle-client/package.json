@@ -1,0 +1,19 @@
+{
+  "name": "@moodle-agent-poc/moodle-client",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run test/moodle-client.test.ts",
+    "test:integration": "vitest run test/moodle-client.integration.test.ts"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "55555555-5555-4555-8555-555555555555",
+  "revision": 2,
+  "plan_type": "quiz",
+  "operation": "update",
+  "title": "Extend AI Fundamentals Quiz",
+  "summary": "Define the desired quiz content after review.",
+  "warnings": [],
+  "assumptions": ["Question-to-Moodle-ID mapping is resolved outside planning."],
+  "content": {
+    "title": "AI Fundamentals Quiz",
+    "description": "Updated assessment of foundational concepts.",
+    "source_refs": [],
+    "questions_to_add": [],
+    "questions_to_update": []
+  }
+}

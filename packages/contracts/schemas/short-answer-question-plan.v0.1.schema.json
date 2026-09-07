@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:short-answer-question-plan:0.1",
+  "title": "ShortAnswerQuestionPlan v0.1",
+  "$comment": "Frozen Planning Contracts v0.1 component.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ref": { "type": "string", "pattern": "^question-[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "type": { "const": "shortanswer" },
+    "question": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "accepted_answers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+    "case_sensitive": { "type": "boolean" },
+    "default_mark": { "type": "number", "exclusiveMinimum": 0 },
+    "source_refs": { "type": "array", "items": { "$ref": "urn:moodle-agent-poc:schema:planning:source-reference:0.1" } }
+  },
+  "required": ["ref", "type", "question", "accepted_answers", "case_sensitive", "default_mark", "source_refs"]
+}

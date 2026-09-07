@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:plan-envelope:0.1",
+  "title": "PlanEnvelope v0.1",
+  "description": "Frozen common planning envelope for Phase 1 task T0101. Standards-compliant runtime validation is deferred to T0111.",
+  "$comment": "The frozen envelope is declarative, provider-neutral, Moodle-light, and composable. It does not define downstream plan payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Identifies the PlanEnvelope contract version."
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+      "description": "Stable hyphenated RFC UUID identity shared by revisions of one plan."
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Positive revision number identifying this particular plan revision."
+    },
+    "plan_type": {
+      "type": "string",
+      "enum": [
+        "course",
+        "assignment",
+        "quiz"
+      ],
+      "description": "The plan family represented by content."
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "create",
+        "update"
+      ],
+      "description": "The declarative create or update intent."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Human-readable title shown in a preview."
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Concise explanation of the intended change."
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Planner-detected uncertainty or problems; an empty array means none were reported.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "Explicit assumptions made by the planner; an empty array means none were reported.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Plan-specific payload boundary. T0101 intentionally permits an object without defining downstream fields."
+    }
+  },
+  "required": [
+    "schema_version",
+    "plan_id",
+    "revision",
+    "plan_type",
+    "operation",
+    "title",
+    "summary",
+    "warnings",
+    "assumptions",
+    "content"
+  ]
+}

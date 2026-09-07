@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:quiz-plan:0.1",
+  "title": "QuizPlan v0.1",
+  "$comment": "Frozen Planning Contracts v0.1 create/nested component; questions use the four POC v1 discriminated variants.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ref": { "type": "string", "pattern": "^quiz-[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "type": { "const": "quiz" },
+    "title": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "description": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "source_refs": { "type": "array", "items": { "$ref": "urn:moodle-agent-poc:schema:planning:source-reference:0.1" } },
+    "questions": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "urn:moodle-agent-poc:schema:planning:multiple-choice-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:true-false-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:short-answer-question-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:essay-question-plan:0.1" }
+        ]
+      }
+    }
+  },
+  "required": ["ref", "type", "title", "description", "source_refs", "questions"]
+}

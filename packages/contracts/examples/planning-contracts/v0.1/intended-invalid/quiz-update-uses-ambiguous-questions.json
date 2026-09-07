@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "77777777-7777-4777-8777-777777777777",
+  "revision": 2,
+  "plan_type": "quiz",
+  "operation": "update",
+  "title": "Update AI Quiz",
+  "summary": "This fixture intentionally uses the ambiguous create-time questions field.",
+  "warnings": [],
+  "assumptions": [],
+  "content": {
+    "title": "AI Quiz",
+    "description": "Update quiz metadata.",
+    "source_refs": [],
+    "questions": []
+  }
+}

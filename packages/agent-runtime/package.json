@@ -1,0 +1,32 @@
+{
+  "name": "@moodle-agent-poc/agent-runtime",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@moodle-agent-poc/contracts": "workspace:*",
+    "@moodle-agent-poc/moodle-client": "workspace:*",
+    "ajv": "8.20.0",
+    "drizzle-orm": "^0.45.2",
+    "ollama": "0.6.3",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.10",
+    "zod": "4.5.4"
+  }
+}

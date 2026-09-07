@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./apps/api" },
+    { "path": "./apps/moodle-mcp-server" },
+    { "path": "./packages/contracts" },
+    { "path": "./packages/agent-runtime" },
+    { "path": "./packages/syllabus" },
+    { "path": "./packages/materials" },
+    { "path": "./packages/planning" },
+    { "path": "./packages/execution" },
+    { "path": "./packages/verification" },
+    { "path": "./packages/moodle-client" }
+  ]
+}

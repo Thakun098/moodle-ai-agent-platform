@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "55555555-5555-4555-8555-555555555555",
+  "revision": 1,
+  "plan_type": "quiz",
+  "operation": "create",
+  "title": "Create AI Fundamentals Quiz",
+  "summary": "Create a quiz plan covering the core concepts in this unit.",
+  "warnings": [],
+  "assumptions": [
+    "Question details will be supplied by the downstream quiz plan contract."
+  ],
+  "content": {}
+}

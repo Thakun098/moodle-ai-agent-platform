@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:true-false-question-plan:0.1",
+  "title": "TrueFalseQuestionPlan v0.1",
+  "$comment": "Frozen Planning Contracts v0.1 component.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ref": { "type": "string", "pattern": "^question-[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "type": { "const": "truefalse" },
+    "question": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "correct_answer": { "type": "boolean" },
+    "feedback": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "default_mark": { "type": "number", "exclusiveMinimum": 0 },
+    "source_refs": { "type": "array", "items": { "$ref": "urn:moodle-agent-poc:schema:planning:source-reference:0.1" } }
+  },
+  "required": ["ref", "type", "question", "correct_answer", "feedback", "default_mark", "source_refs"]
+}

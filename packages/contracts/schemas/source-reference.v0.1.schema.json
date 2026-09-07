@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:source-reference:0.1",
+  "title": "SourceReference v0.1",
+  "description": "Frozen reusable provenance reference for QA and hallucination review.",
+  "$comment": "The frozen SourceReference is a small human-readable building block for later planning-contract composition. Standards-compliant Ajv/runtime validation is deferred to T0111.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Nonblank human-readable identifier for the supplied source; its value distinguishes supplied documents without adding a document-ID field."
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional human-visible one-based page number for supporting material. A SourceReference covers one page; page ranges are unsupported."
+    },
+    "section": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Optional nonblank human-readable section or heading locator for supporting material."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Optional nonblank source-grounded supporting excerpt for QA and hallucination review, rather than a planner paraphrase, interpretation, or summary; the schema cannot prove grounding."
+    }
+  },
+  "required": [
+    "source"
+  ]
+}

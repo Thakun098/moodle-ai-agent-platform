@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:execution-request:0.1",
+  "title": "ExecutionRequest v0.1",
+  "description": "References one approved plan revision and supplies only the user/application-selected Moodle target context required to execute it.",
+  "$comment": "Frozen T0113 contract. Plan type and operation are loaded from the referenced plan revision rather than duplicated here.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "courseCreateTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "category_id": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["category_id"]
+    },
+    "existingSectionTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "course_id": { "type": "integer", "minimum": 1 },
+        "section_id": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["course_id", "section_id"]
+    },
+    "assignmentUpdateTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "course_id": { "type": "integer", "minimum": 1 },
+        "section_id": { "type": "integer", "minimum": 1 },
+        "activity_id": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["course_id", "section_id", "activity_id"]
+    },
+    "quizUpdateTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "course_id": { "type": "integer", "minimum": 1 },
+        "section_id": { "type": "integer", "minimum": 1 },
+        "quiz_id": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["course_id", "section_id", "quiz_id"]
+    }
+  },
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "revision": { "type": "integer", "minimum": 1 },
+    "target": {
+      "oneOf": [
+        { "$ref": "#/$defs/courseCreateTarget" },
+        { "$ref": "#/$defs/existingSectionTarget" },
+        { "$ref": "#/$defs/assignmentUpdateTarget" },
+        { "$ref": "#/$defs/quizUpdateTarget" }
+      ]
+    }
+  },
+  "required": ["plan_id", "revision", "target"]
+}

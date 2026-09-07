@@ -1,0 +1,13 @@
+{
+  "ref": "question-01",
+  "type": "multichoice",
+  "question": "Which answer is correct?",
+  "choices": [
+    { "ref": "choice-a", "text": "Answer A" },
+    { "ref": "choice-b", "text": "Answer B" }
+  ],
+  "correct_choice_refs": ["choice-a", "choice-b"],
+  "feedback": "Only one answer is correct in POC v1.",
+  "default_mark": 1,
+  "source_refs": []
+}

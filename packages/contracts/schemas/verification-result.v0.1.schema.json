@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:verification:verification-result:0.1",
+  "title": "VerificationResult v0.1",
+  "description": "Records whether one executed plan revision matches the verified Moodle state, with concise mismatch details when it does not.",
+  "$comment": "Frozen T0114 POC contract. Verification compares expected plan-derived state with Moodle read-back state; persistence is implemented later.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["mismatch", "missing", "unexpected", "read_error"]
+        },
+        "path": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "message": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "expected": {},
+        "actual": {}
+      },
+      "required": ["kind", "path", "message"]
+    }
+  },
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "revision": { "type": "integer", "minimum": 1 },
+    "passed": { "type": "boolean" },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/issue" }
+    }
+  },
+  "required": ["plan_id", "revision", "passed", "issues"],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "passed": { "const": true } },
+        "required": ["passed"]
+      },
+      "then": {
+        "properties": { "issues": { "maxItems": 0 } }
+      },
+      "else": {
+        "properties": { "issues": { "minItems": 1 } }
+      }
+    }
+  ]
+}

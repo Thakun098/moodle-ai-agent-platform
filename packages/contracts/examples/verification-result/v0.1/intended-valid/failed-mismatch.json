@@ -1,0 +1,14 @@
+{
+  "plan_id": "55555555-5555-4555-8555-555555555555",
+  "revision": 2,
+  "passed": false,
+  "issues": [
+    {
+      "kind": "mismatch",
+      "path": "quiz.title",
+      "message": "Quiz title does not match the approved plan.",
+      "expected": "AI Fundamentals Quiz",
+      "actual": "AI Basics Quiz"
+    }
+  ]
+}

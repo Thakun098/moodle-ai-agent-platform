@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "22222222-2222-4222-9222-222222222222",
+  "revision": 1,
+  "plan_type": "course",
+  "operation": "update",
+  "title": "Update Foundations of AI",
+  "summary": "Update the intended course structure after review.",
+  "warnings": [
+    "The syllabus does not specify a preferred section label format."
+  ],
+  "assumptions": [
+    "Existing Moodle course context is supplied to the workflow outside this common PlanEnvelope."
+  ],
+  "content": {}
+}

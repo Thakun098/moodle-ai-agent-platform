@@ -1,0 +1,21 @@
+{
+  "schema_version": "0.1",
+  "plan_id": "44444444-4444-4444-8444-444444444444",
+  "revision": 2,
+  "plan_type": "assignment",
+  "operation": "update",
+  "title": "Make Assignment 1 more practical",
+  "summary": "Revise the educational assignment content.",
+  "warnings": [],
+  "assumptions": ["Execution target identifiers are supplied separately through the execution contract."],
+  "content": {
+    "ref": "assignment-01",
+    "type": "assignment",
+    "title": "Practical AI Applications",
+    "description": "Apply AI concepts to practical scenarios.",
+    "instructions": ["Choose one scenario.", "Propose and justify an AI-assisted solution."],
+    "learning_objectives": ["Apply AI concepts to a practical problem."],
+    "grade": 100,
+    "source_refs": [{ "source": "syllabus-main", "section": "Learning outcomes" }]
+  }
+}

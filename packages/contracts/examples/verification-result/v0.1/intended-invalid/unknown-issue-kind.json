@@ -1,0 +1,8 @@
+{
+  "plan_id": "55555555-5555-4555-8555-555555555555",
+  "revision": 2,
+  "passed": false,
+  "issues": [
+    { "kind": "different", "path": "quiz.title", "message": "Invalid issue kind." }
+  ]
+}

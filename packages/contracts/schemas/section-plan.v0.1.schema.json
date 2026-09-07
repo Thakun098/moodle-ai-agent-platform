@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:section-plan:0.1",
+  "title": "SectionPlan v0.1",
+  "$comment": "Frozen Planning Contracts v0.1 component; activities use the assignment/quiz discriminated union.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ref": { "type": "string", "pattern": "^section-[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "position": { "type": "integer", "minimum": 1 },
+    "title": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "summary": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "source_refs": { "type": "array", "items": { "$ref": "urn:moodle-agent-poc:schema:planning:source-reference:0.1" } },
+    "activities": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "urn:moodle-agent-poc:schema:planning:assignment-plan:0.1" },
+          { "$ref": "urn:moodle-agent-poc:schema:planning:quiz-plan:0.1" }
+        ]
+      }
+    }
+  },
+  "required": ["ref", "position", "title", "source_refs", "activities"]
+}

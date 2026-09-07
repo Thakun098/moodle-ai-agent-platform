@@ -1,0 +1,24 @@
+Course Title: Principles of Software Engineering
+Course Code: SE201
+
+Description:
+Fundamental concepts in software architecture, testing, and lifecycle management.
+
+Learning Objectives:
+- Master version control and Git workflows.
+- Apply automated testing and CI/CD pipelines.
+- Understand design patterns and SOLID principles.
+
+Weekly Schedule:
+Week 1: Version Control & Agile
+- Git fundamentals and branch workflows
+- Scrum principles
+
+Week 2: Software Testing
+- Unit testing with frameworks
+- Test-driven development
+
+Assessment:
+- Weekly Labs: 30%
+- Project Milestone: 30%
+- Final Exam: 40%

@@ -1,0 +1,11 @@
+{
+  "fixtureIds": [
+    "synthetic-basic",
+    "representative-software-engineering",
+    "representative-project-management"
+  ],
+  "model": "${OLLAMA_MODEL}",
+  "repetitions": 3,
+  "temperature": 0,
+  "notes": "Phase 15 frozen QA protocol. Resolve ${OLLAMA_MODEL} from runtime config; do not silently substitute another model during a repeated-run batch."
+}

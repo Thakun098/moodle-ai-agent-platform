@@ -1,0 +1,23 @@
+CREATE TABLE "poc_activity_intent" (
+  "id" varchar(36) PRIMARY KEY,
+  "run_id" varchar(36) NOT NULL REFERENCES "poc_run"("run_id") ON DELETE CASCADE,
+  "structure_revision" integer NOT NULL,
+  "section_ref" text NOT NULL,
+  "activity_ref" text NOT NULL,
+  "activity_type" text NOT NULL CHECK (activity_type IN ('quiz','assignment')),
+  "status" text NOT NULL DEFAULT 'selected',
+  "attempt_count" integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  "max_attempts" integer NOT NULL CHECK (max_attempts > 0),
+  "options_json" jsonb NOT NULL,
+  "grounding_mode" text,
+  "material_snapshot_id" varchar(36),
+  "review_required" boolean NOT NULL DEFAULT false,
+  "shell_confirmed_at" timestamptz,
+  "content_json" jsonb,
+  "generation_instruction" text,
+  "error" text,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT "activity_intent_selection_unique" UNIQUE (run_id, structure_revision, section_ref, activity_type),
+  CONSTRAINT "activity_intent_ref_unique" UNIQUE (run_id, structure_revision, activity_ref)
+);

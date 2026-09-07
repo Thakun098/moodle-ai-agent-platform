@@ -1,0 +1,22 @@
+{
+  "name": "moodle-agent-poc",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=24.18.0 <25",
+    "pnpm": "11.25.0"
+  },
+  "scripts": {
+    "build": "pnpm --recursive --stream run build",
+    "typecheck": "pnpm --recursive --stream run typecheck",
+    "test": "vitest run",
+    "smoke:ollama": "tsx scripts/smoke-test-ollama.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

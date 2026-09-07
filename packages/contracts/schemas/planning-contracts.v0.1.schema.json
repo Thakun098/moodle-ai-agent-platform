@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:planning-contracts:0.1",
+  "title": "Planning Contracts v0.1",
+  "description": "Frozen composition of the PlanEnvelope with T0103–T0110 plan-specific content contracts.",
+  "$comment": "This schema adds no PlanEnvelope root fields. Execution targets remain outside planning content and belong to T0113.",
+  "allOf": [
+    { "$ref": "urn:moodle-agent-poc:schema:planning:plan-envelope:0.1" },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "plan_type": { "const": "course" },
+            "content": { "$ref": "urn:moodle-agent-poc:schema:planning:course-plan-content:0.1" }
+          },
+          "required": ["plan_type", "content"]
+        },
+        {
+          "properties": {
+            "plan_type": { "const": "assignment" },
+            "content": { "$ref": "urn:moodle-agent-poc:schema:planning:assignment-plan:0.1" }
+          },
+          "required": ["plan_type", "content"]
+        },
+        {
+          "properties": {
+            "plan_type": { "const": "quiz" }
+          },
+          "required": ["plan_type", "operation", "content"],
+          "oneOf": [
+            {
+              "properties": {
+                "operation": { "const": "create" },
+                "content": { "$ref": "urn:moodle-agent-poc:schema:planning:quiz-plan:0.1" }
+              },
+              "required": ["operation", "content"]
+            },
+            {
+              "properties": {
+                "operation": { "const": "update" },
+                "content": { "$ref": "urn:moodle-agent-poc:schema:planning:quiz-update-content:0.1" }
+              },
+              "required": ["operation", "content"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

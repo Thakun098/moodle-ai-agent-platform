@@ -1,0 +1,9 @@
+{
+  "ref": "question-02",
+  "type": "truefalse",
+  "question": "AI always produces correct output.",
+  "correct_answer": "false",
+  "feedback": "The answer must be a boolean.",
+  "default_mark": 1,
+  "source_refs": []
+}

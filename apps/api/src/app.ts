@@ -1,0 +1,98 @@
+import multipart from "@fastify/multipart";
+import type {
+  ActivityIntentRepository,
+  CourseStructureRevisionRepository,
+  ExecutionMappingRepository,
+  IdempotencyRepository,
+  McpClientManager,
+  ModelClient,
+  PlanRepository,
+  RunRepository,
+  SectionActivityDraftRepository,
+  ToolCallRepository,
+  VerificationRepository,
+} from "@moodle-agent-poc/agent-runtime";
+import type {
+  AssignmentPlanner,
+  CourseStructurePlanner,
+  CoursePlanner,
+  PlanRevisionHelper,
+  QuizPlanner,
+} from "@moodle-agent-poc/planning";
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
+import type { AppConfig } from "./config/config-loader.js";
+import { registerCorrelation } from "./plugins/correlation.js";
+import { registerErrorHandler } from "./plugins/error-handler.js";
+import { assignmentRoutes } from "./routes/assignments.js";
+import { activityIntentRoutes } from "./routes/activity-intents.js";
+import { activityGenerationRoutes } from "./routes/activity-generation.js";
+import { categoriesRoutes } from "./routes/categories.js";
+import { executionsRoutes } from "./routes/executions.js";
+import { healthRoutes } from "./routes/health.js";
+import { plansRoutes } from "./routes/plans.js";
+import { quizRoutes } from "./routes/quizzes.js";
+import { runsRoutes } from "./routes/runs.js";
+import { courseStructureRoutes } from "./routes/course-structure.js";
+import { materialSnapshotRoutes } from "./routes/material-snapshots.js";
+import { sectionGenerationRoutes } from "./routes/section-generation.js";
+import { verificationRoutes } from "./routes/verifications.js";
+
+export interface BuildAppOptions {
+  readonly config: AppConfig;
+  readonly fastifyOptions?: FastifyServerOptions | undefined;
+  readonly runRepo?: RunRepository | undefined;
+  readonly planRepo?: PlanRepository | undefined;
+  readonly modelClient?: ModelClient | undefined;
+  readonly coursePlanner?: CoursePlanner | undefined;
+  readonly assignmentPlanner?: AssignmentPlanner | undefined;
+  readonly quizPlanner?: QuizPlanner | undefined;
+  readonly planRevisionHelper?: PlanRevisionHelper | undefined;
+  readonly structureRevisionRepo?: CourseStructureRevisionRepository | undefined;
+  readonly structurePlanner?: CourseStructurePlanner | undefined;
+  readonly snapshotRepo?: import("@moodle-agent-poc/agent-runtime").MaterialSnapshotRepository | undefined;
+  readonly draftRepo?: SectionActivityDraftRepository | undefined;
+  readonly activityIntentRepo?: ActivityIntentRepository | undefined;
+  readonly mcpClientManager?: McpClientManager | undefined;
+  readonly mappingRepo?: ExecutionMappingRepository | undefined;
+  readonly toolCallRepo?: ToolCallRepository | undefined;
+  readonly idempotencyRepo?: IdempotencyRepository | undefined;
+  readonly verificationRepo?: VerificationRepository | undefined;
+}
+
+export function buildApp(options: BuildAppOptions): FastifyInstance {
+  const {
+    config, fastifyOptions, runRepo, planRepo, modelClient, coursePlanner, assignmentPlanner, quizPlanner,
+    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, draftRepo, activityIntentRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo,
+  } = options;
+
+  const defaultLoggerOptions = {
+    level: config.logLevel,
+    serializers: {
+      req(req: any) { return { method: req.method, url: req.url, request_id: req.id, run_id: req.runId, remoteAddress: req.ip }; },
+      res(res: any) { return { statusCode: res.statusCode, request_id: res.request?.id, run_id: res.request?.runId }; },
+    },
+  };
+
+  const app = Fastify({ requestIdHeader: "x-request-id", logger: fastifyOptions?.logger ?? defaultLoggerOptions, ...fastifyOptions });
+  registerCorrelation(app);
+  registerErrorHandler(app);
+  // The material workflow allows 30 MiB files; syllabus routes enforce their
+  // stricter 10 MiB limit after buffering, so one multipart parser can serve
+  // both boundaries without rejecting valid material uploads at 10 MiB.
+  app.register(multipart, { limits: { fileSize: 30 * 1024 * 1024, files: 10 } });
+
+  app.register(healthRoutes);
+  app.register(runsRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}) });
+  app.register(courseStructureRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(structurePlanner ? { structurePlanner } : {}) });
+  app.register(materialSnapshotRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
+  app.register(activityIntentRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
+  app.register(activityGenerationRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(modelClient ? { modelClient } : {}) });
+  app.register(sectionGenerationRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(draftRepo ? { draftRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(modelClient ? { modelClient } : {}) });
+  app.register(plansRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(modelClient ? { modelClient } : {}), ...(coursePlanner ? { coursePlanner } : {}), ...(planRevisionHelper ? { planRevisionHelper } : {}) });
+  app.register(assignmentRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(modelClient ? { modelClient } : {}), ...(assignmentPlanner ? { assignmentPlanner } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(quizRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(modelClient ? { modelClient } : {}), ...(quizPlanner ? { quizPlanner } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(categoriesRoutes, { config, ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(executionsRoutes, { config, ...(planRepo ? { planRepo } : {}), ...(runRepo ? { runRepo } : {}), ...(mappingRepo ? { mappingRepo } : {}), ...(toolCallRepo ? { toolCallRepo } : {}), ...(idempotencyRepo ? { idempotencyRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(verificationRoutes, { config, ...(planRepo ? { planRepo } : {}), ...(runRepo ? { runRepo } : {}), ...(mappingRepo ? { mappingRepo } : {}), ...(verificationRepo ? { verificationRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
+  return app;
+}

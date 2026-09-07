@@ -1,0 +1,13 @@
+# Keep repository text files deterministic across Windows/Linux/Docker.
+* text=auto eol=lf
+
+# Preserve binary files byte-for-byte.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.docx binary
+*.pptx binary

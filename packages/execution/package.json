@@ -1,0 +1,26 @@
+{
+  "name": "@moodle-agent-poc/execution",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run --testPathPattern=integration"
+  },
+  "dependencies": {
+    "@moodle-agent-poc/agent-runtime": "workspace:*",
+    "@moodle-agent-poc/contracts": "workspace:*",
+    "@moodle-agent-poc/planning": "workspace:*",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@moodle-agent-poc/moodle-client": "workspace:*",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}
