@@ -5,6 +5,7 @@ import {
   type AnyPlanEnvelope,
   type AssignmentPlanEnvelope,
   type SourceReference,
+  type AssignmentUpdateTarget,
 } from "@moodle-agent-poc/contracts";
 import {
   buildProvenanceAllowlistFromSources,
@@ -27,6 +28,7 @@ export interface AssignmentPlannerOptions {
 }
 
 export interface UpdateAssignmentPlanParams {
+  executionTarget?: AssignmentUpdateTarget;
   input: AssignmentPlanningInput;
   planId?: string;
   runId?: string;
@@ -123,6 +125,7 @@ export class AssignmentPlanner {
         content: envelope.content as unknown as Record<string, unknown>,
         rawEnvelope: envelope as unknown as AnyPlanEnvelope,
         validationStatus: "valid",
+        ...(params.executionTarget ? { executionContext: { target: params.executionTarget } } : {}),
       });
     }
 

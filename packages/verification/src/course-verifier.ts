@@ -7,9 +7,11 @@ import type {
 } from "@moodle-agent-poc/agent-runtime";
 import type {
   CoursePlanEnvelope,
+  QuestionPlan,
   VerificationIssue,
   VerificationResult,
 } from "@moodle-agent-poc/contracts";
+import { compareQuestionReadback } from "@moodle-agent-poc/contracts";
 
 export interface CourseVerificationRepositories {
   mappingRepo: ExecutionMappingRepository;
@@ -22,6 +24,8 @@ export interface VerifyCourseConfig {
   planEnvelope: CoursePlanEnvelope;
   mcpClientManager: McpClientManager;
   repositories: CourseVerificationRepositories;
+  courseFormat?: string | undefined;
+  categoryId?: number | undefined;
 }
 
 interface ExpectedActivity {
@@ -37,6 +41,7 @@ interface ExpectedActivity {
     type: string;
     questionText: string;
     defaultMark: number;
+    plan: QuestionPlan;
   }>;
 }
 
@@ -46,6 +51,7 @@ interface ExpectedSection {
   position: number;
   name: string;
   activities: ExpectedActivity[];
+  resources: Array<{ ref: string; activityId: number; name: string; filename: string }>;
 }
 
 export interface ExpectedCourseProjection {
@@ -75,6 +81,7 @@ export async function buildExpectedCourseProjection(
     const sm = byRef.get(section.ref);
     if (!sm) throw new Error(`Missing execution mapping for section ${section.ref}`);
     const activities: ExpectedActivity[] = [];
+    const resources: Array<{ ref: string; activityId: number; name: string; filename: string }> = [];
     for (const activity of section.activities) {
       const am = byRef.get(activity.ref);
       if (!am) throw new Error(`Missing execution mapping for activity ${activity.ref}`);
@@ -98,6 +105,7 @@ export async function buildExpectedCourseProjection(
             type: q.type,
             questionText: q.question,
             defaultMark: q.default_mark,
+            plan: q,
           });
         }
         activities.push({
@@ -110,7 +118,12 @@ export async function buildExpectedCourseProjection(
         });
       }
     }
-    sections.push({ ref: section.ref, sectionId: sm.moodleId, position: section.position, name: section.title, activities });
+    for (const resource of section.resources ?? []) {
+      const rm = byRef.get(resource.ref);
+      if (!rm) throw new Error(`Missing execution mapping for resource ${resource.ref}`);
+      resources.push({ ref: resource.ref, activityId: rm.moodleId, name: resource.title, filename: resource.filename });
+    }
+    sections.push({ ref: section.ref, sectionId: sm.moodleId, position: section.position, name: section.title, activities, resources });
   }
   return { courseId: courseMapping.moodleId, title: plan.content.course.title, sections };
 }
@@ -154,6 +167,15 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
 
   if (actualCourse?.course?.id !== expected.courseId) issues.push(issue("mismatch", "/course/id", "Course ID mismatch", expected.courseId, actualCourse?.course?.id));
   if (actualCourse?.course?.fullname !== expected.title) issues.push(issue("mismatch", "/course/fullname", "Course title mismatch", expected.title, actualCourse?.course?.fullname));
+  if (actualCourse?.course?.visible !== 0) issues.push(issue("mismatch", "/course/visible", "Created course must remain hidden", 0, actualCourse?.course?.visible));
+  if (!Number.isSafeInteger(config.categoryId) || Number(config.categoryId) <= 0) {
+    issues.push(issue("missing", "/execution/category_id", "Persisted execution category is required for verification"));
+  } else if (actualCourse?.course?.category_id !== config.categoryId) {
+    issues.push(issue("mismatch", "/course/category_id", "Course category mismatch", config.categoryId, actualCourse?.course?.category_id));
+  }
+  if (config.courseFormat && actualCourse?.course?.format !== config.courseFormat) {
+    issues.push(issue("mismatch", "/course/format", "Course format mismatch", config.courseFormat, actualCourse?.course?.format));
+  }
 
   const actualSections = Array.isArray(actualCourse?.sections) ? actualCourse.sections : [];
   for (const es of expected.sections) {
@@ -179,14 +201,22 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
           for (const eq of expectedQuestions) {
             const aq = slots.find((q: any) => q.question_bank_entry_id === eq.questionBankEntryId);
             if (!aq) { issues.push(issue("missing", `/sections/${es.ref}/activities/${ea.ref}/questions/${eq.ref}`, "Expected quiz question missing", eq.questionBankEntryId)); continue; }
-            if (aq.qtype !== eq.type) issues.push(issue("mismatch", `/sections/${es.ref}/activities/${ea.ref}/questions/${eq.ref}/type`, "Question type mismatch", eq.type, aq.qtype));
-            if (aq.question_text !== eq.questionText) issues.push(issue("mismatch", `/sections/${es.ref}/activities/${ea.ref}/questions/${eq.ref}/question_text`, "Question text mismatch", eq.questionText, aq.question_text));
-            if (aq.default_mark !== eq.defaultMark) issues.push(issue("mismatch", `/sections/${es.ref}/activities/${ea.ref}/questions/${eq.ref}/default_mark`, "Question default mark mismatch", eq.defaultMark, aq.default_mark));
+            for (const field of compareQuestionReadback(aq, eq.plan)) {
+              issues.push(issue("mismatch", `/sections/${es.ref}/activities/${ea.ref}/questions/${eq.ref}/${field}`, `Question ${field} does not match approved plan`));
+            }
           }
         } catch (err) {
           issues.push(issue("read_error", `/sections/${es.ref}/activities/${ea.ref}/questions`, err instanceof Error ? err.message : String(err)));
         }
       }
+    }
+    for (const er of es.resources) {
+      const ar = actualActivities.find((activity: any) => activity.activity_id === er.activityId);
+      if (!ar) { issues.push(issue("missing", `/sections/${es.ref}/resources/${er.ref}`, "Expected File Resource missing", er.activityId)); continue; }
+      if (ar.module_name !== "resource") issues.push(issue("mismatch", `/sections/${es.ref}/resources/${er.ref}/module_name`, "Resource module type mismatch", "resource", ar.module_name));
+      if (ar.name !== er.name) issues.push(issue("mismatch", `/sections/${es.ref}/resources/${er.ref}/name`, "File Resource title mismatch", er.name, ar.name));
+      const readBackFiles = Array.isArray(ar.files) ? ar.files : [];
+      if (!readBackFiles.includes(er.filename)) issues.push(issue("mismatch", `/sections/${es.ref}/resources/${er.ref}/filename`, "File Resource filename mismatch", er.filename, readBackFiles));
     }
   }
 

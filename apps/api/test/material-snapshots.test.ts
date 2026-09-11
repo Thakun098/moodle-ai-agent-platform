@@ -10,7 +10,7 @@ function multipart(files: Array<{ name: string; content: string; materialId: num
   const field = (name: string, value: string) => chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
   field("structure_revision", "1");
   field("moodle_user_id", "42");
-  field("material_metadata", JSON.stringify(files.map((file) => ({ moodle_material_id: file.materialId, use_for_grounding: true, publish_to_course: false }))));
+  field("material_metadata", JSON.stringify(files.map((file) => ({ moodle_material_id: file.materialId, use_for_grounding: true, publish_to_course: true }))));
   for (const [index, file] of files.entries()) {
     chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="material_file_${index}"; filename="${file.name}"\r\nContent-Type: text/plain\r\n\r\n${file.content}\r\n`));
   }
@@ -43,6 +43,7 @@ describe("MaterialSnapshot API", () => {
     ]);
     const first = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/material-snapshots", ...duplicateUpload });
     expect(first.statusCode).toBe(201);
+    expect(JSON.parse(first.body).planned_resources).toEqual([expect.objectContaining({ title: "week-1", filename: "week-1.txt", moodle_material_id: 10 })]);
     expect(snapshotRepo.saveSnapshot).toHaveBeenCalledWith(expect.objectContaining({ files: [expect.objectContaining({ moodleMaterialId: 10 })] }));
     expect(snapshotRepo.saveSnapshot.mock.calls[0]?.[0]?.files).toHaveLength(1);
     expect(activityIntentRepo.markStaleForSection).toHaveBeenCalledWith("run-1", 1, "section-01");

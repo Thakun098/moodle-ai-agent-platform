@@ -595,3 +595,10 @@
 - [ ] **T1804 — Update `Implementation.md` with final actual behavior if needed**
 - [ ] **T1805 — Ensure every completed task has an `soc.md` entry**
 - [ ] **T1806 — Tag/archive final POC state**
+
+## 2026-09-10 — Additional contract audit
+
+- [x] **Audit current execution/verification contracts using Scrutinize and the existing Graphify graph, without subagents.**
+  - Report: `../ai-platform-coordination/contract-audit-2026-09-10.md`.
+  - Existing targeted regression: 10/10 passed; isolated audit probes: 1 control passed, 5 negative assertions exposed defects.
+  - Audit complete; F1–F4 remediation and live Moodle verification remain open. No production code changed.

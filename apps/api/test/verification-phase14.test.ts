@@ -22,7 +22,7 @@ function fixture() {
     getRun: vi.fn(async () => ({ runId, status: "awaiting_verification" })),
     completeRun: vi.fn(async () => ({})), failRun: vi.fn(async () => ({})),
   };
-  const planRepo = { getPlanRevision: vi.fn(async () => ({ runId, planId, revision: 1, planType: "course", operation: "create", validationStatus: "valid", rawEnvelope: envelope })) };
+  const planRepo = { getPlanRevision: vi.fn(async () => ({ runId, planId, revision: 1, planType: "course", operation: "create", validationStatus: "valid", rawEnvelope: envelope, executionContext: { target: { category_id: 1 } } })) };
   const mappingRepo = { listRunMappings: vi.fn(async () => [{ localRef: "course", moodleId: 10 }, { localRef: "section-01", moodleId: 20 }]) };
   const verificationRepo = {
     recordVerification: vi.fn(async (record) => { stored.push(record); return record; }),
@@ -30,7 +30,7 @@ function fixture() {
   };
   const mcpClientManager = {
     discoverTools: vi.fn(async () => []),
-    callTool: vi.fn(async () => ({ status: "success", data: { course: { id: 10, fullname: "Course" }, sections: [{ section_id: 20, section_num: 1, name: "S1", activities: [] }] } })),
+    callTool: vi.fn(async () => ({ status: "success", data: { course: { id: 10, fullname: "Course", visible: 0, category_id: 1 }, sections: [{ section_id: 20, section_num: 1, name: "S1", activities: [] }] } })),
   };
   return { runId, planId, runRepo, planRepo, mappingRepo, verificationRepo, mcpClientManager };
 }

@@ -9,14 +9,17 @@ import type {
   CreateCourseParams,
   CreateQuizParams,
   CreateQuizQuestionParams,
+  CreateResourceParams,
   CreateSectionParams,
   MoodleAddedQuestionSlot,
   MoodleAssignmentDetails,
   MoodleCategory,
+  MoodleCourseFormat,
   MoodleCourseStructure,
   MoodleCreatedAssignment,
   MoodleCreatedCourse,
   MoodleCreatedQuestion,
+  MoodleCreatedResource,
   MoodleCreatedQuiz,
   MoodleCreatedSection,
   MoodleQuizDetails,
@@ -72,6 +75,7 @@ export class FakeMoodleClient extends MoodleClient {
   public sections: Map<number, MoodleCreatedSection & { courseId: number }> = new Map();
   public assignments: Map<number, MoodleAssignmentDetails> = new Map();
   public quizzes: Map<number, MoodleQuizDetails & { sectionId: number }> = new Map();
+  public resources: Map<number, MoodleCreatedResource> = new Map();
   public questions: Map<number, StoredQuestion> = new Map();
   public quizSlots: Map<number, MoodleQuizQuestionSlot[]> = new Map(); // activityId -> slots
 
@@ -81,6 +85,13 @@ export class FakeMoodleClient extends MoodleClient {
 
   override async listCourseCategories(): Promise<MoodleCategory[]> {
     return [...this.categories];
+  }
+
+  override async listCourseFormats(): Promise<MoodleCourseFormat[]> {
+    return [
+      { value: 'topics', name: 'Topics format' },
+      { value: 'weeks', name: 'Weekly format' },
+    ];
   }
 
   override async createCourse(params: CreateCourseParams): Promise<MoodleCreatedCourse> {
@@ -121,6 +132,20 @@ export class FakeMoodleClient extends MoodleClient {
       name: section.name,
       summary: section.summary,
     };
+  }
+
+  override async createResource(params: CreateResourceParams): Promise<MoodleCreatedResource> {
+    const activityId = ++this.nextId;
+    const resource: MoodleCreatedResource = {
+      activityId,
+      resourceId: activityId + 1000,
+      sectionId: params.sectionId,
+      name: params.name,
+      filename: params.filename,
+      moodleMaterialId: params.moodleMaterialId,
+    };
+    this.resources.set(activityId, resource);
+    return resource;
   }
 
   override async getCourseStructure(courseId: number): Promise<MoodleCourseStructure> {
@@ -450,4 +475,34 @@ export class FakeMoodleClient extends MoodleClient {
       maxMark,
     };
   }
-}
+
+  override async getCourseRiskEvidence(courseId: number): Promise<any> {
+    const course = this.courses.get(courseId);
+    if (!course) {
+      throw new MoodleResourceNotFoundError(`Course ${courseId} not found`);
+    }
+    const observedAt = 1789000000;
+    return {
+      schema_version: '0.1',
+      observed_at: observedAt,
+      course: {
+        course_id: courseId,
+        fullname: course.fullname,
+        shortname: course.shortname,
+        format: course.format,
+        start_at: null,
+        end_at: null,
+      },
+      dataset_status: ['enrolments', 'timeline', 'completion', 'quizzes', 'assignments', 'competencies'].map((dataset) => ({
+        dataset,
+        status: 'OK',
+        observed_at: observedAt,
+      })),
+      enrolments: [],
+      activities: [],
+      completion: [],
+      quizzes: [],
+      assignments: [],
+      competencies: { course_competencies: [], activity_links: [], ratings: [] },
+    };
+  }}

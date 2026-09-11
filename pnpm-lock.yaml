@@ -41,6 +41,9 @@ importers:
       '@moodle-agent-poc/planning':
         specifier: workspace:*
         version: link:../../packages/planning
+      '@moodle-agent-poc/risk-engine':
+        specifier: workspace:*
+        version: link:../../packages/risk-engine
       '@moodle-agent-poc/syllabus':
         specifier: workspace:*
         version: link:../../packages/syllabus
@@ -162,7 +165,11 @@ importers:
         specifier: 3.10.1
         version: 3.10.1
 
-  packages/moodle-client: {}
+  packages/moodle-client:
+    dependencies:
+      '@moodle-agent-poc/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/planning:
     dependencies:
@@ -188,6 +195,15 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@24.13.3)(tsx@4.20.6)
+
+  packages/risk-engine:
+    dependencies:
+      '@moodle-agent-poc/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
+      '@moodle-agent-poc/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/syllabus:
     dependencies:

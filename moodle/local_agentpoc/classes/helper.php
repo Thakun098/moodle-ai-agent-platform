@@ -195,6 +195,23 @@ class helper {
     }
 
     /**
+     * Persists one material file. Kept as a narrow seam so the transactional
+     * replacement failure path can be exercised without mocking Moodle DB APIs.
+     *
+     * @param \file_storage $fs
+     * @param array $filerecord
+     * @param string $filepath
+     * @return \stored_file
+     */
+    protected static function create_material_file(
+        \file_storage $fs,
+        array $filerecord,
+        string $filepath
+    ): \stored_file {
+        return $fs->create_file_from_pathname($filerecord, $filepath);
+    }
+
+    /**
      * Stores one mutable teacher material file in Moodle's draft file area.
      *
      * The database row is the itemid anchor; Moodle remains the binary authority.
@@ -256,10 +273,13 @@ class helper {
             'timecreated' => $now,
             'timemodified' => $now,
         ];
-        $materialid = $DB->insert_record('local_agentpoc_material', $record);
-
+        $transaction = $DB->start_delegated_transaction();
         try {
-            $fs->create_file_from_pathname([
+            // Persist the replacement completely before retiring the prior
+            // current draft. Moodle file metadata participates in this DB
+            // transaction, so a failure restores the previous current file.
+            $materialid = $DB->insert_record('local_agentpoc_material', $record);
+            static::create_material_file($fs, [
                 'contextid' => \context_system::instance()->id,
                 'component' => 'local_agentpoc',
                 'filearea' => 'planning_material_draft',
@@ -269,8 +289,30 @@ class helper {
                 'mimetype' => $mimetype,
                 'userid' => $userid,
             ], $filepath);
+
+            foreach ($existingdrafts as $existingdraft) {
+                $existingfiles = $fs->get_area_files(
+                    \context_system::instance()->id,
+                    'local_agentpoc',
+                    'planning_material_draft',
+                    $existingdraft->id,
+                    'id ASC',
+                    false
+                );
+                foreach ($existingfiles as $existingfile) {
+                    if (!$existingfile->delete()) {
+                        throw new \runtime_exception('Previous Learning Material file could not be retired.');
+                    }
+                }
+                $DB->delete_records('local_agentpoc_material', ['id' => $existingdraft->id]);
+            }
+            $transaction->allow_commit();
         } catch (\Throwable $error) {
-            $DB->delete_records('local_agentpoc_material', ['id' => $materialid]);
+            try {
+                $transaction->rollback($error);
+            } catch (\Throwable $rollbackerror) {
+                // Convert storage/DB internals to the existing safe upload error.
+            }
             throw new moodle_exception('errorupload', 'moodle', '', 'Learning material could not be stored.');
         }
 

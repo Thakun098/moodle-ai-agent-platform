@@ -1,0 +1,124 @@
+<div id="local-agentpoc-risk-app" class="agentpoc-risk-page" data-course-id="{{courseid}}">
+    <div class="agentpoc-risk-hero mb-4">
+        <div class="agentpoc-risk-hero-main">
+            <div class="agentpoc-risk-hero-icon" aria-hidden="true"><i class="fa fa-line-chart"></i></div>
+            <div class="min-w-0">
+                <div class="agentpoc-risk-eyebrow">AI LEARNING INSIGHT</div>
+                <h2 class="agentpoc-risk-title mb-1">{{#str}}ailearninginsight, local_agentpoc{{/str}}</h2>
+                <div class="agentpoc-risk-subtitle" id="agentpoc-risk-freshness">{{#str}}riskloading, local_agentpoc{{/str}}</div>
+            </div>
+        </div>
+        <div class="agentpoc-risk-hero-actions">
+            <span id="agentpoc-risk-snapshot" class="agentpoc-risk-snapshot-chip"></span>
+            {{#showaitesttools}}
+            <button type="button" class="btn btn-outline-secondary agentpoc-risk-ai-test-btn" id="agentpoc-risk-regenerate-ai" title="ใช้สำหรับทดสอบเท่านั้น">
+                <i class="fa fa-magic me-2" aria-hidden="true"></i>{{#str}}riskforceaisummary, local_agentpoc{{/str}}
+            </button>
+            {{/showaitesttools}}
+            {{#canrefresh}}
+            <button type="button" class="btn agentpoc-risk-refresh-btn" id="agentpoc-risk-refresh">
+                <i class="fa fa-refresh me-2" aria-hidden="true"></i>{{#str}}riskrefresh, local_agentpoc{{/str}}
+            </button>
+            {{/canrefresh}}
+        </div>
+    </div>
+
+    <div id="agentpoc-risk-alert" class="alert d-none agentpoc-risk-alert" role="alert"></div>
+
+    <div class="agentpoc-risk-view-switch mb-4" id="agentpoc-risk-tabs" role="tablist">
+        <button class="agentpoc-risk-view-button {{#overviewactive}}active{{/overviewactive}}" id="agentpoc-risk-tab-overview" type="button" data-view="overview">
+            <i class="fa fa-th-large me-2" aria-hidden="true"></i>{{#str}}riskoverview, local_agentpoc{{/str}}
+        </button>
+        <button class="agentpoc-risk-view-button {{#studentsactive}}active{{/studentsactive}}" id="agentpoc-risk-tab-students" type="button" data-view="students">
+            <i class="fa fa-users me-2" aria-hidden="true"></i>{{#str}}riskstudents, local_agentpoc{{/str}}
+        </button>
+    </div>
+
+    <div id="agentpoc-risk-loading" class="agentpoc-risk-loading py-5 text-center">
+        <div class="spinner-border" role="status"><span class="visually-hidden">กำลังโหลด</span></div>
+        <div class="text-muted mt-2">{{#str}}riskloading, local_agentpoc{{/str}}</div>
+    </div>
+
+    <section id="agentpoc-risk-overview" class="d-none">
+        <div class="agentpoc-risk-section mb-4">
+            <div class="agentpoc-risk-section-heading">
+                <div>
+                    <div class="agentpoc-risk-section-kicker">ภาพรวม</div>
+                    <h3 class="agentpoc-risk-section-title">{{#str}}riskcourseoverview, local_agentpoc{{/str}}</h3>
+                    <p class="agentpoc-risk-section-description mb-0">สรุปจำนวนผู้เรียน ความครอบคลุม และการกระจายระดับความเสี่ยงจากสแนปช็อตเดียวกัน</p>
+                </div>
+                <span id="agentpoc-risk-coverage-label" class="agentpoc-risk-coverage-chip"></span>
+            </div>
+            <div id="agentpoc-risk-overview-cards" class="row g-3"></div>
+        </div>
+
+        <div class="agentpoc-risk-section mb-4">
+            <div class="agentpoc-risk-section-heading mb-3">
+                <div>
+                    <div class="agentpoc-risk-section-kicker">วิเคราะห์ความเสี่ยง</div>
+                    <h3 class="agentpoc-risk-section-title">ความเสี่ยงตามมิติ</h3>
+                    <p class="agentpoc-risk-section-description mb-0">แยกสัญญาณความเสี่ยงด้านความก้าวหน้า ผลการเรียน สมรรถนะ และการส่งงาน</p>
+                </div>
+            </div>
+            <div id="agentpoc-risk-dimensions" class="row g-3"></div>
+        </div>
+
+        <div class="agentpoc-risk-section mb-4">
+            <div class="agentpoc-risk-insight-card">
+                <div class="agentpoc-risk-insight-header">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="agentpoc-risk-insight-icon" aria-hidden="true"><i class="fa fa-magic"></i></div>
+                        <div>
+                            <div class="agentpoc-risk-section-kicker">AI ASSISTED</div>
+                            <h3 class="agentpoc-risk-section-title mb-0">{{#str}}riskcourseinsight, local_agentpoc{{/str}}</h3>
+                        </div>
+                    </div>
+                    <span id="agentpoc-risk-course-insight-status" class="badge bg-light text-dark border"></span>
+                </div>
+                <div id="agentpoc-risk-course-insight" class="agentpoc-risk-insight-body text-muted">{{#str}}riskinsightloading, local_agentpoc{{/str}}</div>
+            </div>
+        </div>
+
+        <div class="agentpoc-risk-section mb-4">
+            <div class="agentpoc-risk-section-heading mb-3">
+                <div>
+                    <div class="agentpoc-risk-section-kicker">สิ่งที่ต้องติดตาม</div>
+                    <h3 class="agentpoc-risk-section-title">{{#str}}riskneedsattention, local_agentpoc{{/str}}</h3>
+                </div>
+            </div>
+            <div class="row g-3 agentpoc-risk-attention-grid">
+                <div class="col-12 col-xl-6"><div class="agentpoc-risk-content-card h-100"><div class="agentpoc-risk-card-heading"><span class="agentpoc-risk-card-icon danger"><i class="fa fa-exclamation-triangle"></i></span><div><h4>{{#str}}riskproblemactivities, local_agentpoc{{/str}}</h4><small>กิจกรรมที่ข้ามเกณฑ์ความเสี่ยงเชิงกำหนด</small></div></div><div id="agentpoc-risk-activities"></div></div></div>
+                <div class="col-12 col-xl-6"><div class="agentpoc-risk-content-card h-100"><div class="agentpoc-risk-card-heading"><span class="agentpoc-risk-card-icon warning"><i class="fa fa-bullseye"></i></span><div><h4>{{#str}}riskcompetencygaps, local_agentpoc{{/str}}</h4><small>ช่องว่างสมรรถนะที่ยืนยันจากข้อมูลที่ประเมินได้</small></div></div><div id="agentpoc-risk-gaps"></div></div></div>
+                <div class="col-12 col-xl-6"><div class="agentpoc-risk-content-card h-100"><div class="agentpoc-risk-card-heading"><span class="agentpoc-risk-card-icon info"><i class="fa fa-link"></i></span><div><h4>{{#str}}riskassociations, local_agentpoc{{/str}}</h4><small>ความสัมพันธ์ของหลักฐานโดยไม่ตีความเป็นเหตุและผล</small></div></div><div id="agentpoc-risk-associations"></div></div></div>
+                <div class="col-12 col-xl-6"><div class="agentpoc-risk-content-card h-100"><div class="agentpoc-risk-card-heading"><span class="agentpoc-risk-card-icon success"><i class="fa fa-check-square-o"></i></span><div><h4>{{#str}}riskactions, local_agentpoc{{/str}}</h4><small>ข้อเสนอที่ผ่าน deterministic eligibility แล้ว</small></div></div><div id="agentpoc-risk-actions"></div></div></div>
+            </div>
+        </div>
+
+        <div class="agentpoc-risk-section mb-4">
+            <div class="agentpoc-risk-section-heading mb-3">
+                <div>
+                    <div class="agentpoc-risk-section-kicker">ลำดับความสำคัญ</div>
+                    <h3 class="agentpoc-risk-section-title">{{#str}}riskwhoneedsattention, local_agentpoc{{/str}}</h3>
+                    <p class="agentpoc-risk-section-description mb-0">แสดงผู้เรียนระดับสูงและปานกลางก่อน เพื่อช่วยให้ผู้สอนตัดสินใจติดตามได้เร็วขึ้น</p>
+                </div>
+                <button type="button" class="btn btn-sm agentpoc-risk-secondary-btn" id="agentpoc-risk-view-all-students">{{#str}}riskviewallstudents, local_agentpoc{{/str}} <i class="fa fa-arrow-right ms-1"></i></button>
+            </div>
+            <div class="agentpoc-risk-content-card p-0 overflow-hidden" id="agentpoc-risk-attention-students"></div>
+        </div>
+    </section>
+
+    <section id="agentpoc-risk-students" class="d-none">
+        <div class="agentpoc-risk-section-heading mb-3">
+            <div>
+                <div class="agentpoc-risk-section-kicker">ผู้เรียนทั้งหมด</div>
+                <h3 class="agentpoc-risk-section-title">{{#str}}riskstudents, local_agentpoc{{/str}}</h3>
+                <p class="agentpoc-risk-section-description mb-0">{{#str}}riskstudentshelp, local_agentpoc{{/str}}</p>
+            </div>
+            <div class="input-group agentpoc-risk-search">
+                <span class="input-group-text"><i class="fa fa-search" aria-hidden="true"></i></span>
+                <input id="agentpoc-risk-student-search" type="search" class="form-control" placeholder="{{#str}}risksearchstudents, local_agentpoc{{/str}}">
+            </div>
+        </div>
+        <div class="agentpoc-risk-content-card p-0 overflow-hidden" id="agentpoc-risk-students-table"></div>
+    </section>
+</div>

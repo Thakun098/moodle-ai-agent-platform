@@ -33,6 +33,19 @@ export interface ChoicePlan {
   text: string;
 }
 
+export interface FileResourcePlan {
+  ref: string;
+  type: "resource";
+  title: string;
+  filename: string;
+  moodle_material_id: string | number;
+  source_run_id: string;
+  source_structure_revision: number;
+  source_section_ref: string;
+  source_material_revision: number;
+  source_refs: SourceReference[];
+}
+
 export interface MultipleChoiceQuestionPlan {
   ref: string;
   type: "multichoice";
@@ -105,6 +118,7 @@ export interface SectionPlan {
   summary?: string;
   source_refs: SourceReference[];
   activities: ActivityPlan[];
+  resources?: FileResourcePlan[];
 }
 
 export interface CoursePlanContent {

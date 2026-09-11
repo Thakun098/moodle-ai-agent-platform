@@ -49,3 +49,23 @@ function local_agentpoc_extend_navigation(global_navigation $navigation) {
 function local_agentpoc_before_footer() {
     \local_agentpoc\hook_callbacks::inject_mycourses_action();
 }
+
+/** Adds AI Learning Insight to authorized Course navigation. */
+function local_agentpoc_extend_navigation_course(navigation_node $navigation, stdClass $course, context_course $context) {
+    if (!isloggedin() || isguestuser()) {
+        return;
+    }
+    if (!has_capability('local/agentpoc:view', $context) || !has_capability('moodle/course:view', $context)) {
+        return;
+    }
+    $url = new moodle_url('/local/agentpoc/course/risk.php', ['id' => $course->id]);
+    $node = navigation_node::create(
+        get_string('ailearninginsight', 'local_agentpoc'),
+        $url,
+        navigation_node::TYPE_CUSTOM,
+        null,
+        'local_agentpoc_risk',
+        new pix_icon('i/report', '')
+    );
+    $navigation->add_node($node);
+}

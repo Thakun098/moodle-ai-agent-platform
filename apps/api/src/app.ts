@@ -34,6 +34,9 @@ import { quizRoutes } from "./routes/quizzes.js";
 import { runsRoutes } from "./routes/runs.js";
 import { courseStructureRoutes } from "./routes/course-structure.js";
 import { materialSnapshotRoutes } from "./routes/material-snapshots.js";
+import { riskDashboardRoutes, type RiskDashboardRepository } from "./routes/risk-dashboard.js";
+import { riskInsightRoutes, type RiskInsightUseCase } from "./routes/risk-insights.js";
+import { riskRefreshRoutes } from "./routes/risk-refresh.js";
 import { sectionGenerationRoutes } from "./routes/section-generation.js";
 import { verificationRoutes } from "./routes/verifications.js";
 
@@ -57,12 +60,14 @@ export interface BuildAppOptions {
   readonly toolCallRepo?: ToolCallRepository | undefined;
   readonly idempotencyRepo?: IdempotencyRepository | undefined;
   readonly verificationRepo?: VerificationRepository | undefined;
+  readonly riskDashboardRepo?: RiskDashboardRepository | undefined;
+  readonly riskInsightService?: RiskInsightUseCase | undefined;
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const {
     config, fastifyOptions, runRepo, planRepo, modelClient, coursePlanner, assignmentPlanner, quizPlanner,
-    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, draftRepo, activityIntentRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo,
+    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, draftRepo, activityIntentRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo, riskDashboardRepo, riskInsightService,
   } = options;
 
   const defaultLoggerOptions = {
@@ -82,7 +87,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(multipart, { limits: { fileSize: 30 * 1024 * 1024, files: 10 } });
 
   app.register(healthRoutes);
-  app.register(runsRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}) });
+  app.register(runsRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(courseStructureRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(structurePlanner ? { structurePlanner } : {}) });
   app.register(materialSnapshotRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
   app.register(activityIntentRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
@@ -94,5 +99,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(categoriesRoutes, { config, ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(executionsRoutes, { config, ...(planRepo ? { planRepo } : {}), ...(runRepo ? { runRepo } : {}), ...(mappingRepo ? { mappingRepo } : {}), ...(toolCallRepo ? { toolCallRepo } : {}), ...(idempotencyRepo ? { idempotencyRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(verificationRoutes, { config, ...(planRepo ? { planRepo } : {}), ...(runRepo ? { runRepo } : {}), ...(mappingRepo ? { mappingRepo } : {}), ...(verificationRepo ? { verificationRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(riskRefreshRoutes, { config, ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(riskDashboardRoutes, { config, ...(riskDashboardRepo ? { riskDashboardRepo } : {}) });
+  app.register(riskInsightRoutes, { config, ...(modelClient ? { modelClient } : {}), ...(riskInsightService ? { riskInsightService } : {}) });
   return app;
 }

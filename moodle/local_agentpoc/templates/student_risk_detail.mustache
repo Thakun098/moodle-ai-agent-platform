@@ -1,0 +1,109 @@
+<div id="local-agentpoc-student-risk" class="agentpoc-risk-page agentpoc-student-risk-page">
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+        <div>
+            <a href="{{dashboardurl}}" class="small text-decoration-none">&larr; {{#str}}riskbacktodashboard, local_agentpoc{{/str}}</a>
+            <h2 class="mb-1 mt-2">{{studentname}}</h2>
+            <div class="text-muted">{{#str}}studentriskdetail, local_agentpoc{{/str}}</div>
+        </div>
+        <div class="text-end">
+            {{#showaitesttools}}
+            <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="agentpoc-student-regenerate-ai" title="ใช้สำหรับทดสอบเท่านั้น">
+                <i class="fa fa-magic me-1" aria-hidden="true"></i>{{#str}}riskforceaisummary, local_agentpoc{{/str}}
+            </button>
+            {{/showaitesttools}}
+            <div id="agentpoc-student-risk-level"></div>
+            <div id="agentpoc-student-risk-snapshot" class="small text-muted mt-1"></div>
+        </div>
+    </div>
+
+    <div id="agentpoc-student-risk-alert" class="alert d-none" role="alert"></div>
+    <div id="agentpoc-student-risk-loading" class="py-5 text-center">
+        <div class="spinner-border" role="status"><span class="visually-hidden">กำลังโหลด</span></div>
+        <div class="text-muted mt-2">{{#str}}riskloadingstudent, local_agentpoc{{/str}}</div>
+    </div>
+
+    <div id="agentpoc-student-risk-content" class="d-none">
+        <div id="agentpoc-student-historical-note" class="alert alert-info d-none"></div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-xl-8">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h3 class="h5">{{#str}}risksummary, local_agentpoc{{/str}}</h3>
+                        <div id="agentpoc-student-summary"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-xl-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h3 class="h5">{{#str}}risktrend, local_agentpoc{{/str}}</h3>
+                        <div id="agentpoc-student-trend"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <section class="mb-4">
+            <h3 class="h4 mb-3">{{#str}}riskdimensions, local_agentpoc{{/str}}</h3>
+            <div id="agentpoc-student-dimensions" class="row g-3"></div>
+        </section>
+
+        <section class="mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="h4">{{#str}}riskprogressjourney, local_agentpoc{{/str}}</h3>
+                    <div id="agentpoc-student-progress"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="h4">{{#str}}riskassessmentevidence, local_agentpoc{{/str}}</h3>
+                    <div id="agentpoc-student-assessments"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="h4">{{#str}}riskcompetencyevidence, local_agentpoc{{/str}}</h3>
+                    <div class="small text-muted mb-2">{{#str}}riskreviewpendinghelp, local_agentpoc{{/str}}</div>
+                    <div id="agentpoc-student-competencies"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="h4">{{#str}}risksubmissionhistory, local_agentpoc{{/str}}</h3>
+                    <div id="agentpoc-student-submissions"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="h4">{{#str}}riskruletrace, local_agentpoc{{/str}}</h3>
+                    <div class="small text-muted mb-3">{{#str}}riskruletracehelp, local_agentpoc{{/str}}</div>
+                    <div id="agentpoc-student-rule-trace"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="h4">{{#str}}riskevidencejourney, local_agentpoc{{/str}}</h3>
+                    <div class="small text-muted mb-3">{{#str}}riskevidencehistoryhelp, local_agentpoc{{/str}}</div>
+                    <div id="agentpoc-student-evidence"></div>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>

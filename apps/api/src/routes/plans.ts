@@ -72,6 +72,18 @@ export const plansRoutes: FastifyPluginAsync<PlansRoutesOptions> = async (
     return new PlanRevisionHelper(getPlanRepo());
   };
 
+  const buildPersistedPreview = async (record: { runId: string; rawEnvelope: unknown }) => {
+    const preview = buildPlanPreview(record.rawEnvelope as AnyPlanEnvelope);
+    const run = await getRunRepo().getRun(record.runId);
+    const courseFormat = (run?.syllabusMetadata as { course_format?: unknown } | null | undefined)?.course_format;
+    return {
+      ...preview,
+      ...(typeof courseFormat === "string" && courseFormat
+        ? { execution_config: { course_format: courseFormat } }
+        : {}),
+    };
+  };
+
   // 1. POST /api/runs/:runId/plans/course (T0601, T0604)
   fastify.post("/api/runs/:runId/plans/course", async (request, reply) => {
     const { runId } = request.params as { runId: string };
@@ -230,7 +242,7 @@ export const plansRoutes: FastifyPluginAsync<PlansRoutesOptions> = async (
       return;
     }
 
-    const preview = buildPlanPreview(record.rawEnvelope as AnyPlanEnvelope);
+    const preview = await buildPersistedPreview(record);
     reply.send(preview);
   });
 
@@ -294,7 +306,7 @@ export const plansRoutes: FastifyPluginAsync<PlansRoutesOptions> = async (
       ...(changeSummary !== undefined ? { changeSummary } : {}),
     });
 
-    const preview = buildPlanPreview(newRecord.rawEnvelope as AnyPlanEnvelope);
+    const preview = await buildPersistedPreview(newRecord);
 
     reply.status(201).send({
       plan: newRecord,

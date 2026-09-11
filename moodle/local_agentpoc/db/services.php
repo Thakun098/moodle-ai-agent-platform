@@ -25,6 +25,14 @@
 defined('MOODLE_INTERNAL') || die();
 
 $functions = [
+    'local_agentpoc_list_course_formats' => [
+        'classname'   => 'local_agentpoc\\external\\list_course_formats',
+        'methodname'  => 'execute',
+        'description' => 'List enabled Moodle course formats available to the caller',
+        'type'        => 'read',
+        'ajax'        => true,
+        'capabilities'=> 'local/agentpoc:view',
+    ],
     'local_agentpoc_list_course_categories' => [
         'classname'   => 'local_agentpoc\\external\\list_course_categories',
         'methodname'  => 'execute',
@@ -50,6 +58,15 @@ $functions = [
         'type'        => 'write',
         'ajax'        => true,
         'capabilities'=> 'local/agentpoc:manage, moodle/course:update',
+    ],
+
+    'local_agentpoc_create_resource' => [
+        'classname'   => 'local_agentpoc\\external\\create_resource',
+        'methodname'  => 'execute',
+        'description' => 'Create a Moodle File Resource from a sealed Learning Material snapshot file',
+        'type'        => 'write',
+        'ajax'        => true,
+        'capabilities'=> 'local/agentpoc:manage, mod/resource:addinstance',
     ],
 
     'local_agentpoc_get_course_structure' => [
@@ -162,3 +179,14 @@ $services = [
         'uploadfiles'     => 0,
     ],
 ];
+
+// Ticket 07 — consolidated factual Risk evidence readback.
+$functions['local_agentpoc_get_course_risk_evidence'] = [
+    'classname'   => 'local_agentpoc\\external\\get_course_risk_evidence',
+    'methodname'  => 'execute',
+    'description' => 'Read consolidated factual Course Risk evidence without calculating Risk severity',
+    'type'        => 'read',
+    'ajax'        => true,
+    'capabilities'=> 'local/agentpoc:view, moodle/course:view',
+];
+$services['Moodle Agent POC Service']['functions'][] = 'local_agentpoc_get_course_risk_evidence';

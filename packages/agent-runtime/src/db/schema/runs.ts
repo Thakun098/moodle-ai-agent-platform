@@ -7,6 +7,10 @@ export interface SyllabusMetadata {
   sha256?: string;
   hash?: string;
   media_type?: string;
+  /** Teacher-authorized Moodle course format pinned when the run is created. */
+  course_format?: string;
+  /** Per-section teacher choice to publish the current material as a File Resource. */
+  resource_publication?: Record<string, boolean>;
 }
 
 export type PocRunStatus =

@@ -27,12 +27,14 @@ use local_agentpoc\external\create_assignment;
 use local_agentpoc\external\create_course;
 use local_agentpoc\external\create_quiz;
 use local_agentpoc\external\create_quiz_question;
+use local_agentpoc\external\create_resource;
 use local_agentpoc\external\create_section;
 use local_agentpoc\external\get_assignment;
 use local_agentpoc\external\get_course_structure;
 use local_agentpoc\external\get_quiz;
 use local_agentpoc\external\get_quiz_questions;
 use local_agentpoc\external\list_course_categories;
+use local_agentpoc\external\list_course_formats;
 use local_agentpoc\external\update_assignment;
 use local_agentpoc\external\update_quiz;
 use local_agentpoc\external\update_quiz_question;
@@ -44,6 +46,29 @@ defined('MOODLE_INTERNAL') || die();
 global $CFG;
 require_once($CFG->dirroot . '/webservice/tests/helpers.php');
 
+/** Test seam that can fail replacement file persistence after the DB row exists. */
+class failing_material_helper extends helper {
+    /** @var bool Whether the next material-file creation should fail. */
+    public static bool $failcreation = false;
+
+    /**
+     * @param \file_storage $fs
+     * @param array $filerecord
+     * @param string $filepath
+     * @return \stored_file
+     */
+    protected static function create_material_file(
+        \file_storage $fs,
+        array $filerecord,
+        string $filepath
+    ): \stored_file {
+        if (self::$failcreation) {
+            throw new \runtime_exception('Injected replacement persistence failure.');
+        }
+        return parent::create_material_file($fs, $filerecord, $filepath);
+    }
+}
+
 /**
  * PHPUnit integration tests for local_agentpoc external web services (R18, P7-R12).
  *
@@ -54,8 +79,128 @@ require_once($CFG->dirroot . '/webservice/tests/helpers.php');
  */
 class agentpoc_test extends advanced_testcase {
 
+    public function test_assignment_target_precondition_prevents_mutation(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $section = create_section::execute((int) $course->id, 1, 'Section');
+        $assignment = create_assignment::execute((int) $course->id, $section['section_id'], 'Original', 'Original intro', 10.0);
+        foreach ([(int) $course->id + 10000, (int) $course->id] as $expectedcourse) {
+            try {
+                update_assignment::execute($assignment['activity_id'], 'Wrong', 'Wrong intro', 50.0,
+                    $expectedcourse, $section['section_id'] + 10000);
+                $this->fail('Wrong target must be rejected.');
+            } catch (invalid_parameter_exception $e) {
+                $this->assertStringContainsString('target changed', $e->getMessage());
+            }
+            $read = get_assignment::execute($assignment['activity_id']);
+            $this->assertEquals('Original', $read['name']);
+            $this->assertEquals(10.0, $read['grade']);
+        }
+        $updated = update_assignment::execute($assignment['activity_id'], 'Approved', null, 20.0,
+            (int) $course->id, $section['section_id']);
+        $this->assertEquals('Approved', $updated['name']);
+    }
+
+    public function test_scoped_question_update_changes_slot_mark_and_readback(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $section = create_section::execute((int) $course->id, 1, 'Section');
+        $quiz = create_quiz::execute((int) $course->id, $section['section_id'], 'Quiz', 'Intro', 100.0);
+        $other = create_quiz::execute((int) $course->id, $section['section_id'], 'Other quiz', 'Intro', 100.0);
+        $question = create_quiz_question::execute($quiz['activity_id'], 'truefalse', 'Q', 'Question', 1.0, 'Feedback',
+            json_encode(['correct_answer' => true]));
+        add_question_to_quiz::execute($quiz['activity_id'], $question['question_bank_entry_id'], 1, 1.0);
+        add_question_to_quiz::execute($other['activity_id'], $question['question_bank_entry_id'], 1, 1.0);
+        $updated = update_quiz_question::execute($question['question_bank_entry_id'], 'Q', 'Approved', 5.0, 'New feedback',
+            json_encode(['correct_answer' => false]), $quiz['activity_id'], 5.0, 1);
+        $this->assertEquals(2, $updated['version']);
+        $read = \core_external\external_api::clean_returnvalue(get_quiz_questions::execute_returns(),
+            get_quiz_questions::execute($quiz['activity_id']));
+        $this->assertEquals(5.0, $read[0]['defaultmark']);
+        $this->assertEquals(5.0, $read[0]['maxmark']);
+        $this->assertEquals(0, $read[0]['correct_answer']);
+        $this->assertEquals('New feedback', $read[0]['generalfeedback']);
+        $this->assertEquals(5.0, get_quiz::execute($quiz['activity_id'])['sumgrades']);
+        $this->assertEquals(1.0, get_quiz_questions::execute($other['activity_id'])[0]['maxmark']);
+        try {
+            update_quiz_question::execute($question['question_bank_entry_id'], 'Stale', null, 9.0, null, null,
+                $quiz['activity_id'], 9.0, 1);
+            $this->fail('Stale version must be rejected.');
+        } catch (invalid_parameter_exception $e) {
+            $this->assertStringContainsString('version changed', $e->getMessage());
+        }
+        $this->assertEquals(5.0, get_quiz_questions::execute($quiz['activity_id'])[0]['maxmark']);
+    }
+
+    public function test_question_outside_target_quiz_is_rejected_before_save(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $section = create_section::execute((int) $course->id, 1, 'Section');
+        $quiz = create_quiz::execute((int) $course->id, $section['section_id'], 'Quiz', 'Intro', 100.0);
+        $question = create_quiz_question::execute($quiz['activity_id'], 'truefalse', 'Q', 'Original', 1.0, '',
+            json_encode(['correct_answer' => true]));
+        try {
+            update_quiz_question::execute($question['question_bank_entry_id'], 'Wrong', null, 9.0, null, null,
+                $quiz['activity_id'], 9.0, 1);
+            $this->fail('An unslotted question must not be updated through this quiz.');
+        } catch (invalid_parameter_exception $e) {
+            $this->assertStringContainsString('does not belong', $e->getMessage());
+        }
+        $this->assertEquals($question['question_id'], helper::get_latest_ready_question_id_for_bank_entry($question['question_bank_entry_id']));
+    }
+
     protected function setUp(): void {
         $this->resetAfterTest(true);
+    }
+
+    /** A failed replacement must leave the previous current material intact. */
+    public function test_failed_material_replacement_preserves_previous_current_file(): void {
+        global $USER;
+
+        $this->setAdminUser();
+        $tempdir = make_request_directory();
+        $oldpath = $tempdir . '/old-material.txt';
+        $newpath = $tempdir . '/new-material.txt';
+        file_put_contents($oldpath, 'old approved material');
+        file_put_contents($newpath, 'new replacement material');
+
+        $oldid = helper::save_material_draft(
+            'run-replace-failure',
+            1,
+            'section-01',
+            $oldpath,
+            'old-material.txt',
+            (int) $USER->id,
+            true,
+            true
+        );
+
+        failing_material_helper::$failcreation = true;
+        try {
+            failing_material_helper::save_material_draft(
+                'run-replace-failure',
+                1,
+                'section-01',
+                $newpath,
+                'new-material.txt',
+                (int) $USER->id,
+                true,
+                true
+            );
+            $this->fail('The injected replacement failure was not raised.');
+        } catch (moodle_exception $error) {
+            $this->assertStringContainsString('could not be stored', $error->getMessage());
+        } finally {
+            failing_material_helper::$failcreation = false;
+        }
+
+        $materials = helper::list_material_drafts('run-replace-failure', 1, 'section-01');
+        $this->assertCount(1, $materials);
+        $this->assertSame($oldid, $materials[0]['id']);
+        $this->assertSame('old-material.txt', $materials[0]['filename']);
     }
 
     /**
@@ -71,6 +216,40 @@ class agentpoc_test extends advanced_testcase {
         $catids = array_column($categories, 'id');
 
         $this->assertContains((int) $cat1->id, $catids);
+    }
+
+    /**
+     * Course formats are discovered from Moodle's enabled plugin registry.
+     */
+    public function test_list_course_formats_returns_enabled_plugins(): void {
+        $this->setAdminUser();
+
+        $formats = list_course_formats::execute();
+        $values = array_column($formats, 'value');
+
+        $this->assertNotEmpty($formats);
+        $this->assertContains('topics', $values);
+        $this->assertNotEmpty(array_filter($formats, static fn(array $format): bool => $format['name'] !== ''));
+    }
+
+    /**
+     * A discovered non-default format is passed through the Moodle API to create_course.
+     */
+    public function test_create_course_uses_discovered_format(): void {
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category(['name' => 'Format Test Cat']);
+        $formats = list_course_formats::execute();
+        $selected = array_values(array_filter($formats, static fn(array $format): bool => $format['value'] === 'weeks'))[0] ?? $formats[0];
+
+        $result = create_course::execute(
+            (int) $category->id,
+            'Dynamic Format Course',
+            'FORMAT-' . time(),
+            'Format propagation test',
+            $selected['value']
+        );
+
+        $this->assertSame($selected['value'], $result['format']);
     }
 
     /**
@@ -307,6 +486,11 @@ class agentpoc_test extends advanced_testcase {
 
         $questionslist = get_quiz_questions::execute($activityid);
         $this->assertCount(4, $questionslist);
+        $questionslist = \core_external\external_api::clean_returnvalue(get_quiz_questions::execute_returns(), $questionslist);
+        $this->assertEquals('<p>General feedback</p>', $questionslist[0]['generalfeedback']);
+        $this->assertEquals(1, $questionslist[1]['correct_answer']);
+        $this->assertEquals(0, $questionslist[2]['case_sensitive']);
+        $this->assertEquals('<p>Check for mention of optimality and completeness.</p>', $questionslist[3]['grading_guidance']);
 
         // 8. Update Question under Question Bank Entry (T0719, P7-D4)
         $updatedmcq = update_quiz_question::execute(
@@ -448,6 +632,79 @@ class agentpoc_test extends advanced_testcase {
         $this->assertEquals('AI 101', $structure['course']['fullname']);
         $this->assertNotEmpty($structure['sections']);
         $this->assertCount(2, $structure['sections'][1]['activities']); // 1 assignment + 1 quiz
+    }
+
+    /** File Resources require exact snapshot ownership and expose canonical filenames on readback. */
+    public function test_resource_snapshot_binding_and_canonical_file_readback(): void {
+        global $USER;
+
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $section = create_section::execute((int) $course->id, 1, 'Section 1');
+        $tempdir = make_request_directory();
+        $filepath = $tempdir . '/approved-reading.txt';
+        file_put_contents($filepath, 'approved immutable content');
+
+        helper::save_material_draft(
+            'run-resource-owner',
+            3,
+            'section-01',
+            $filepath,
+            'approved-reading.txt',
+            (int) $USER->id,
+            true,
+            true
+        );
+        $snapshot = helper::snapshot_material_drafts(
+            'run-resource-owner',
+            3,
+            'section-01',
+            (int) $USER->id
+        );
+        $materialid = (int) $snapshot['files'][0]['material_id'];
+
+        foreach ([
+            ['run-other', 3, 'section-01'],
+            ['run-resource-owner', 3, 'section-02'],
+            ['run-resource-owner', 2, 'section-01'],
+        ] as [$runid, $structurerevision, $sectionref]) {
+            try {
+                create_resource::execute(
+                    (int) $course->id,
+                    (int) $section['section_id'],
+                    'Rejected Resource',
+                    'approved-reading.txt',
+                    $materialid,
+                    $runid,
+                    $structurerevision,
+                    $sectionref,
+                    1
+                );
+                $this->fail('Cross-scope MaterialSnapshot binding was accepted.');
+            } catch (invalid_parameter_exception $error) {
+                $this->assertStringContainsString('does not belong', $error->getMessage());
+            }
+        }
+
+        $created = create_resource::execute(
+            (int) $course->id,
+            (int) $section['section_id'],
+            'Approved Reading',
+            'approved-reading.txt',
+            $materialid,
+            'run-resource-owner',
+            3,
+            'section-01',
+            1
+        );
+        $structure = get_course_structure::execute((int) $course->id);
+        $activities = array_merge(...array_column($structure['sections'], 'activities'));
+        $resource = array_values(array_filter(
+            $activities,
+            static fn(array $activity): bool => $activity['activity_id'] === $created['activity_id']
+        ))[0];
+
+        $this->assertSame(['approved-reading.txt'], $resource['files']);
     }
 
     /**

@@ -20,6 +20,9 @@ import {
   CreateSectionDataSchema,
   CreateSectionInputSchema,
   CreateSectionOutputSchema,
+  CreateResourceDataSchema,
+  CreateResourceInputSchema,
+  CreateResourceOutputSchema,
   CreatedQuestionDataSchema,
   CreatedQuestionOutputSchema,
   GetAssignmentInputSchema,
@@ -33,6 +36,9 @@ import {
   ListCourseCategoriesDataSchema,
   ListCourseCategoriesInputSchema,
   ListCourseCategoriesOutputSchema,
+  ListCourseFormatsDataSchema,
+  ListCourseFormatsInputSchema,
+  ListCourseFormatsOutputSchema,
   UpdateAssignmentDataSchema,
   UpdateAssignmentInputSchema,
   UpdateAssignmentOutputSchema,
@@ -70,6 +76,26 @@ describe('Tool Input & Output Schemas (T0910, T0911)', () => {
       ];
       expect(ListCourseCategoriesDataSchema.safeParse(valid).success).toBe(true);
       expect(ListCourseCategoriesOutputSchema.safeParse({ status: 'success', data: valid }).success).toBe(true);
+    });
+  });
+
+  describe('moodle_list_course_formats', () => {
+    it('accepts empty object input and validates format output', () => {
+      const valid = [{ value: 'topics', name: 'Topics format' }];
+      expect(ListCourseFormatsInputSchema.safeParse({}).success).toBe(true);
+      expect(ListCourseFormatsInputSchema.safeParse({ extra: true }).success).toBe(false);
+      expect(ListCourseFormatsDataSchema.safeParse(valid).success).toBe(true);
+      expect(ListCourseFormatsOutputSchema.safeParse({ status: 'success', data: valid }).success).toBe(true);
+    });
+  });
+
+  describe('moodle_create_resource', () => {
+    it('validates deterministic resource creation input/output', () => {
+      const input = { course_id: 10, section_id: 20, name: 'lecture', filename: 'lecture.pdf', moodle_material_id: 77, source_run_id: 'run-01', source_structure_revision: 2, source_section_ref: 'section-01', source_material_revision: 3 };
+      const output = { activity_id: 30, resource_id: 40, section_id: 20, name: 'lecture', filename: 'lecture.pdf', moodle_material_id: 77 };
+      expect(CreateResourceInputSchema.safeParse(input).success).toBe(true);
+      expect(CreateResourceDataSchema.safeParse(output).success).toBe(true);
+      expect(CreateResourceOutputSchema.safeParse({ status: 'success', data: output }).success).toBe(true);
     });
   });
 

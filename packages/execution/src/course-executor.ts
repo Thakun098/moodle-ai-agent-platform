@@ -6,6 +6,7 @@ import {
 import type {
   AssignmentPlan,
   CoursePlanContent,
+  FileResourcePlan,
   QuizPlan,
   SectionPlan,
 } from "@moodle-agent-poc/contracts";
@@ -115,6 +116,7 @@ export class CourseExecutor {
           fullname: content.course.title,
           shortname: courseShortname,
           ...(content.course.summary ? { summary: content.course.summary } : {}),
+          ...(options.courseFormat ? { format: options.courseFormat } : {}),
         },
         context: { targetType: "course", localRef: "course" },
       });
@@ -216,6 +218,34 @@ export class CourseExecutor {
               createdEntities.slots++;
             }
           }
+        }
+
+        for (const resource of section.resources ?? []) {
+          const fileResource = resource as FileResourcePlan;
+          if (fileResource.source_run_id !== runId || fileResource.source_section_ref !== section.ref) {
+            throw new CourseExecutionError("RESOURCE_SOURCE_SCOPE_INVALID", `File Resource '${fileResource.ref}' source binding does not match run '${runId}' and section '${section.ref}'.`);
+          }
+          safeContext.stepNumber = stepNumber++;
+          const resourceCallResult = await executeRuntimeToolCall(safeContext, {
+            toolCallId: crypto.randomUUID(),
+            toolName: "moodle_create_resource",
+            arguments: {
+              course_id: courseId,
+              section_id: sectionId,
+              name: fileResource.title,
+              filename: fileResource.filename,
+              moodle_material_id: Number(fileResource.moodle_material_id),
+              source_run_id: fileResource.source_run_id,
+              source_structure_revision: fileResource.source_structure_revision,
+              source_section_ref: fileResource.source_section_ref,
+              source_material_revision: fileResource.source_material_revision,
+            },
+            context: { targetType: "resource", localRef: fileResource.ref },
+          });
+          if (resourceCallResult.status === "error") {
+            throw new CourseExecutionError(resourceCallResult.code || "RESOURCE_CREATION_FAILED", `Failed to create File Resource '${fileResource.ref}' (${fileResource.title}): ${resourceCallResult.message}`);
+          }
+          createdEntities.resources = (createdEntities.resources ?? 0) + 1;
         }
       }
 

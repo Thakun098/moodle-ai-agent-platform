@@ -9,3 +9,8 @@ export * from "./course-structure-revisions.js";
 export * from "./material-snapshots.js";
 export * from "./section-activity-drafts.js";
 export * from "./activity-intents.js";
+export * from "./risk-snapshots.js";
+export * from "./course-risk-state.js";
+export * from "./student-risk-history.js";
+export * from "./risk-change-events.js";
+export * from "./risk-insights.js";

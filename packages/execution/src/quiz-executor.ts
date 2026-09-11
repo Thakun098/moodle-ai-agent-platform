@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import {
   executeRuntimeToolCall,
+  buildIdempotencyKey,
+  type PlanExecutionContext,
   type McpClientManager,
   type SafeToolExecutionOptions,
   type SafeToolRepositories,
@@ -12,6 +14,7 @@ import type {
   QuizUpdatePlanEnvelope,
   QuizUpdateTarget,
 } from "@moodle-agent-poc/contracts";
+import { compareQuestionReadback } from "@moodle-agent-poc/contracts";
 import type {
   ExistingQuizQuestionState,
   ExistingQuizState,
@@ -40,6 +43,7 @@ interface MoodleQuizDetailsData {
   intro: string;
   grade: number;
   questions_count: number;
+  sumgrades: number;
 }
 
 interface MoodleQuestionSlotData {
@@ -55,6 +59,10 @@ interface MoodleQuestionSlotData {
   question_text: string;
   default_mark: number;
   answers: Array<{ id: number; text: string; fraction: number; feedback: string }>;
+  general_feedback?: string;
+  correct_answer?: boolean;
+  case_sensitive?: boolean;
+  grading_guidance?: string;
 }
 
 interface CourseStructureData {
@@ -81,6 +89,7 @@ export interface QuizExecutionConfigBase {
 export interface QuizUpdateExecutionConfig extends QuizExecutionConfigBase {
   planEnvelope: QuizUpdatePlanEnvelope;
   target: QuizUpdateTarget;
+  questionBindings?: PlanExecutionContext["questionBindings"] | undefined;
 }
 
 export interface QuizCreateExecutionConfig extends QuizExecutionConfigBase {
@@ -181,41 +190,18 @@ export async function resolveQuizActivityId(
 }
 
 function serializeQuestionUpdate(
+  activityId: number,
   questionBankEntryId: number,
   question: QuestionPlan,
   ordinal: number
 ): Record<string, unknown> {
   const created = serializeQuestionToMcpArgs(1, question, ordinal);
   const { activity_id: _ignored, ...rest } = created;
-  return { question_bank_entry_id: questionBankEntryId, ...rest };
+  return { activity_id: activityId, max_mark: question.default_mark, question_bank_entry_id: questionBankEntryId, ...rest };
 }
 
 function questionMatches(actual: MoodleQuestionSlotData, expected: QuestionPlan): boolean {
-  if (
-    actual.qtype !== expected.type ||
-    actual.question_text !== expected.question ||
-    actual.default_mark !== expected.default_mark
-  ) {
-    return false;
-  }
-  if (expected.type === "multichoice") {
-    const correct = expected.correct_choice_refs[0];
-    return expected.choices.every((choice) => {
-      const found = actual.answers.find((a) => a.text === choice.text);
-      return !!found && found.fraction === (choice.ref === correct ? 1 : 0);
-    });
-  }
-  if (expected.type === "truefalse") {
-    const trueAns = actual.answers.find((a) => a.text.toLowerCase() === "true");
-    const falseAns = actual.answers.find((a) => a.text.toLowerCase() === "false");
-    if (!trueAns || !falseAns) return false;
-    return expected.correct_answer ? trueAns.fraction > 0 && falseAns.fraction <= 0 : falseAns.fraction > 0 && trueAns.fraction <= 0;
-  }
-  if (expected.type === "shortanswer") {
-    const accepted = actual.answers.filter((a) => a.fraction > 0).map((a) => a.text);
-    return expected.accepted_answers.every((x) => accepted.includes(x));
-  }
-  return true;
+  return compareQuestionReadback(actual, expected).length === 0;
 }
 
 async function executeCreateQuestionAndSlot(
@@ -265,6 +251,26 @@ export async function executeQuizUpdate(
     throw new QuizExecutionError("QUIZ_TARGET_MISMATCH", "Resolved quiz does not match execution target.");
   }
 
+  // Resolve every update against plan-time identity before making even a metadata mutation.
+  if (!config.questionBindings) throw new QuizExecutionError("QUESTION_BINDINGS_REQUIRED", "Replan this quiz update to capture question identities.");
+  const existingByRef = new Map<string, MoodleQuestionSlotData>();
+  for (const question of planEnvelope.content.questions_to_update) {
+    const binding = config.questionBindings[question.ref];
+    const current = binding && before.questions.find(q => q.question_bank_entry_id === binding.questionBankEntryId);
+    if (!binding || !current || current.qtype !== question.type) {
+      throw new QuizExecutionError("QUESTION_TARGET_MISMATCH", `Question '${question.ref}' no longer matches its pinned Moodle identity/type.`);
+    }
+    if (current.version !== binding.version) {
+      // A previous, successful step of this exact revision may already have created its version.
+      const cached = await repositories.idempotencyRepo?.getIdempotencyRecord(buildIdempotencyKey({ runId, planId: planEnvelope.plan_id, revision: planEnvelope.revision, localRef: question.ref, toolName: "moodle_update_quiz_question" }));
+      const result = cached?.resultPayload as { version?: number; question_bank_entry_id?: number } | undefined;
+      if (cached?.status !== "completed" || result?.version !== current.version || result?.question_bank_entry_id !== binding.questionBankEntryId) {
+        throw new QuizExecutionError("QUESTION_VERSION_CHANGED", `Question '${question.ref}' changed since planning. Replan before executing.`);
+      }
+    }
+    existingByRef.set(question.ref, current);
+  }
+
   await mcpClientManager.discoverTools();
   await repositories.runRepo?.updateStatus(runId, "executing");
   const runDeadline = Date.now() + (options.runTimeoutMs ?? 300_000);
@@ -294,10 +300,6 @@ export async function executeQuizUpdate(
     });
     if (metadata.status === "error") throw new QuizExecutionError(metadata.code, metadata.message, metadata.details);
 
-    const existingByRef = new Map(
-      before.questions.map((q, index) => [`question-${String(index + 1).padStart(2, "0")}`, q])
-    );
-
     let updateOrdinal = 1;
     for (const question of planEnvelope.content.questions_to_update) {
       const current = existingByRef.get(question.ref);
@@ -311,7 +313,7 @@ export async function executeQuizUpdate(
       const updated = await executeRuntimeToolCall(safeContext, {
         toolCallId: crypto.randomUUID(),
         toolName: "moodle_update_quiz_question",
-        arguments: serializeQuestionUpdate(current.question_bank_entry_id, question, updateOrdinal++),
+        arguments: { ...serializeQuestionUpdate(activityId, current.question_bank_entry_id, question, updateOrdinal++), expected_version: current.version },
         context: { localRef: question.ref },
       });
       if (updated.status === "error") throw new QuizExecutionError(updated.code, updated.message, updated.details);
@@ -325,6 +327,13 @@ export async function executeQuizUpdate(
     }
 
     const after = await readQuizState(mcpClientManager, activityId);
+    const expectedIds = new Set([...before.questions.map(q => q.question_bank_entry_id), ...addedIds.values()]);
+    if (after.questions.length !== expectedIds.size || after.questions.some(q => !expectedIds.has(q.question_bank_entry_id))) {
+      throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", "Quiz question membership changed during execution.");
+    }
+    if (!Number.isFinite(after.quiz.sumgrades) || Math.abs(after.quiz.sumgrades - after.questions.reduce((total, q) => total + q.max_mark, 0)) > 1e-7) {
+      throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", "Quiz total does not match its slot marks.");
+    }
     if (after.quiz.name !== planEnvelope.content.title || after.quiz.intro !== planEnvelope.content.description) {
       throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", "Quiz metadata read-back does not match approved plan.");
     }
@@ -400,9 +409,10 @@ export async function executeQuizCreate(
     });
     if (created.status === "error") throw new QuizExecutionError(created.code, created.message, created.details);
     const data = created.data as { activity_id: number; quiz_id: number };
+    const createdQuestionIds = new Map<string, number>();
     let ordinal = 1;
     for (const question of planEnvelope.content.questions) {
-      await executeCreateQuestionAndSlot(safeContext, data.activity_id, question, ordinal++);
+      createdQuestionIds.set(question.ref, await executeCreateQuestionAndSlot(safeContext, data.activity_id, question, ordinal++));
     }
     const after = await readQuizState(mcpClientManager, data.activity_id);
     if (
@@ -410,9 +420,15 @@ export async function executeQuizCreate(
       after.quiz.course_id !== target.course_id ||
       after.quiz.name !== planEnvelope.content.title ||
       after.quiz.intro !== planEnvelope.content.description ||
-      after.questions.length !== planEnvelope.content.questions.length
+      after.questions.length !== planEnvelope.content.questions.length ||
+      !Number.isFinite(after.quiz.sumgrades) ||
+      Math.abs(after.quiz.sumgrades - after.questions.reduce((total, q) => total + q.max_mark, 0)) > 1e-7
     ) {
       throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", "Created quiz failed deterministic read-back verification.");
+    }
+    for (const question of planEnvelope.content.questions) {
+      const actual = after.questions.find(q => q.question_bank_entry_id === createdQuestionIds.get(question.ref));
+      if (!actual || !questionMatches(actual, question)) throw new QuizExecutionError("QUIZ_VERIFICATION_FAILED", `Created question '${question.ref}' failed read-back verification.`);
     }
     await repositories.runRepo?.completeRun(runId, {
       plan_id: planEnvelope.plan_id,

@@ -108,6 +108,8 @@ export function registerAssignmentTools(server: McpServer, moodleClient: MoodleC
         const args = UpdateAssignmentInputSchema.parse(rawArgs);
         const res = await moodleClient.updateAssignment({
           activityId: args.activity_id,
+          ...(args.expected_course_id !== undefined ? { expectedCourseId: args.expected_course_id } : {}),
+          ...(args.expected_section_id !== undefined ? { expectedSectionId: args.expected_section_id } : {}),
           ...(args.name !== undefined ? { name: args.name } : {}),
           ...(args.intro !== undefined ? { intro: args.intro } : {}),
           ...(args.grade !== undefined ? { grade: args.grade } : {}),

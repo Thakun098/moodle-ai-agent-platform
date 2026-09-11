@@ -3556,3 +3556,866 @@ The shared quality gate rejects NUL, invalid control characters, and U+FFFD repl
 
 ### Runtime note
 No Moodle plugin/UI change is involved. Restart the API process to load the rebuilt packages. The best runtime verification is to retry the original PDF that previously produced corrupted extraction rather than relying on regenerated v2 PDFs.
+
+## 2026-09-07 — UX Hardening Tickets 01–06
+
+### Ticket 01 — Canonical Quiz Review Renderer
+- Implemented one canonical Moodle Quiz preview renderer using `question.question` and all four qtype-specific answer/grading fields, with feedback and default mark.
+- Reused the renderer in the finalized preview path and synced the Moodle AMD build.
+- Evidence: UI static regression PASS; PlanPreview 5/5 PASS; workspace typecheck PASS.
+
+### Tickets 02–04 — Format and File Resource flow
+- Added dynamic enabled Moodle Course Format discovery through Moodle external/BFF and MCP, required teacher selection, Run pinning, execution serialization, and course-format read-back verification.
+- Added deterministic `FileResourcePlan` projection from current MaterialSnapshot, Moodle File Resource MCP/executor/plugin APIs, source-file read-back, replacement draft semantics, and independent remove/re-add publication intent.
+- Evidence: focused MCP/client/execution/API/planning suite 79/79 PASS; workspace typecheck/build PASS; live Moodle discovery/create/read-back showed `tiles`; live File Resource read-back showed Week 1 placement and expected filename.
+
+### Ticket 05 — Official Preview
+- Added Step 4 Official Preview from the finalized current envelope, showing plan identity, format, sections, resources, full Assignment/Quiz content, shell/review indicators, warnings, and assumptions. Revision changes reset AI-review acknowledgment.
+- Evidence: static/syntax/planning/verification gates PASS; real Moodle browser inspection reached Step 4 and rendered `Course Format: tiles` and Plan ID/Revision.
+
+### Ticket 06 — Integrated E2E status
+- Partial runtime acceptance completed for format discovery and File Resource boundary behavior.
+- Full integrated C# OOP multi-activity Execute/Verify was not completed because the configured Moodle service token was invalid/expired. No permanent privileged token was generated.
+- Required next work: run the complete kept-resource/removed-resource Quiz+Assignment scenario with a valid authorized Moodle service token and record course/execution/verification IDs.
+
+## 2026-09-07 — UX Hardening Re-audit Remediation
+
+- Ticket 02: updated the successful API execution fixture to accept `format`, pinned `syllabusMetadata.course_format` to `tiles`, and asserted exact propagation to `moodle_create_course`. The affected file passes 6/6.
+- Ticket 03: updated schema registry expectations from 14 to 15 and added an explicit exactly-once `FileResourcePlan` registration/validation assertion. The affected contract tests pass 64/64.
+- Ticket 06: added and ran `node --env-file=.env test-e2e-ux-hardening.mjs` successfully. Evidence: run `98d0511d-a119-414f-8898-fe577fdee675`, plan `c5ff84e8-6caf-495f-b77a-c38c4694f6dc` revision 1, Moodle course 19, `tiles`, 1 kept resource, 0 removed-week resources, 3 generated activities, Execute `awaiting_verification`, Verify `true`.
+- Added authenticated Moodle BFF course-structure read-back to make kept/removed resource assertions use the same privileged browser session as the Course Builder.
+- Full suite after remediation: 545 PASS / 10 pre-existing legacy planning failures / 3 skipped. No UX-hardening-specific regression remains.
+
+---
+
+## 2026-09-08 11:57 — Tickets 02–05 — Scrutinize remediation checkpoint
+
+**Status:** PARTIAL
+
+### Summary
+
+Implemented and focused-tested the remediation for scoped File Resource provenance, canonical Moodle file readback, failure-safe Learning Material replacement, and persisted Course Format ownership. Ticket 06 browser-level E2E was intentionally paused before browser launch at the teacher's request.
+
+### Files Changed
+
+- `packages/contracts/schemas/file-resource-plan.v0.1.schema.json`
+- `packages/contracts/src/planning/contracts.ts`
+- `packages/planning/src/preview/plan-preview.ts`
+- `packages/planning/src/revisions/plan-revision-helper.ts`
+- `packages/execution/src/course-executor.ts`
+- `packages/execution/src/course-format-service.ts`
+- `packages/verification/src/course-verifier.ts`
+- `packages/moodle-client/src/serializers.ts`
+- `packages/moodle-client/src/types.ts`
+- `apps/api/src/app.ts`
+- `apps/api/src/routes/runs.ts`
+- `apps/api/src/routes/plans.ts`
+- `apps/api/src/routes/material-snapshots.ts`
+- `apps/api/src/routes/section-generation.ts`
+- `apps/moodle-mcp-server/src/schemas/tool-schemas.ts`
+- `apps/moodle-mcp-server/src/tools/resource-tools.ts`
+- `moodle/local_agentpoc/classes/external/create_resource.php`
+- `moodle/local_agentpoc/classes/external/get_course_structure.php`
+- `moodle/local_agentpoc/classes/helper.php`
+- `moodle/local_agentpoc/amd/src/course_builder.js`
+- `moodle/local_agentpoc/cli/test_preview_ui.mjs`
+- focused tests under `packages/**/test`, `apps/**/test`, and `moodle/local_agentpoc/tests/agentpoc_test.php`
+
+### Implementation Notes
+
+- `FileResourcePlan` now binds every resource to `source_run_id`, `source_structure_revision`, `source_section_ref`, and `source_material_revision`; the binding is validated through planning, direct revisions, execution, MCP, and Moodle before a snapshot file may be published.
+- Moodle `create_resource` now queries the exact approved MaterialSnapshot scope and validates the stored filename. `CourseExecutor` also rejects run/section scope mismatch before issuing the MCP call.
+- Course verification no longer trusts mutation-response or mapping metadata as proof that a file exists. It requires canonical `get_course_structure` file readback; Moodle's external return schema now exposes resource filenames.
+- Material replacement is transactional: the replacement row/file is persisted first, previous files are retired only afterward, and any failure rolls back to the prior current material. A narrow storage seam was added solely to exercise this failure path.
+- `POST /api/runs` now requires a syntactically valid Course Format and checks it against `moodle_list_course_formats` before creating the Run. The selected format is persisted in Run metadata.
+- Plan preview responses expose persisted `execution_config.course_format`; Official Preview reads this value and no longer falls back to transient UI state.
+- The implementation path was traced using the refreshed Graphify code graph (planning contract → finalizer/API → executor → MCP → Moodle external API). Ask-Matt guidance was applied as focused TDD red/green slices.
+
+### Tests / Validation
+
+- PASS — contracts/planning/execution/MCP focused suite: 6 files, 126 tests.
+- PASS — verification focused suite: 4 tests; missing Moodle file readback now fails even when mapping metadata contains a filename.
+- PASS — API Run/Plan suite: 2 files, 23 tests; missing/unavailable Course Format is rejected and persisted format is returned by preview.
+- PASS — Moodle static UI regression.
+- PASS — Moodle PHPUnit replacement failure test: 1 test, 4 assertions; prior file/record survives injected replacement persistence failure.
+- PASS — Moodle PHPUnit resource binding/readback test: 1 test, 4 assertions; wrong run, structure revision, and section are rejected and canonical filename readback succeeds.
+- PASS — affected TypeScript package builds and typechecks run during the focused slices.
+
+### Decisions Made
+
+- Persisted Run metadata is the sole execution/preview authority for Course Format after Run creation.
+- Moodle canonical readback, not execution mapping metadata, is the authority for successful File Resource verification.
+- No frozen architecture decision changed.
+
+### Known Limitations / Follow-up
+
+- Ticket 06 still needs a real browser DOM flow with trace/screenshots; the existing HTTP/BFF harness is insufficient by itself.
+- Full monorepo regression, plugin version/cache build synchronization, ticket status updates, and final re-audit remain pending.
+
+### Next Suggested Task
+
+`Ticket 06 — Run real browser E2E, then complete regression and re-audit`
+
+---
+
+## 2026-09-10 — Additional Scrutinize contract audit
+
+Status: AUDIT COMPLETE; REMEDIATION OPEN.
+
+- Audited current working tree with the existing Graphify JSON graph as the navigation map; verified findings against current source. No subagents used.
+- Graphify MCP was unavailable and the recorded interpreter could not import Graphify, so graph traversal used the persisted JSON directly; graph was not rebuilt or modified.
+- Report: `../ai-platform-coordination/contract-audit-2026-09-10.md`.
+- Confirmed four P1 groups: assignment target checked after mutation; quiz question refs rebound by current slot order; canonical course verification ignores answer keys; question default-mark updates do not update quiz slot max marks. Also reproduced the missing hidden-course verification check.
+- Existing assignment/quiz/verifier tests: 3 files, 10/10 passed.
+- Isolated negative audit probes: 6 cases, 1 matching-state control passed and 5 expected invariants failed. These are defect reproductions, not fixes. Probe/config/log are under `.agent-work/contract-audit-2026-09-10*`; the `.probe.ts` suffix keeps them outside the default test glob.
+- Reviewed the current feedback.md and recorded concrete Thai-language, automatic-upload, and 100-question-cap remediation paths. The current active UI/API has no upper question-count cap.
+- Changed only audit artifacts, task tracking, and this completion record. No production source, Moodle state, frozen decisions, or earlier user edits changed.
+- Limits: fake Moodle transport/persistence for probes plus PHP/core source tracing; no live Moodle/browser E2E or full monorepo regression was run.
+- Verdict: fix-then-ship. No P0 established in the audited paths; implement and verify F1–F4 before relying on completed/verified results.
+
+---
+
+## 2026-09-10 — Risk Engine & Teacher Insight — Tickets 07–09 Progress
+
+### Ticket 07 — Consolidated Moodle Course Risk Evidence Readback
+
+**Status:** IMPLEMENTED AND RUNTIME-VERIFIED
+
+#### Outcome delivered
+Implemented the Course-scoped factual evidence boundary required by the deterministic Risk Engine. Moodle remains the factual System of Record and exposes one consolidated `CourseRiskEvidence v0.1` projection through the existing Moodle Plugin → Moodle Client → MCP → AI Platform path. No Risk severity or LLM reasoning is performed inside the Moodle evidence layer.
+
+#### Shared contract
+- Added `CourseRiskEvidence v0.1` TypeScript contracts under `packages/contracts/src/risk/contracts.ts`.
+- Added JSON Schema `packages/contracts/schemas/course-risk-evidence.v0.1.schema.json`.
+- Added shared AJV validator and public exports from `@moodle-agent-poc/contracts`.
+- Contract models factual states for enrolment, activity timeline, completion, Quiz evidence, Assignment evidence, Moodle competency mapping/rating/evidence, `SourceReference`, and per-dataset status.
+- Added explicit lifecycle states such as `PENDING`, `NOT_ATTEMPTED`, `UNAVAILABLE`, and nullable competency proficiency instead of prematurely deriving Risk semantics.
+- Added per-dataset `OK | PARTIAL | UNAVAILABLE | ERROR` status so a later Completeness Gate can distinguish source failure from legitimate learner unevaluability.
+
+#### Moodle factual canonicalization
+Created separate Moodle domain readers under `moodle/local_agentpoc/classes/risk/`:
+- `enrollment_reader.php`
+- `timeline_reader.php`
+- `completion_reader.php`
+- `quiz_evidence_reader.php`
+- `assignment_evidence_reader.php`
+- `competency_reader.php`
+- shared `source_reference.php`
+- `course_risk_evidence_assembler.php`
+
+The assembler consolidates these factual datasets while preserving reader separation. A failing dataset is surfaced as `dataset_status=ERROR`; it is not silently converted to empty-success and it does not force unrelated successful datasets to disappear.
+
+#### Moodle service / MCP boundary
+- Added Moodle external service `local_agentpoc_get_course_risk_evidence`.
+- Incremented the local plugin version for service registration and completed Moodle CLI upgrade successfully.
+- Added `MoodleClient.getCourseRiskEvidence(courseId)` with full shared-contract validation before evidence enters downstream Risk processing.
+- Added MCP tool `moodle_get_course_risk_evidence` using the existing canonical Moodle MCP server.
+- Added `MoodleEvidenceGateway` in the new `@moodle-agent-poc/risk-engine` package as the AI Platform consumer boundary.
+- The gateway validates the consolidated contract again and converts MCP/source failures into explicit errors rather than treating them as empty evidence.
+
+#### Runtime defects discovered and corrected
+Runtime verification exposed two Moodle-specific issues that were corrected before closing the slice:
+1. Enrollment SQL reused the same named Moodle DML parameter twice, producing an incorrect parameter-count error. The query now uses distinct timestamp parameters.
+2. A competency may inherit its scale from its Competency Framework and therefore have a null direct `competency.scaleid`. The reader now returns the effective scale from the framework when required.
+
+#### Live Moodle acceptance evidence
+A deterministic Moodle fixture was created against existing Course `20` using Moodle/Core Competency APIs:
+- Student ID `4` enrolled as an active learner.
+- Competency ID `1` created and linked to Course `20`.
+- Official Activity↔Competency mapping linked Competency `1` to Quiz CMID `72`.
+- Moodle competency grade/evidence recorded for Student `4` with `proficiency=false`.
+
+Live factual readback after remediation returned:
+- all 6 datasets `OK`;
+- 1 active learner enrolment;
+- 19 Course activities;
+- 5 Quiz activities;
+- 3 Assignment activities;
+- 1 Course competency;
+- 1 official Activity↔Competency link;
+- Student `4` competency rating with grade `1`, `proficiency=false`, and 1 Moodle competency evidence record.
+
+The live payload remained factual only and did not contain `risk_level` or any LOW/MEDIUM/HIGH classification.
+
+#### Validation evidence
+- Shared contract + gateway focused tests: **6/6 PASS**.
+- Risk gateway package tests at the end of the slice: included in **14/14 PASS** Risk Engine suite after Ticket 08 additions.
+- Moodle MCP regression suite: **55/55 PASS**.
+- Live MCP → Moodle REST → local plugin Risk-evidence integration: **1/1 PASS** against Course `20`.
+- PHP syntax checks passed for every new Risk reader, assembler, external function, service definition, and version file.
+
+#### Architecture invariants preserved
+- Moodle remains System of Record.
+- Moodle readers expose facts only; they do not calculate LOW/MEDIUM/HIGH.
+- No LLM/model/provider participates in factual evidence acquisition.
+- Competency facts come from Moodle Core Competency.
+- `proficiency=false` remains a Moodle fact at this boundary; conversion to `CONFIRMED_GAP` belongs to Ticket 08 normalization.
+- Dataset failures remain explicit for the future Completeness Gate in Ticket 10.
+
+---
+
+### Ticket 08 — Deterministic Student Risk Vertical Slice
+
+**Status:** CORE IMPLEMENTATION COMPLETE; FOCUSED ACCEPTANCE TESTS PASS
+
+#### Outcome delivered
+Implemented the first deterministic Student Risk vertical slice from `CourseRiskEvidence` through AI Platform factual normalization to explainable `StudentRiskResult`. The evaluator covers Progress, Performance, Competency, and Submission and calculates overall Student Risk strictly as the maximum dimension severity.
+
+#### Risk Profile v0.1
+- Added versioned `risk-profile.v0.1.json` under `packages/risk-engine`.
+- Frozen Ticket thresholds are represented as policy configuration rather than being scattered through unrelated modules.
+- The implementation preserves the approved Progress, Performance, Competency, and Submission thresholds and escalation guards.
+- The design baseline did not freeze a numeric LOW_SCORE percentage threshold. A POC implementation default `low_score_ratio_threshold = 0.60` is therefore stored explicitly in the versioned profile and treated as configurable policy, not a frozen architecture invariant.
+
+#### AI Platform normalization
+Added `RiskEvidenceNormalizer` to convert Moodle factual DTOs into canonical Risk evidence and derived factual states needed by deterministic rules.
+
+Implemented semantics include:
+- stable evidence IDs and deterministic evidence hashes;
+- evidence observation timestamps and Moodle SourceReferences;
+- expected/actual progression facts from applicable Course activities;
+- academic `PASS`/`FAIL` only when Moodle has an explicit grade-to-pass criterion;
+- `LOW_SCORE` kept separate from academic FAIL;
+- `PENDING_GRADE` kept separate from PASS/FAIL;
+- active `OVERDUE` / `NOT_ATTEMPTED` vs historical `SUBMITTED_LATE`;
+- one-attempt missed Quiz may expose recovery-not-available without automatically producing HIGH;
+- Moodle `proficiency=false` → canonical `CONFIRMED_GAP`;
+- unrated competencies remain `NOT_RATED`, with supporting `COMPETENCY_CONCERN` only when related problematic activity evidence exists;
+- Moodle competency workflow review state is represented separately as `REVIEW_PENDING` and does not itself raise Student Risk.
+
+#### Deterministic Student evaluator
+Added `StudentRiskEvaluator` with four independent dimensions:
+
+**Progress**
+- LOW when Progress gap <10pp.
+- MEDIUM at 10–<25pp.
+- HIGH at >=25pp.
+- >=3 expected activities with zero completed due activities → HIGH.
+- timeline compliance <50% with >=3 expected activities → at least MEDIUM.
+
+**Performance**
+- Recent evaluable assessment window = 3.
+- 1 academic FAIL → MEDIUM; >=2 recent FAIL → HIGH.
+- LOW_SCORE count 0–1 / 2 / 3 maps to LOW / MEDIUM / HIGH for that signal.
+- Persistent >=3 FAIL with >=5 evaluable assessments → HIGH.
+- Persistent LOW_SCORE >=3 with >=50% rate and >=5 evaluable assessments → at least MEDIUM.
+- No overall Performance average is introduced.
+
+**Competency**
+- no confirmed gap → LOW from confirmed-gap evidence.
+- >=1 confirmed gap → MEDIUM.
+- HIGH only when confirmed gap count >=3, gap rate >=40%, and rated expected count >=5.
+- `NOT_RATED`, `COMPETENCY_CONCERN`, and `REVIEW_PENDING` do not masquerade as confirmed gaps.
+
+**Submission**
+- Late 0–1 LOW, 2–3 MEDIUM, >=4 HIGH.
+- Overdue 0 LOW, 1–3 MEDIUM, >=4 HIGH.
+- MEDIUM Late + MEDIUM Overdue escalates explicitly to HIGH.
+- Late and Overdue remain separate counters/signals rather than one opaque score.
+
+Overall Student Risk is exactly `MAX(Progress, Performance, Competency, Submission)`.
+
+#### Explainability / evaluability
+`StudentRiskResult` now carries:
+- per-dimension results;
+- overall LOW/MEDIUM/HIGH when evaluable;
+- deterministic `rule_hits[]`;
+- linked normalized `evidence_refs[]`;
+- `data_as_of`;
+- Risk Profile/model version;
+- Student `COMPLETE` / `INCOMPLETE` evaluation state.
+
+A source-incomplete Student receives `risk_level = null` and is not silently counted as LOW. Pending academic grading by itself is not considered source/system incompleteness.
+
+#### Determinism defect discovered and corrected
+Boundary testing at an exact 10 percentage-point Progress gap exposed floating-point drift from calculating `(expectedRatio - actualRatio) * 100`. The implementation was changed to calculate Progress gap directly from count difference divided by denominator, making the 10pp and 25pp thresholds deterministic at exact boundaries.
+
+#### Focused acceptance evidence
+Ticket 08 deterministic Risk tests cover:
+- repeatable all-LOW result and deterministic hashes;
+- exact Progress 10pp / 25pp boundaries and minimum-activity guards;
+- Moodle grade-to-pass academic FAIL semantics;
+- LOW_SCORE without falsely declaring academic FAIL;
+- PENDING_GRADE exclusion from PASS/FAIL counts;
+- recent-3 and persistent Performance patterns;
+- NOT_RATED concern and REVIEW_PENDING behavior;
+- confirmed Competency gap thresholds;
+- one-attempt missed Quiz recovery behavior;
+- Late + Overdue combination escalation;
+- source-incomplete Student → `overall_risk=null`;
+- every rule hit references known normalized evidence.
+
+Focused Risk Engine suite after remediation: **14/14 PASS**.
+
+#### Architecture invariants preserved
+- No LLM participates in evidence normalization or Risk calculation.
+- PASS/FAIL authority remains Moodle grade-to-pass.
+- No Performance average is synthesized.
+- `NOT_RATED` is not a confirmed competency gap.
+- Review workflow does not become Student Risk.
+- Overall Student Risk is deterministic MAX across the four dimensions.
+
+---
+
+### Ticket 09 — Course Risk Aggregation & Learning Issue Detection
+
+**Status:** IN PROGRESS — CONTRACT/TYPE LAYER STARTED; AGGREGATOR AND ACCEPTANCE TESTS NOT YET COMPLETE
+
+#### Work completed so far
+Ticket 09 has been opened as the next tracer bullet after Ticket 08 and its acceptance criteria have been reviewed against the frozen implementation plan.
+
+A new Course intelligence contract/type layer has been started in:
+- `packages/risk-engine/src/course-risk-types.ts`
+
+The intended aggregation input boundary has been established conceptually as:
+- canonical `CourseRiskEvidence` for Course/activity/competency facts;
+- normalized Student evidence from Ticket 08;
+- completed `StudentRiskResult` values from Ticket 08.
+
+This avoids reinterpreting raw Moodle facts independently inside the Course aggregator and keeps Student severity authority with the deterministic Student evaluator.
+
+#### Course aggregate design being implemented
+The Ticket 09 aggregator is being structured to expose:
+- enrolled/evaluated/incomplete counts;
+- explicit evaluation denominator and evaluation coverage;
+- LOW/MEDIUM/HIGH Student distribution only among evaluated Students;
+- per-dimension Student distribution;
+- Activity-level factual numerator/denominator metrics;
+- Activity Problem Types rather than Activity or Course LOW/MEDIUM/HIGH levels;
+- Common Competency Gap metrics with competency-specific rating coverage;
+- official Activity↔Competency association and affected-student overlap;
+- issue-centric deterministic Course Action candidates for later merge/deduplication.
+
+#### Frozen issue thresholds to implement
+**Activity Submission**
+- active overdue/not-attempted rate >=20% with expected students >=5 → `SUBMISSION_PROBLEM`.
+- late rate >=30% with expected students >=5 → `LATE_PATTERN`.
+
+**Activity Performance**
+- academic fail rate >=30%, evaluable count >=5, and performance coverage >=50% → `PERFORMANCE_PROBLEM`.
+- low-score rate >=40%, evaluable count >=5, and performance coverage >=50% → `PERFORMANCE_CONCERN`.
+- FAIL and LOW_SCORE remain separate numerators.
+
+**Common Competency Gap**
+- confirmed gap count >=3;
+- gap rate among rated expected students >=30%;
+- competency-specific rating coverage >=60%.
+
+**Notable Activity↔Competency Association**
+- Activity must already be problematic;
+- Competency must already qualify as a Common Competency Gap;
+- official Activity↔Competency mapping must exist;
+- affected-student overlap count >=3;
+- Activity-side overlap >=30% OR competency-side overlap >=30%.
+
+The association is relational evidence only. It will not change Student Risk severity, create a Course Risk level, or claim causal diagnosis.
+
+#### Explicit constraints retained
+- **No canonical Course LOW/MEDIUM/HIGH Risk Level will be created.**
+- Incomplete Students will be excluded from LOW/MEDIUM/HIGH Student distribution and shown separately.
+- Every Course/Activity rate will expose its denominator and relevant coverage.
+- `REVIEW_PENDING` will affect workflow/coverage reporting only and not confirmed competency gap counts.
+- Activity issue detection and Course aggregation remain fully deterministic and LLM-free.
+
+#### Remaining work before Ticket 09 can close
+- Implement the actual Course aggregator.
+- Implement Activity issue detection for all four Problem Types.
+- Implement Common Competency Gap detection.
+- Implement notable Activity↔Competency association and exact overlap metrics.
+- Implement deterministic issue-centric Course Action candidate generation.
+- Add >=10 Student representative fixture required by the ticket.
+- Add exact threshold/coverage boundary tests.
+- Serialize representative `CourseRiskAggregate`, `ActivityIssue`, `CommonCompetencyGap`, and `IssueAssociation` outputs.
+- Run focused Ticket 09 test suite and record acceptance evidence.
+
+Ticket 09 must therefore remain **IN PROGRESS** at this checkpoint and must not yet be marked complete.
+
+---
+
+
+## Risk Engine & Teacher Insight — 2026-09-10 continuation
+
+### Ticket 09 — Course Risk Aggregation & Learning Issue Detection
+Status: IMPLEMENTED / FOCUSED ACCEPTANCE PASS
+
+Implemented `CourseRiskAggregator` and Course-level deterministic contracts in `packages/risk-engine`:
+- evaluated/incomplete coverage with explicit denominators;
+- Student and per-dimension LOW/MEDIUM/HIGH distributions excluding INCOMPLETE students;
+- `SUBMISSION_PROBLEM`, `LATE_PATTERN`, `PERFORMANCE_PROBLEM`, `PERFORMANCE_CONCERN` with exact frozen thresholds/coverage guards;
+- FAIL and LOW_SCORE kept as separate numerators;
+- Common Competency Gap using only confirmed non-proficient ratings and competency-specific coverage;
+- `NOTABLE_ASSOCIATION` only when Activity issue + Common Competency Gap + official Activity-to-Competency mapping + overlap threshold are all satisfied;
+- issue-centric Course action candidates with target/issue/evidence/affected-student refs;
+- no canonical Course risk label and no LLM dependency.
+
+Evidence: `course-risk-aggregation.test.ts` 9/9 PASS; combined Risk focused suite 23/23 PASS at Ticket 09 completion; TypeScript typecheck PASS. The 10-student demo verifies exact denominators, one performance-problem Quiz, one submission-problem Assignment, one Common Competency Gap, one Notable Association, and one INCOMPLETE student excluded from Risk distributions.
+
+### Ticket 10 — Atomic Risk Refresh, Snapshot & History Lifecycle
+Status: IMPLEMENTED / RUNTIME + POSTGRESQL VERIFIED
+
+Implemented:
+- `RiskCompletenessGate` rejecting source/system `ERROR`/`UNAVAILABLE` while preserving PENDING_GRADE as an academic lifecycle state;
+- shared `RiskRefreshService.refreshCourse(courseId, origin)` for deterministic refresh;
+- `CourseRefreshCoordinator` per-course single-flight/join semantics; different Courses remain concurrent;
+- manual and nightly adapters sharing the same refresh service;
+- immutable `risk_snapshots`, `course_risk_state`, and compact `student_risk_history` persistence;
+- atomic snapshot/history/pointer publication transaction;
+- POC current + previous full snapshot retention, with older compact history preserved;
+- failed source refresh records failure metadata without replacing last-known-good current snapshot;
+- manual HTTP endpoint `POST /api/risk/courses/:courseId/refresh` with snapshot/freshness/model/origin/join metadata.
+
+Evidence:
+- Risk lifecycle focused suite: 7/7 PASS; combined Risk focused suite 30/30 PASS.
+- Real PostgreSQL repository integration: 3/3 PASS plus migration-journal test PASS, covering current/previous retention, 3-point compact history, failure last-known-good behavior, and transactional rollback.
+- Live runtime through API -> MCP -> Moodle -> Risk Engine -> PostgreSQL for Moodle Course 20 returned HTTP 200 `PUBLISHED`, snapshot `127b28e6-b406-4e06-85cb-e98905a6d145`, `risk-profile.v0.1`, manual origin, evaluation coverage 1.0.
+- DB readback confirmed `course_risk_state.current_snapshot_id` equals the runtime snapshot, `last_refresh_status=SUCCESS`, payload schema `risk-snapshot.v0.1`, SHA-256 evidence hash length 64, aggregate 1 enrolled / 1 evaluated / 0 incomplete, and one compact history point for student fixture id 4.
+
+### Risk UI design baseline update
+New coordination assets discovered under `C:\moodle-prac\ai-platform-coordination\UI-design`:
+- `AI-risk-entry.png` — Course-side entry to **AI Learning Insight** integrated with the existing Course navigation/context.
+- `AI-risk-page.png` — target Risk/AI Learning Insight page; visible design concepts include **Course Overview** and **What Needs Attention**.
+
+Implementation rule from this point: Tickets 12–14 must map API/view models and Moodle UI to these supplied design assets rather than inventing a parallel Risk UI. Ticket 10 backend contracts remain valid; Ticket 11 trend/change work is UI-independent but must expose fields suitable for the supplied Risk page later.
+
+
+### Ticket 11 — Material Change, Source Change & Deterministic Trend
+
+Status: IMPLEMENTED / RUNTIME + POSTGRESQL VERIFIED
+
+Implemented:
+- versioned `trend-profile.v0.1` separate from Risk Profile semantics;
+- deterministic `RiskSnapshotComparator` for Student/Course material-change reasons;
+- conservative `change_origin`: explicit known hints are preserved, Risk Profile boundary forces `POLICY_CHANGE`, otherwise `UNKNOWN`;
+- normalized evidence hash/source-change trace without allowing raw source deltas alone to become material Risk changes;
+- `risk_change_events` persistence and migration `0013_add_risk_change_events.sql`;
+- change events written atomically in the same snapshot/history/current-pointer transaction;
+- `RiskTrendEngine` with latest-valid-point-per-day canonicalization, COMPLETE-only trend input, recent 3 / context 7 reconciliation, severity precedence, configurable significant metric movement, and no cross-`risk_model_version` trend;
+- refresh response now exposes deterministic `material_change` metadata.
+
+Verification evidence:
+- `risk-change-trend.test.ts`: 13/13 PASS, including JSONB object-key-order regression coverage;
+- full Risk Engine focused suite: 42/42 PASS before JSONB regression addition; Ticket 11 focused suite remains PASS after correction;
+- Agent Runtime PostgreSQL repository + migration journal: 5/5 PASS (`risk-snapshot-repository.integration.test.ts` 4/4 + migration journal 1/1);
+- API risk-refresh + health regression: 4/4 PASS;
+- live Course 20 refresh after canonical comparison fix: HTTP 200 PUBLISHED, evaluation coverage 1.0, `material=false`, `change_origin=UNKNOWN`, no material reasons;
+- PostgreSQL current snapshot change events include both COURSE and STUDENT records for Student 4, both non-material, with source-change trace retained;
+- live Student 4 history contains 3 raw refresh points on 2026-09-10; `RiskTrendEngine` canonicalizes them to exactly 1 daily point and returns `INSUFFICIENT_HISTORY`, proving repeated same-day manual refresh does not create false trend history.
+
+Runtime defect found and corrected:
+- first live comparison produced a false Course material change because JSONB deserialization returned distribution object keys in a different order and the comparator initially used `JSON.stringify()` on nested objects;
+- corrected to canonical field-by-field distribution signature (`denominator`, `LOW`, `MEDIUM`, `HIGH`) independent of object key order;
+- added dedicated regression test and re-ran live Moodle→MCP→Risk→PostgreSQL refresh successfully.
+
+
+## 2026-09-10 — Ticket 12 Closure — Snapshot-scoped Risk Dashboard API & Moodle BFF
+
+**Status:** CLOSED — IMPLEMENTED, BUILD-VERIFIED, MOODLE BFF RUNTIME-VERIFIED
+
+### Build / runtime activation
+- Rebuilt `packages/agent-runtime`, `packages/risk-engine`, and `apps/api` successfully with TypeScript compilation passing.
+- The previous API process observed earlier on port `3000` was no longer present when restart verification began; port `3000` was then served by the refreshed Node runtime (PID `16012`).
+- Runtime route probe changed from the earlier stale-build `404 Route GET:/api/risk/courses/20/dashboard not found` to the expected authenticated-route behavior: unauthenticated direct AI Platform request returned `401 RISK_SERVICE_UNAUTHORIZED`, proving the new Ticket 12 route/auth boundary was live.
+
+### AI Platform snapshot-scoped API completed
+- Added service-authenticated Course Dashboard endpoint with explicit snapshot metadata, freshness, Risk Profile version, evaluation coverage, evaluated LOW/MEDIUM/HIGH distributions, dimension distributions, Activity issues, Common Competency Gaps, Notable Associations, action candidates, and HIGH/MEDIUM Student triage.
+- Added snapshot-pinned Student, Activity, and Competency drill-down endpoints. Drill-down requires `snapshot_id`; the server does not silently advance a Teacher from a requested historical snapshot to current state.
+- Added `RISK_SERVICE_KEY` configuration and timing-safe shared-credential comparison plus trusted actor audit headers: `actor_ref`, `actor_type`, `course_ref`, and `request_origin`.
+- Direct live Course 20 Dashboard read returned HTTP `200`, `status=OK`, current snapshot `9f94a563-7660-4762-802a-3fcb4f8aef5f` at that checkpoint, `risk-profile.v0.1`, evaluation coverage `1.0`, one Student in the snapshot, and no service credential in the response.
+
+### Moodle server-side BFF completed
+- Added `moodle/local_agentpoc/risk_ajax.php` as the browser-facing Risk boundary; browser-facing tests call Moodle, not the AI Platform directly.
+- Extended `classes/api/ai_platform_client.php` with server-only Risk requests and shared credential / actor headers.
+- Added `classes/risk/bff_helper.php` so Moodle, not the AI Platform snapshot, enriches Student `display_name` and Moodle profile URL. Canonical AI Platform Risk snapshots therefore remain pseudonymous (`student_id` / `student_ref`).
+- Added current-Moodle navigation resolution for Activity / Student / Course fallback while historical snapshot evidence remains immutable.
+- View path requires authenticated Moodle session + `local/agentpoc:view` + `moodle/course:view` in Course context.
+- Manual refresh additionally requires sesskey + `local/agentpoc:manage` + `moodle/course:manageactivities`.
+- Student drill-down checks active Course enrolment before proxying.
+- Added server-side Moodle setting `riskservicekey`; the local POC uses a development-only derived key shared with `.env`. This is POC configuration, not a production secret-distribution pattern.
+- Moodle plugin upgraded successfully to `2026091003 / v0.1.10`; PHP lint passed for the new/changed Risk BFF files.
+
+### Real Moodle-session / BFF runtime evidence
+- Authenticated Moodle session -> `risk_ajax.php?action=dashboard&course_id=20` -> AI Platform returned HTTP `200`, `success=true`, Course 20, evaluation coverage `1.0`, and Moodle-enriched Student identity `Risk Fixture Learner`; no Risk service credential appeared in the browser-visible JSON.
+- Snapshot consistency flow passed through the real BFF:
+  - Dashboard / Student Detail first used snapshot `9f94a563-7660-4762-802a-3fcb4f8aef5f`.
+  - Manual refresh through Moodle BFF returned `PUBLISHED` with new snapshot `39347dd5-f95e-4bfe-a800-c52fed70a005`.
+  - New Dashboard resolved to the new snapshot and reported the old snapshot as `previous_snapshot_id`.
+  - Student Detail requested with the old explicit snapshot still returned HTTP `200` and remained pinned to the old snapshot; no silent snapshot switch occurred.
+- Activity CMID `72` BFF drill-down returned HTTP `200`, the same requested snapshot, and current Moodle navigation resolved as `ACTIVITY` with a URL.
+- Competency `1` BFF drill-down returned HTTP `200`, the same requested snapshot, and current navigation safely resolved to the Course fallback URL.
+- Missing drill-down `snapshot_id` was rejected by Moodle BFF (`400 errorrisksnapshotrequired`).
+- A nonexistent historical snapshot is now preserved correctly across the BFF boundary as HTTP `404`, `RISK_SNAPSHOT_NOT_FOUND`, `retryable=false`. A Ticket 12 defect was found and fixed here: the generic Moodle AI client previously collapsed all upstream HTTP errors into `erroraiplatform`, which would have incorrectly represented a missing historical snapshot as an outage. Added structured `risk_api_exception` propagation to preserve 400/404 Risk API semantics.
+
+### Authorization / outage / cache evidence
+- No-session Dashboard request was blocked at the Moodle boundary with `requireloginerror`.
+- An authorized Course session requesting Student `999999` (not actively enrolled) was blocked before Student proxying with `errorriskstudentaccess`.
+- Moodle capability evidence for learner fixture Student 4: active enrolment is true, while `local/agentpoc:view`, `local/agentpoc:manage`, and `moodle/course:manageactivities` are false; learner cannot enter the Teacher Risk BFF path.
+- Simulated AI Platform outage by temporarily pointing Moodle to an unused local port: BFF returned HTTP `502`, `AI_PLATFORM_UNAVAILABLE`, `retryable=true`. `aiplatformurl` was immediately restored to `http://host.docker.internal:3000`, and post-restore BFF smoke checks passed.
+- Repository scan confirms the Moodle plugin defines no `risk_snapshots` or `course_risk_state` persistence; canonical Risk state remains only in the AI Platform/PostgreSQL snapshot store.
+
+### Verification summary
+- Final focused regression after build/restart: **10 test files / 64 tests PASS**.
+- Included Risk Dashboard API tests, refresh/auth tests, API config tests, all Risk Engine suites, PostgreSQL Risk snapshot/change-event integration tests, and migration journal test.
+- PHP lint: PASS for Ticket 12 Risk BFF changes.
+- Moodle CLI plugin upgrade: PASS (`2026091003`).
+- Runtime Moodle-session Dashboard / Student / Activity / Competency / manual refresh / historical pin / authorization / outage paths: PASS.
+- Temporary Ticket 12 HTTP harness files were moved to Recycle Bin after verification.
+
+### UI contract baseline for downstream Tickets 13–14
+Ticket 12 payload shape was kept compatible with the coordination design references:
+- `UI-design/AI-risk-entry.png`
+- `UI-design/AI-risk-page.png`
+- `UI-design/students-risk-page.png`
+- `UI-design/student-risk-detail.png`
+
+Ticket 13–14 can now consume the snapshot-scoped BFF without introducing a second Risk data model or exposing AI Platform credentials to browser code.
+
+## Ticket 13 Closure — Three-layer Course Teacher Dashboard
+
+Status: **CLOSED / REAL-BROWSER VERIFIED**
+
+Implementation:
+- Added Course-scoped Moodle page `moodle/local_agentpoc/course/risk.php` and Course navigation entry `AI Learning Insight` for authorized Teacher/Manager users.
+- Added `templates/risk_dashboard.mustache`, `amd/src/risk_dashboard.js` (+ build artifact), and scoped `styles.css`.
+- Dashboard is bound to one explicit Risk `snapshot_id` until manual Refresh changes it.
+- Layer 01 Course Overview shows enrolled/evaluated/incomplete counts, evaluated-only LOW/MEDIUM/HIGH distribution, coverage, freshness/data-as-of, and Risk Profile version; no canonical Course Risk Level is introduced.
+- Layer 02 What Needs Attention renders dimension distributions, Activity problem types with affected numerator/denominator/rate, Common Competency Gaps separately from workflow concepts, Notable Associations with `Related` wording and overlap only, and deterministic Course Action candidates.
+- Layer 03 Who Needs Attention renders HIGH/MEDIUM triage sorted by the API and links every Student to snapshot-scoped Student Detail; Students tab exposes All Students without changing snapshot.
+- Manual Refresh calls Moodle `risk_ajax.php` only, uses Moodle sesskey/capability gate, then rebinds the page to the returned snapshot.
+- Graceful page-level error state is operational when AI Platform is unavailable; no Moodle canonical Risk cache is introduced.
+
+Verification:
+- Moodle plugin upgraded successfully to `v0.1.11 / 2026091004`; PHP lint PASS for Course page/lib/version; JavaScript syntax check PASS.
+- Real Chrome headless browser acceptance on Course 20 PASS:
+  - title `AI Learning Insight | AgentPOC`;
+  - three layers visible (`Course Overview`, `What Needs Attention`, `Who Needs Attention`);
+  - evaluated/incomplete/coverage wording visible;
+  - one attention Student (`Risk Fixture Learner`) and one row in Students view;
+  - Student Detail links carry the selected snapshot id;
+  - manual Refresh changed browser-visible snapshot from `39347dd5…` to `f2ade38e…`;
+  - browser resource evidence shows only Moodle `/local/agentpoc/risk_ajax.php` Risk calls and no direct `:3000/api/risk` browser call;
+  - no Course Risk Level label and no causal wording introduced.
+- Real-browser synthetic rendering contract PASS for non-empty Risk findings:
+  - Activity `PERFORMANCE_PROBLEM` rendered;
+  - affected metric `3/5 (60%)` rendered;
+  - Common Competency Gap `3/5 (60%)` rendered;
+  - `Related Activity 72 ↔ Competency 1` plus overlap count rendered without causal claim;
+  - deterministic `P1 · REVIEW_PROBLEMATIC_ACTIVITY` surface rendered;
+  - incomplete Student context remains visible.
+- Browser screenshots captured under `.agent-work/ticket13-dashboard.png`, `.agent-work/ticket13-students.png`, and `.agent-work/ticket13-rendering-fixture.png` as local acceptance evidence.
+
+Design baseline:
+- `ai-platform-coordination/UI-design/AI-risk-page.png`
+- `ai-platform-coordination/UI-design/students-risk-page.png`
+
+
+## Ticket 14 Closure — Student Risk Detail & Evidence Journey
+
+Status: **CLOSED / REAL-BROWSER + SYNTHETIC EDGE-CASE VERIFIED**
+
+Implementation:
+- Added snapshot-scoped Moodle Course page `moodle/local_agentpoc/course/student_risk.php`, `templates/student_risk_detail.mustache`, and `amd/src/student_risk_detail.js` (+ AMD build artifact).
+- Page requires authorized Course access and active Student enrolment before rendering; Student identity is resolved only in Moodle.
+- Student Detail renders overall Risk/main drivers, four deterministic dimension cards, Expected vs Actual Progress/timeline compliance, Assessment Evidence, Competency Evidence, Submission History, Trend, Rule Trace, and normalized Evidence Journey.
+- Assessment presentation keeps `academic_status` and `performance_signal` separate: FAIL, LOW_SCORE concern, PENDING_GRADE, PASS, and NO_PASS_CRITERION are not collapsed into one average/label.
+- Competency presentation keeps `PROFICIENT`, `CONFIRMED_GAP`, `COMPETENCY_CONCERN`, `NOT_RATED`, and `REVIEW_PENDING` distinct; Review Pending is explicitly described as Teacher workflow/coverage rather than Student Risk.
+- Submission presentation distinguishes active `OVERDUE`, resolved `SUBMITTED_LATE`, `NOT_ATTEMPTED`, and `recovery_not_available`.
+- Rule Trace resolves `rule_hits[].evidence_refs[]` to frozen normalized evidence IDs and exposes separate `Open current Moodle` navigation links; historical snapshot values remain unchanged.
+- Historical view clearly warns when a newer current snapshot exists and states that current Moodle links may show newer source state.
+- LOW Student summary is a fixed deterministic template and does not invoke any AI narrative endpoint.
+
+Verification:
+- Plugin upgraded successfully to `v0.1.13 / 2026091006`; JS syntax check PASS and PHP lint PASS.
+- Fixed Moodle 5.1 developer-mode fullname contract: Student/BFF user records now include all Moodle name fields required by `fullname()` (`firstnamephonetic`, `lastnamephonetic`, `middlename`, `alternatename`).
+- Real Chrome browser acceptance for Course 20 / Student 4 PASS:
+  - current snapshot `f2ade38e-1516-486c-930b-51a645934a9b`, previous `39347dd5-f95e-4bfe-a800-c52fed70a005`;
+  - current overall Risk MEDIUM;
+  - exactly 4 dimension cards;
+  - 8 assessment rows, 1 competency row, 8 submission rows;
+  - 4 Rule Trace rows, 17 normalized evidence rows, and 26 evidence/current-source links;
+  - Expected vs Actual Progress and timeline compliance visible;
+  - Risk Trend visible as deterministic `INSUFFICIENT_HISTORY` for the current one-day canonical history window;
+  - current snapshot has no historical warning; previous snapshot shows historical warning while preserving 17 frozen evidence rows and current-source navigation;
+  - browser uses Moodle `/local/agentpoc/risk_ajax.php` and makes no direct `:3000/api/risk` request.
+- Synthetic HIGH browser contract PASS:
+  - distinct FAIL, LOW_SCORE and PENDING_GRADE states rendered;
+  - PROFICIENT, CONFIRMED_GAP, COMPETENCY_CONCERN, NOT_RATED and REVIEW_PENDING rendered separately;
+  - OVERDUE, SUBMITTED_LATE and Recovery-not-available rendered;
+  - WORSENING and MIXED trend states rendered;
+  - Rule Trace evidence links and Evidence Journey source links resolve.
+- Synthetic LOW browser zero-LLM contract PASS:
+  - deterministic LOW summary rendered;
+  - PASS / PROFICIENT / ON_TIME positive evidence rendered;
+  - empty material Rule Trace rendered correctly;
+  - exactly one browser Risk BFF request;
+  - zero direct AI/Insight requests observed.
+- Risk/API/DB regression after UI work: **64/64 PASS across 10 test files**, including 13 Trend tests preserving same-version daily canonicalization and model-version boundary reset.
+- Browser screenshots captured locally under `.agent-work/ticket14-student-current.png`, `.agent-work/ticket14-student-historical.png`, `.agent-work/ticket14-high-fixture.png`, and `.agent-work/ticket14-low-fixture.png`.
+
+Design baseline:
+- `ai-platform-coordination/UI-design/student-risk-detail.png`
+
+
+---
+
+## 2026-09-10 20:04 — Risk Tickets 07–11 & 15 — Formal Closure Revalidation
+
+**Status:** DONE / CLOSED
+
+### Summary
+
+Revalidated the previously implemented Risk Engine foundation against the current workspace and closed the coordination status debt for Tickets 07–11. Closed Ticket 15 after completing deterministic Teacher Action governance, evidence-grounded AI Insight validation, cache lifecycle, selective invalidation, Moodle BFF/UI integration, and real runtime state verification.
+
+### Ticket 07–11 closure evidence
+
+- Ticket 07 live Course 20 MCP→Moodle integration rerun with `MOODLE_INTEGRATION_TEST=1`: PASS. All factual Risk datasets returned through the intended plugin/MCP boundary and the Moodle layer remained free of Risk severity semantics.
+- MCP stdio smoke debt corrected from the stale 16-tool expectation to the actual 17 tools after adding `moodle_get_course_risk_evidence`; stdio discovery PASS.
+- Ticket 08 explicit shared contract gap closed with `packages/contracts/schemas/student-risk-result.v0.1.schema.json` plus Ajv validator/export. Actual LOW, MEDIUM, HIGH and INCOMPLETE evaluator outputs validate; INCOMPLETE→LOW invalid shape is rejected. Contract suite 5/5 PASS.
+- Tickets 08–11 focused revalidation: 50/50 PASS across Student Risk, Course aggregation, refresh lifecycle, trend/change comparison and PostgreSQL snapshot repository/migration tests.
+- Coordination tickets 07, 08, 09, 10 and 11 changed from OPEN to CLOSED only after the above current-build evidence.
+
+### Ticket 15 implementation / runtime evidence
+
+- Added deterministic Student/Course Action Catalogues with fixed P1 ACTIVE / P2 INVESTIGATE / P3 SUPPORT / P4 MONITOR bands. AI may not create actions or move them across deterministic bands.
+- Added minimized course-scoped pseudonymous Insight context; Student names/emails/phone/student number are never sent to the model.
+- Added `risk-insight-output.v0.1` structured schema and validator enforcing canonical Risk/Trend references, rule refs, evidence refs, eligible action codes/targets and priority bands.
+- Recoverable formatting/schema error receives at most one repair; grounding/policy/canonical violations receive no repair and immediately fall back to deterministic output.
+- Added `risk_insights` PostgreSQL persistence and migration `0014_add_risk_insights.sql` with VALID, STALE, REPAIRED, FALLBACK and BLOCKED lifecycle metadata.
+- Selective invalidation is part of successful snapshot publication transaction: Course material change stales the previous Course insight; Student material change stales only that Student insight. Failed refresh leaves valid insight cache untouched.
+- Full Ticket 15 focused regression: 78/78 PASS across 13 test files, including real PostgreSQL cache/invalidation integration.
+- Real Groq runtime after switching the Insight request to strict JSON schema produced a Course `VALID` Insight in one model call. MEDIUM Student output containing an unauthorized canonical Risk ref was blocked by the validator and rendered as deterministic `FALLBACK`; subsequent cache reads used zero model calls.
+- Real Moodle browser verified Course `VALID · cached`, Student `FALLBACK · cached`, no direct browser call to AI Platform, and deterministic Risk UI remained available on model failure.
+- Browser coverage matrix: 50% Course coverage rendered LIMITED semantics with evaluated-students qualification (`REPAIRED` fixture); 49% rendered `BLOCKED` with deterministic metrics still available.
+- Controlled Course 20 competency mutation produced real `MEDIUM → LOW`: previous Course/Student insight became `STALE`, current Student became LOW/PROFICIENT, historical Student remained MEDIUM/CONFIRMED_GAP, and LOW page made no `student_insight` request. Moodle fixture was restored to not-proficient baseline afterward.
+- PostgreSQL readback confirmed current Course insight and targeted stale reasons (`COURSE_MATERIAL_CHANGE`, `STUDENT_MATERIAL_CHANGE`).
+- Moodle plugin for Ticket 15 is `v0.1.14 / 2026091007`; PHP/JS syntax and Moodle upgrade passed.
+
+### Decisions / deviations
+
+- No frozen Risk architecture invariant changed.
+- The numeric LOW_SCORE ratio and Trend movement thresholds remain versioned implementation policy defaults, not retroactively claimed as frozen design decisions.
+- The existing Risk/Teacher Insight browser boundary remains Moodle BFF only.
+
+### Next Suggested Task
+
+`Ticket 16 — Moodle E2E Acceptance for Risk & Teacher Insight`
+
+---
+
+## 2026-09-10 20:50 +07:00 — Student Risk Scrutinize re-audit
+
+Status: AUDIT COMPLETE / REOPEN_REQUIRED; no production Risk code changes.
+
+- Read latest Risk tickets 07–16 and soc checkpoint, then traced with scoped Graphify AST graphs plus current source. No subagents and no LLM generation used.
+- Existing Risk Engine and Risk API regression: 71/71 PASS.
+- Isolated audit probes: 9 cases, 1 control PASS and 8 negative assertions FAIL, confirming 7 findings in `../ai-platform-coordination/student-risk-audit-2026-09-10.md`.
+- P1: unfinished Quiz classified as submitted; hidden assessments counted as overdue; missing student facts classified COMPLETE/LOW; historical snapshot Trend includes future/current-policy points; unsupported AI prose accepted as VALID.
+- P2: a parse-then-schema failure causes three model calls; action output can cross deterministic priority-band order.
+- Tickets 08, 10, 12, 15 reopened with concrete remediation. Ticket 16 remains OPEN. Earlier runtime evidence was preserved.
+- Audit artifacts: `.agent-work/student-risk-audit.probe.ts`, `.agent-work/student-risk-audit.config.ts`, `.agent-work/student-risk-audit-results.json`, `.agent-work/student-risk-existing-tests.json`, and scoped graphs under `.agent-work/student-risk-audit/`.
+- Graph health limitation: Risk Engine graph has 31 dangling endpoints and 17 relation-collapse candidates; source verification is the authority for findings. Graph extraction used zero LLM tokens.
+- No real student/course mutation, browser E2E, or production Risk implementation fix was performed in this audit.
+
+---
+
+
+---
+
+## 2026-09-10 21:38 +07:00 — Student Risk Scrutinize Remediation & Tickets 08/10/12/15/16 Closure
+
+**Status:** DONE — confirmed audit findings SR-01–SR-07 remediated; Risk frontier 07–16 CLOSED
+
+### Summary
+
+Remediated all seven findings from `ai-platform-coordination/student-risk-audit-2026-09-10.md`, promoted the negative cases into permanent regressions, re-ran Moodle/PostgreSQL/browser acceptance, and closed the Risk tickets that the Scrutinize audit had reopened. The original audit probe was not weakened or edited to obtain a pass.
+
+### Production changes
+
+- `packages/risk-engine/src/risk-evidence-normalizer.ts`
+  - Quiz submission evidence now requires Moodle attempt `state=finished` and non-null `finished_at`; `started_at` is never treated as submission proof.
+  - Hidden Quiz/Assignment activities are excluded from Assessment/Submission Risk applicability.
+  - Missing active-Student facts or missing whole applicable Quiz/Assignment objects produce explicit incomplete reasons instead of empty-success semantics.
+  - Progress completion-tracking applicability remains separate from assessment applicability.
+- `packages/risk-engine/src/risk-trend-engine.ts`
+  - Added shared `scopeRiskHistoryToSnapshot()` for selected snapshot publication/version scoping.
+- `apps/api/src/routes/risk-dashboard.ts`
+  - Historical Student Detail scopes compact history before deterministic Trend calculation.
+- `packages/risk-engine/src/risk-insight-service.ts`
+  - Student Insight uses the same historical cutoff.
+  - Added governance policy version `risk-insight-governance.v0.2`; pre-policy cache prose is suppressed and replaced by deterministic fallback/actions.
+- `packages/risk-engine/src/risk-insight-governance.ts`
+  - Material findings require non-empty authorized rule/evidence references and evidence linked to the cited deterministic rule.
+  - Model free prose is no longer rendered as authoritative Risk/causal narrative; summary/finding/action rationale are canonicalized from deterministic context.
+  - Parse/schema repair share one budget: initial + at most one repair.
+  - Action output is ordered deterministically P1→P4; model order is preserved only within one band.
+
+### Permanent regression coverage
+
+Added/expanded:
+- `packages/risk-engine/test/student-risk-audit-regressions.test.ts` — 11 tests, including unfinished Quiz `inprogress`, `overdue`, `abandoned`; previous finished attempt + unfinished retake; hidden activity applicability; PARTIAL missing student/object facts; history cutoff; AI grounding; repair budget; priority order.
+- `packages/risk-engine/test/risk-insight-history-scope.test.ts` — uncached Student Insight historical cutoff.
+- `apps/api/test/risk-history-snapshot-scope.test.ts` — historical Student Detail excludes newer same-version and newer-policy history.
+- `packages/risk-engine/test/risk-refresh-lifecycle.test.ts` — PARTIAL active-Student missing-facts publication with INCOMPLETE/null and zero evaluated denominator.
+- Updated legacy cache governance regression to expect `CACHED_GOVERNANCE_POLICY_OBSOLETE`.
+
+### Audit / automated verification
+
+- Auditor's unchanged negative oracle `.agent-work/student-risk-audit.probe.ts`: **9/9 PASS** after remediation (original audit result was 1/9 PASS).
+- Focused Risk/API/PostgreSQL closure suite: **94/94 PASS across 16 files**.
+- Final targeted audit/lifecycle/governance/history slice after explicit unfinished Quiz lifecycle expansion: **32/32 PASS**.
+- TypeScript typecheck PASS for contracts, agent-runtime, risk-engine, moodle-client, Moodle MCP server, and API.
+- Root workspace Vitest with `.env`: **667 PASS / 10 FAIL / 4 skipped**. The ten failures are all pre-existing Planning-only regressions in `chunked-planning.test.ts`, `course-planner.test.ts`, and `planning-domain-validator.test.ts`; no Risk test failed. Repository-wide suite is therefore not claimed globally green.
+
+### Moodle / PostgreSQL / browser verification
+
+- SR-01 live Moodle: temporary Quiz 72 / Quiz id 25 was closed in the past and given an `abandoned` Student 4 attempt with start time but no finish time. Moodle factual reader returned `PENDING`, `state=abandoned`, `finished_at=null`; production normalizer returned `OVERDUE`, `submitted_at=null`, Submission MEDIUM. Temporary attempt/deadline were removed/restored.
+- SR-02 live Moodle: Assignment 74 / Assignment id 24 was temporarily hidden with a past due date. Moodle factual reader still returned `NOT_ATTEMPTED`, but production normalizer created no Assessment/Submission negative evidence for the hidden activity; Submission remained LOW. Visibility/deadline were restored.
+- Post-restore readback confirmed Quiz 72 has no close date/no attempts and Assignment 74 is visible/no due date.
+- SR-04 actual PostgreSQL/API: historical snapshot `809e8fc9-f743-448d-9522-45dfcd63242f` excluded then-current `7db87ad6-4aeb-45e8-8697-6a90601fe026`; Trend version remained `risk-profile.v0.1` and leak count was 0.
+- Legacy Insight cache on `7db87ad6...` rendered `FALLBACK · cached`; old model prose was not rendered and deterministic P2→P3→P4 actions were shown through Moodle BFF only.
+- Post-remediation manual Refresh through the real Moodle Course page/BFF published current snapshot `4d6b9fef-4524-4f81-8366-ecb2814b7af1`; DB state records SUCCESS / MANUAL.
+- Current Student 4 browser view on `4d6b9fef...`: MEDIUM, CONFIRMED_GAP, deterministic Rule Trace, governed Insight VALID with deterministic grounded text, and no direct browser call to AI Platform.
+- Final browser workflow: Course Dashboard `4d6b9fef...` → Student Detail pinned to the same full UUID → current Moodle source `/mod/quiz/view.php?id=72`; browser remained Moodle-BFF-only.
+
+### Ticket disposition
+
+- Ticket 08: CLOSED after SR-01–03 remediation + live Moodle evidence.
+- Ticket 10: CLOSED after PARTIAL active-Student refresh/denominator acceptance.
+- Ticket 12: CLOSED after selected-snapshot/version Trend cutoff + actual PostgreSQL/API evidence.
+- Ticket 15: CLOSED after grounding, repair-budget, priority-order and cache-policy remediation + browser evidence.
+- Ticket 16: CLOSED after the above negative cases were added to the integrated acceptance and revalidated on the post-remediation runtime.
+
+### Decisions / limitations
+
+- No frozen Risk thresholds or architecture invariants changed.
+- `activity.visible` is the factual applicability signal currently available in `CourseRiskEvidence`; this remediation does not claim unmodeled per-user availability/group-assignment semantics.
+- Group submissions, deadline overrides, gradebook overrides, and refresh/insight race were explicitly not confirmed findings in the Scrutinize audit and are not claimed as separately proven runtime scenarios.
+- Separate Planning frontier failures remain outside the Risk closure and continue to be visible in the root test result.
+
+---
+
+---
+
+## 2026-09-10 22:15 +07:00 — Risk Empty-State UX + CS231-A0B63E 10-Student Mock Fixture
+
+**Status:** DONE / RUNTIME VERIFIED
+
+### Summary
+
+Fixed the valid zero-enrolment Course path so Risk refresh no longer fails with `CourseRiskAggregator requires at least one normalized student`. A Course with no active Students now publishes an empty Risk snapshot and the Teacher Dashboard presents an informational no-student state instead of an AI Platform outage. Seeded 10 deliberately varied mock Students into dedicated mock Course `CS231-A0B63E` (Course 23) and verified the resulting deterministic Risk distribution in the real Moodle browser.
+
+### Files Changed
+
+- `packages/risk-engine/src/course-risk-aggregator.ts`
+- `packages/risk-engine/test/course-risk-aggregation.test.ts`
+- `packages/risk-engine/test/risk-refresh-lifecycle.test.ts`
+- `moodle/local_agentpoc/amd/src/risk_dashboard.js`
+- `moodle/local_agentpoc/amd/build/risk_dashboard.min.js`
+- `moodle/local_agentpoc/version.php`
+- `.agent-work/seed-risk-mock-course23.php` (fixture-only seed)
+- `.agent-work/verify-empty-and-mock-risk-browser.mjs`
+- `.agent-work/verify-empty-refresh-browser.mjs`
+
+### Implementation Notes
+
+- `CourseRiskAggregator` now accepts zero normalized Students only when explicit `course_id` and `data_as_of` are supplied; it returns enrolled/evaluated/incomplete = `0/0/0`, evaluation coverage `null`, zero-denominator distributions, and no issues/actions.
+- `RiskRefreshService` already supplies Course identity explicitly, so zero-active-student evidence now publishes normally rather than recording a refresh failure.
+- Moodle Dashboard shows an `alert-info`: `No active students are enrolled in this course yet...`; Course AI Insight becomes `NOT APPLICABLE` and no Course Insight/model request is made for the empty Course.
+- Plugin version bumped to `2026091008 / v0.1.15`, synchronized to host/runtime Moodle, upgraded and cache-purged successfully.
+- Fixture Course `CS231-A0B63E` is Course 23. Ten `nologin` mock learner accounts were enrolled with Student role. The fixture uses Moodle user/enrol APIs and narrowly seeds module-owned Quiz grade / Assignment submission evidence in this dedicated mock Course only; production Risk acquisition still reads Moodle factual state through the normal plugin boundary.
+- Mock profiles intentionally cover strong/steady LOW, single-fail MEDIUM, multiple-fail HIGH, one/two-overdue MEDIUM, late-pattern MEDIUM, mixed HIGH, three-fail HIGH, and historical LOW_SCORE + pending Assignment grading LOW.
+
+### Tests / Validation
+
+- Zero-enrolment Course aggregate + refresh focused tests: **19/19 PASS**.
+- Live `CS231-BE4F33` (Course 16) refresh after fix: HTTP 200 `PUBLISHED`; current snapshot `f10e02a7-3b6b-44f1-8206-97273596b34f`, coverage `null`, last refresh `SUCCESS`.
+- Real browser manual Refresh for Course 16: snapshot changed, alert class `alert-info`, no service-error wording, Course Insight status `NOT APPLICABLE`.
+- `CS231-A0B63E` (Course 23) Risk refresh: HTTP 200 `PUBLISHED`, snapshot `12eac980-c2ac-4114-9c99-08235c339c09`, coverage `1.0`.
+- Course 23 browser Dashboard: Enrolled 10 / Evaluated 10 / Incomplete 0 / HIGH 3 / MEDIUM 4 / LOW 3; all ten mock names rendered through Moodle BFF and no browser-direct AI Platform Risk request observed.
+- Dimension distribution: Progress LOW 10; Competency LOW 10; Performance HIGH 3 / MEDIUM 1 / LOW 6; Submission MEDIUM 4 / LOW 6.
+- JavaScript syntax check PASS; Moodle plugin upgrade PASS; PHP version syntax PASS.
+
+### Decisions Made
+
+- Zero enrolment is a valid Course data state, not a Risk service failure and not Student incompleteness.
+- No AI Course Insight/model call is appropriate when the Course has zero active Students.
+
+### Known Limitations / Follow-up
+
+- The current 10-student fixture intentionally exercises Performance and Submission diversity; the dedicated Course currently has no Moodle competencies, so Competency remains LOW for all ten Students.
+
+---
+
+## 2026-09-10 — Risk UI Thai Localization
+
+- Localized the Teacher-facing Risk surface to Thai across Course Dashboard and Student Detail without changing deterministic contract identifiers.
+- Added Thai rendering for Risk levels, dimensions, Student states, trend states, metrics, action labels, Activity/Common Gap/Association labels, Rule Trace explanations, Evidence Journey table labels, loading/empty/fallback/stale/error states, snapshot/freshness labels, and Thai date/time rendering.
+- Added `moodle/local_agentpoc/lang/th/local_agentpoc.php` and changed Risk-specific strings in the English plugin pack to Thai so the Risk pages remain Thai even when the surrounding Moodle UI language is English. Non-Risk Course Builder strings were left unchanged.
+- `risk_ajax.php` now maps common Risk API 400/404 codes to Teacher-facing Thai messages instead of forwarding English upstream error prose.
+- Risk Insight user-facing canonical narrative is Thai. `RISK_INSIGHT_GOVERNANCE_POLICY_VERSION` advanced from `risk-insight-governance.v0.2` to `risk-insight-governance.v0.3`, so older cached English narratives are not rendered as current-policy text.
+- Moodle plugin version: `2026091009`, release `v0.1.16`; CLI upgrade and cache purge succeeded.
+- Browser acceptance on mock Course 23 (`CS231-A0B63E`) after a fresh refresh created snapshot `448b0671-13b7-4a61-b6be-4476e20967fc`. Dashboard retained distribution HIGH 3 / MEDIUM 4 / LOW 3 but rendered it as `สูง 3 · ปานกลาง 4 · ต่ำ 3`. Student 8 rendered HIGH as `สูง`, Thai Risk Summary, Trend, Dimension metrics, Assessment/Submission tables, Rule Trace, Evidence Journey, and a new governed Student Insight with Thai canonical narrative.
+- Empty Course 16 rendered a Thai informational empty-state and `ยังไม่ใช้ AI`; no misleading platform error. Missing-snapshot BFF request returned HTTP 404 with Thai message `ไม่พบสแนปช็อตความเสี่ยงที่ร้องขอสำหรับรายวิชานี้ กรุณารีเฟรชข้อมูลความเสี่ยงอีกครั้ง`.
+- Technical identifiers intentionally remain unchanged for traceability/audit compatibility: priority codes (`P1`–`P4`), `risk-profile.v0.1`, snapshot UUIDs, rule/evidence IDs, API codes and source entity references. These are identifiers rather than user-facing labels.
+- Verification: Risk focused regression `98/98 PASS` across 16 files; Risk Insight/governance/audit subset `24/24 PASS`; JavaScript syntax checks PASS; PHP syntax checks PASS for Risk BFF and Thai language file; browser Thai leak checks PASS after final `Denominator` cleanup.
+
+
+## Risk Dashboard UI Design Alignment — 2026-09-10
+
+Post-Ticket-16 presentation refinement using `ai-platform-coordination/UI-design/AI-risk-page.png` plus the full design screenshots supplied in-session as the visual source of truth.
+
+Changes are presentation-only; deterministic Risk contracts, snapshot semantics, Course aggregation, AI governance, and Moodle BFF boundaries are unchanged.
+
+- Moodle plugin bumped to `v0.1.17` / `2026091010`.
+- Replaced the flat Bootstrap-style Course Risk Overview with a dashboard hierarchy closer to the approved Design:
+  - gradient AI Learning Insight hero with freshness, snapshot chip, and Refresh action;
+  - compact pill view switch for Course Overview / Students;
+  - three primary summary cards for enrolled/evaluated/incomplete;
+  - dedicated student Risk distribution card with HIGH/MEDIUM/LOW segmented bar and legend;
+  - four visual Risk-dimension cards (Progress, Performance, Competency, Submission), each with icon, denominator, segmented distribution, and counts;
+  - highlighted AI Course Insight panel with narrative/action split layout and compact two-column deterministic action cards;
+  - two-column attention cards for Problematic Activities, Common Competency Gaps, Associations, and Teacher Actions;
+  - compact Student triage table with initials avatar, pill Risk badges, driver chips, and detail link;
+  - responsive layout for tablet/mobile.
+- Explicitly preserved the architecture invariant that the Course has **no canonical overall LOW/MEDIUM/HIGH Risk level**. The prominent overview visual is Student Risk distribution + evaluation coverage instead.
+- Browser acceptance on Course 23 (`CS231-A0B63E`) after redesign:
+  - snapshot `a58084de-d5f1-484b-b0ac-6c3078150f88`;
+  - enrolled 10 / evaluated 10 / coverage 100%;
+  - Student Risk distribution HIGH 3 / MEDIUM 4 / LOW 3;
+  - Course Insight status VALID (`พร้อมใช้งาน`);
+  - Student Detail drilldown remained operational;
+  - Thai UI leak scan remained clean.
+- `node --check moodle/local_agentpoc/amd/src/risk_dashboard.js`: PASS.
+- `git diff --check` for redesigned template/JS/CSS/version: PASS.
+
+
+## Risk AI Summary Force-Regenerate Test Control — 2026-09-10
+
+Added an explicitly test-only control for forcing AI Insight regeneration without refreshing deterministic Risk evidence.
+
+- Plugin release: `local_agentpoc v0.1.18` / `2026091011`.
+- New Moodle setting: `local_agentpoc/riskaitesttools`, default `0` (disabled). The current local POC environment is explicitly set to `1` for testing.
+- Teacher-facing button: `สร้าง AI Summary ใหม่ (ทดสอบ)`.
+  - Course Risk Overview: available in the shared Risk toolbar.
+  - Students view: same shared toolbar remains available.
+  - Student Risk Detail: available in the page header.
+- Security boundary: forced generation is browser -> Moodle BFF only. BFF requires `sesskey`, `local/agentpoc:manage`, `moodle/course:manageactivities`, active test flag, and active Student enrollment for Student regeneration. Service credentials remain server-side.
+- AI Platform endpoints:
+  - `POST /api/risk/courses/:courseId/insight/regenerate`
+  - `POST /api/risk/courses/:courseId/students/:studentId/insight/regenerate`
+- Semantics: `forceGenerate=true` bypasses only the snapshot-scoped Insight cache. It does **not** bypass deterministic Risk eligibility, evidence minimization, grounding validation, action governance, repair budget, or priority policy.
+- LOW / INCOMPLETE / blocked-coverage paths remain zero-LLM even when the test button is used.
+
+Verification:
+- Focused Risk Insight/API regression: `16/16 PASS` after adding force-regenerate route/service tests.
+- Broader Risk frontier regression after deployment: `32/32 PASS` across 5 executed focused files.
+- TypeScript typecheck: `packages/risk-engine` PASS; `apps/api` PASS.
+- Moodle PHP lint for changed BFF/settings/page/lang files: PASS.
+- JS syntax checks for Course Dashboard and Student Detail: PASS.
+- `git diff --check` on the changed Risk frontier: PASS (line-ending warning only for existing PHP working-copy normalization).
+- Browser/runtime, Course 23 snapshot `a58084de-d5f1-484b-b0ac-6c3078150f88`:
+  - Course Overview force button -> `Model calls: 1` and a fresh governed Course Insight.
+  - Students tab retains the same test control in the shared toolbar.
+  - HIGH Student 8 (Dan TwoFails) -> `Model calls: 1`; status changed from cached Insight to fresh `พร้อมใช้งาน`.
+  - LOW Student 5 (Ari Strong) -> `Model calls: 0` with explicit message that Risk policy does not permit AI for this state; deterministic LOW summary remains authoritative.
+
+This control is a POC testing aid and is intentionally disabled by default. It must not be treated as a production workflow for overriding Risk policy.

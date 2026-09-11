@@ -77,6 +77,7 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
   let clientTransport: InMemoryTransport;
   let serverTransport: InMemoryTransport;
   let mcpClientManager: McpClientManager;
+  let createdCourseFormat: string | undefined;
 
   beforeAll(async () => {
     mcpServer = new McpServer({
@@ -110,15 +111,19 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
           fullname: z.string(),
           shortname: z.string(),
           summary: z.string().optional(),
+          format: z.string().optional(),
         }),
       },
-      async (args) => ({
-        content: [{ type: "text", text: "Course created" }],
-        structuredContent: {
-          status: "success",
-          data: { course_id: 888, fullname: args.fullname, shortname: args.shortname, category_id: args.category_id },
-        },
-      })
+      async (args) => {
+        createdCourseFormat = args.format;
+        return {
+          content: [{ type: "text", text: "Course created" }],
+          structuredContent: {
+            status: "success",
+            data: { course_id: 888, fullname: args.fullname, shortname: args.shortname, category_id: args.category_id },
+          },
+        };
+      }
     );
 
     // moodle_create_section
@@ -335,6 +340,7 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
         status: "preview",
         approvedPlanId: planId,
         approvedRevision: 1,
+        syllabusMetadata: { course_format: "tiles" },
       } as PocRunRecord),
       updateStatus: vi.fn().mockImplementation(async (rId, status) => {
         runStatuses.push(status);
@@ -356,6 +362,7 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
         operation: "create",
         validationStatus: "valid",
         rawEnvelope: sampleCoursePlanEnvelope,
+        executionContext: { target: { category_id: 2 } },
       } as unknown as PocPlanRevisionRecord),
     } as unknown as PlanRepository;
 
@@ -409,6 +416,7 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
     expect(body.status).toBe("awaiting_verification"); // P11-D2
     expect(body.course_id).toBe(888);
     expect(body.course_shortname).toMatch(/^APIT101-[A-F0-9]{6}$/);
+    expect(createdCourseFormat).toBe("tiles");
     expect(body.course_url).toBe("http://localhost:8000/course/view.php?id=888");
     expect(body.created_entities).toEqual({
       courses: 1,

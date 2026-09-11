@@ -1,0 +1,34 @@
+{
+  "risk_model_version": "risk-profile.v0.1",
+  "progress": {
+    "medium_gap_pp": 10,
+    "high_gap_pp": 25,
+    "minimum_expected_activity_guard": 3,
+    "timeline_compliance_medium_floor": 0.5
+  },
+  "performance": {
+    "recent_window": 3,
+    "recent_fail_medium": 1,
+    "recent_fail_high": 2,
+    "recent_low_score_medium": 2,
+    "recent_low_score_high": 3,
+    "persistent_min_evaluable": 5,
+    "persistent_fail_high": 3,
+    "persistent_low_score_min_count": 3,
+    "persistent_low_score_rate_medium": 0.5,
+    "low_score_ratio_threshold": 0.6
+  },
+  "competency": {
+    "medium_confirmed_gap_count": 1,
+    "high_confirmed_gap_count": 3,
+    "high_confirmed_gap_rate": 0.4,
+    "high_min_rated_expected": 5
+  },
+  "submission": {
+    "late_medium_min": 2,
+    "late_high_min": 4,
+    "overdue_medium_min": 1,
+    "overdue_high_min": 4,
+    "combine_medium_late_and_overdue_to_high": true
+  }
+}

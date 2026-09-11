@@ -159,6 +159,10 @@ export function registerQuizTools(server: McpServer, moodleClient: MoodleClient)
           qtype: q.qtype,
           question_text: q.questionText,
           default_mark: q.defaultMark,
+          ...(q.generalFeedback !== undefined ? { general_feedback: q.generalFeedback } : {}),
+          ...(q.correctAnswer !== undefined ? { correct_answer: q.correctAnswer } : {}),
+          ...(q.caseSensitive !== undefined ? { case_sensitive: q.caseSensitive } : {}),
+          ...(q.gradingGuidance !== undefined ? { grading_guidance: q.gradingGuidance } : {}),
           answers: q.answers.map((a) => ({
             id: a.id,
             text: a.text,

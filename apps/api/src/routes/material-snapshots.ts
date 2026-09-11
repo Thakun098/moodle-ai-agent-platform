@@ -65,6 +65,28 @@ function snapshotContentSignature(snapshot: MaterialSnapshot): string {
   })).sort((left, right) => left.sha256.localeCompare(right.sha256)));
 }
 
+function resourceTitleFromFilename(filename: string): string {
+  const lastDot = filename.lastIndexOf(".");
+  return (lastDot > 0 ? filename.slice(0, lastDot) : filename).trim();
+}
+
+function plannedResources(snapshot: MaterialSnapshot) {
+  return snapshot.files
+    .filter((file) => file.publishToCourse && file.extractionStatus === "success")
+    .map((file, index) => ({
+      ref: `resource-${String(snapshot.sectionRef).replace(/[^a-z0-9]+/giu, "-")}-${String(index + 1).padStart(2, "0")}`,
+      type: "resource" as const,
+      title: resourceTitleFromFilename(file.filename),
+      filename: file.filename,
+      moodle_material_id: file.moodleMaterialId,
+      source_run_id: snapshot.runId,
+      source_structure_revision: snapshot.structureRevision,
+      source_section_ref: snapshot.sectionRef,
+      source_material_revision: snapshot.revision,
+      source_refs: [{ source: file.filename, section: snapshot.sectionRef }],
+    }));
+}
+
 export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOptions> = async (fastify, options) => {
   const getRunRepo = () => options.runRepo ?? new RunRepository(getDatabase());
   const getSnapshotRepo = () => options.snapshotRepo ?? new MaterialSnapshotRepository(getDatabase());
@@ -156,7 +178,7 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
       if (latest) {
         const current = toMaterialSnapshot(latest);
         if (current.normalizedTextHash === snapshot.normalizedTextHash && snapshotContentSignature(current) === snapshotContentSignature(snapshot)) {
-          reply.send({ run_id: runId, section_ref: sectionRef, snapshot: { ...serializeSnapshot(current), persisted_id: current.id, reused: true } });
+          reply.send({ run_id: runId, section_ref: sectionRef, snapshot: { ...serializeSnapshot(current), persisted_id: current.id, reused: true }, planned_resources: plannedResources(current) });
           return;
         }
       }
@@ -175,7 +197,7 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
         createdAt: snapshot.createdAt,
       });
       await getActivityIntentRepo().markStaleForSection(runId, structureRevision, sectionRef);
-      reply.status(201).send({ run_id: runId, section_ref: sectionRef, snapshot: { ...serializeSnapshot(snapshot), persisted_id: record.id } });
+      reply.status(201).send({ run_id: runId, section_ref: sectionRef, snapshot: { ...serializeSnapshot(snapshot), persisted_id: record.id }, planned_resources: plannedResources(snapshot) });
     },
   );
 };

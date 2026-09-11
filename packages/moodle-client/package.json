@@ -15,5 +15,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run test/moodle-client.test.ts",
     "test:integration": "vitest run test/moodle-client.integration.test.ts"
+  },
+  "dependencies": {
+    "@moodle-agent-poc/contracts": "workspace:*"
   }
 }

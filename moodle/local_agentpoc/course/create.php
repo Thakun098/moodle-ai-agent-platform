@@ -25,6 +25,8 @@
 require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->dirroot . '/course/lib.php');
 
+use local_agentpoc\external\list_course_formats;
+
 require_login();
 require_capability('local/agentpoc:createcoursewithai', \context_system::instance());
 
@@ -47,10 +49,13 @@ foreach ($categoriesraw as $catid => $catname) {
         'name' => $catname,
     ];
 }
+$formats = list_course_formats::execute();
 
 $templatecontext = [
     'has_categories' => !empty($categories),
+    'has_formats' => !empty($formats),
     'categories' => $categories,
+    'formats' => $formats,
     'sesskey' => sesskey(),
     'ajaxurl' => (new \moodle_url('/local/agentpoc/ajax.php'))->out(false),
     'mycoursesurl' => (new \moodle_url('/my/courses.php'))->out(false),

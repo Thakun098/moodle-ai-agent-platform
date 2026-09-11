@@ -224,7 +224,12 @@ export function registerQuestionTools(server: McpServer, moodleClient: MoodleCli
           };
         }
 
-        const res = await moodleClient.updateQuizQuestion(params);
+        const res = await moodleClient.updateQuizQuestion({
+          ...params,
+          ...(args.activity_id !== undefined ? { activityId: args.activity_id } : {}),
+          ...(args.max_mark !== undefined ? { maxMark: args.max_mark } : {}),
+          ...(args.expected_version !== undefined ? { expectedVersion: args.expected_version } : {}),
+        });
 
         const data: MoodleUpdatedQuestionMcpData = {
           question_bank_entry_id: res.questionBankEntryId,

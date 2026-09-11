@@ -15,6 +15,7 @@ export interface AppConfig {
   readonly unslothBaseUrl?: string;
   readonly moodleBaseUrl?: string;
   readonly moodleToken?: string;
+  readonly riskServiceKey?: string;
   readonly mcpServerCommand?: string;
   readonly mcpServerArgs?: readonly string[];
   readonly agentMaxSteps: number;
@@ -119,6 +120,7 @@ export function loadConfig(
 
   const moodleBaseUrl = parseOptionalNonEmptyString(env.MOODLE_BASE_URL);
   const moodleToken = parseOptionalNonEmptyString(env.MOODLE_TOKEN);
+  const riskServiceKey = parseOptionalNonEmptyString(env.RISK_SERVICE_KEY);
   const mcpServerCommand = parseOptionalNonEmptyString(env.MCP_SERVER_COMMAND);
   const mcpServerArgs = parseMcpServerArgs(env.MCP_SERVER_ARGS);
 
@@ -174,6 +176,7 @@ export function loadConfig(
     ...(unslothBaseUrl ? { unslothBaseUrl } : {}),
     ...(moodleBaseUrl ? { moodleBaseUrl } : {}),
     ...(moodleToken ? { moodleToken } : {}),
+    ...(riskServiceKey ? { riskServiceKey } : {}),
     ...(mcpServerCommand ? { mcpServerCommand } : {}),
     ...(mcpServerArgs ? { mcpServerArgs } : {}),
     agentMaxSteps,

@@ -1,0 +1,29 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://moodle-agent-poc.local/schemas/student-risk-result.v0.1.schema.json",
+  "title":"StudentRiskResult v0.1",
+  "type":"object","additionalProperties":false,
+  "required":["student_id","course_id","evaluation_status","overall_risk","dimensions","rule_hits","evidence","data_as_of","risk_model_version","incomplete_reasons"],
+  "properties":{
+    "student_id":{"type":"integer","minimum":1},"course_id":{"type":"integer","minimum":1},
+    "evaluation_status":{"enum":["COMPLETE","INCOMPLETE"]},
+    "overall_risk":{"type":["string","null"],"enum":["LOW","MEDIUM","HIGH",null]},
+    "dimensions":{"type":"object","additionalProperties":false,"required":["progress","performance","competency","submission"],"properties":{"progress":{"$ref":"#/$defs/dimension"},"performance":{"$ref":"#/$defs/dimension"},"competency":{"$ref":"#/$defs/dimension"},"submission":{"$ref":"#/$defs/dimension"}}},
+    "rule_hits":{"type":"array","items":{"$ref":"#/$defs/ruleHit"}},
+    "evidence":{"type":"array","items":{"$ref":"#/$defs/evidence"}},
+    "data_as_of":{"type":"integer","minimum":0},"risk_model_version":{"const":"risk-profile.v0.1"},
+    "incomplete_reasons":{"type":"array","items":{"type":"string"}}
+  },
+  "allOf":[
+    {"if":{"properties":{"evaluation_status":{"const":"INCOMPLETE"}},"required":["evaluation_status"]},"then":{"properties":{"overall_risk":{"type":"null"}}}},
+    {"if":{"properties":{"evaluation_status":{"const":"COMPLETE"}},"required":["evaluation_status"]},"then":{"properties":{"overall_risk":{"enum":["LOW","MEDIUM","HIGH"]}}}}
+  ],
+  "$defs":{
+    "riskLevel":{"enum":["LOW","MEDIUM","HIGH"]},
+    "dimensionName":{"enum":["PROGRESS","PERFORMANCE","COMPETENCY","SUBMISSION"]},
+    "sourceRef":{"type":"object","additionalProperties":false,"required":["source","component","entity_type","entity_id","course_id"],"properties":{"source":{"const":"moodle"},"component":{"type":"string","minLength":1},"entity_type":{"type":"string","minLength":1},"entity_id":{"type":"string","minLength":1},"course_id":{"type":"integer","minimum":1},"activity_id":{"type":"integer","minimum":1},"student_id":{"type":"integer","minimum":1}}},
+    "ruleHit":{"type":"object","additionalProperties":false,"required":["rule_id","dimension","resulting_level","evidence_refs","message"],"properties":{"rule_id":{"type":"string","minLength":1},"dimension":{"$ref":"#/$defs/dimensionName"},"resulting_level":{"$ref":"#/$defs/riskLevel"},"evidence_refs":{"type":"array","items":{"type":"string","minLength":1}},"message":{"type":"string"}}},
+    "dimension":{"type":"object","additionalProperties":false,"required":["dimension","risk_level","rule_hits","metrics","evidence_refs"],"properties":{"dimension":{"$ref":"#/$defs/dimensionName"},"risk_level":{"$ref":"#/$defs/riskLevel"},"rule_hits":{"type":"array","items":{"$ref":"#/$defs/ruleHit"}},"metrics":{"type":"object","additionalProperties":{"type":["number","null"]}},"evidence_refs":{"type":"array","items":{"type":"string"}}}},
+    "evidence":{"type":"object","additionalProperties":false,"required":["evidence_id","student_id","kind","observed_state","observed_value","observed_at","source_ref","evidence_hash"],"properties":{"evidence_id":{"type":"string","minLength":1},"student_id":{"type":"integer","minimum":1},"kind":{"type":"string","minLength":1},"observed_state":{"type":"string"},"observed_value":{"type":["number","string","boolean","null"]},"observed_at":{"type":"integer","minimum":0},"activity_id":{"type":"integer","minimum":1},"competency_id":{"type":"integer","minimum":1},"source_ref":{"$ref":"#/$defs/sourceRef"},"evidence_hash":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}
+  }
+}

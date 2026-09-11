@@ -91,6 +91,7 @@ export const quizRoutes: FastifyPluginAsync<QuizRoutesOptions> = async (fastify,
       const activityId = await resolveQuizActivityId(manager, target);
       const observed = await readQuizState(manager, activityId);
       const envelope = await getPlanner().planQuizUpdate({
+        executionTarget: target,
         input: {
           current: toExistingQuizState(observed.quiz, observed.questions),
           instruction: body.instruction.trim(),

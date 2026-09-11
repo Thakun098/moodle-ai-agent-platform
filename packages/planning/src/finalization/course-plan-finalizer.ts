@@ -1,6 +1,7 @@
 import {
   validatePlanningContract,
   type ActivityPlan,
+  type FileResourcePlan,
   type CoursePlanEnvelope,
   type NormalizedSyllabus,
   type SectionPlan,
@@ -55,6 +56,7 @@ export interface AssembleFinalCoursePlanParams {
   materialSourcesBySection?: ReadonlyMap<string, readonly SourceReference[]>;
   /** ADR-0002 path: post-seal Teacher-Authorized Activity Intents. */
   selectedActivitiesBySection?: ReadonlyMap<string, readonly FinalizationSelectedActivity[]>;
+  resourcesBySection?: ReadonlyMap<string, readonly FileResourcePlan[]>;
   syllabus?: NormalizedSyllabus;
 }
 
@@ -86,6 +88,7 @@ function assembleOptionalActivitySections(
         summary: section.summary,
         source_refs: section.source_refs,
         activities: [],
+        ...(params.resourcesBySection?.has(section.ref) ? { resources: [...(params.resourcesBySection.get(section.ref) ?? [])] } : {}),
       };
     }
 
@@ -135,6 +138,7 @@ function assembleOptionalActivitySections(
       summary: section.summary,
       source_refs: section.source_refs,
       activities,
+      ...(params.resourcesBySection?.has(section.ref) ? { resources: [...(params.resourcesBySection.get(section.ref) ?? [])] } : {}),
     };
   }) as CoursePlanEnvelope["content"]["sections"];
 
@@ -146,7 +150,7 @@ function assembleLegacySections(params: AssembleFinalCoursePlanParams): CoursePl
   return params.structure.content.sections.map((section) => {
     const drafts = draftsBySection.get(section.ref) ?? [];
     if (section.activity_intents.length === 0) {
-      return { ref: section.ref, position: section.position, title: section.title, summary: section.summary, source_refs: section.source_refs, activities: [] };
+      return { ref: section.ref, position: section.position, title: section.title, summary: section.summary, source_refs: section.source_refs, activities: [], ...(params.resourcesBySection?.has(section.ref) ? { resources: [...(params.resourcesBySection.get(section.ref) ?? [])] } : {}) };
     }
     if (drafts.length !== section.activity_intents.length) {
       throw new PlanningError("COURSE_NOT_READY_FOR_FINALIZATION", `Section "${section.ref}" is not ready for finalization: expected ${section.activity_intents.length} activity drafts, found ${drafts.length}.`);
@@ -185,7 +189,7 @@ function assembleLegacySections(params: AssembleFinalCoursePlanParams): CoursePl
         throw new PlanningError("PLAN_DOMAIN_INVALID", `Activity provenance is outside the current MaterialSnapshot for section "${section.ref}".`, provenanceViolations);
       }
     }
-    return { ref: section.ref, position: section.position, title: section.title, summary: section.summary, source_refs: section.source_refs, activities };
+    return { ref: section.ref, position: section.position, title: section.title, summary: section.summary, source_refs: section.source_refs, activities, ...(params.resourcesBySection?.has(section.ref) ? { resources: [...(params.resourcesBySection.get(section.ref) ?? [])] } : {}) };
   }) as CoursePlanEnvelope["content"]["sections"];
 }
 

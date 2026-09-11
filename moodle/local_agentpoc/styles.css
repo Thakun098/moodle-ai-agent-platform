@@ -1,0 +1,747 @@
+.agentpoc-risk-page {
+    --agentpoc-risk-border: #dee2e6;
+}
+
+.agentpoc-risk-page .agentpoc-risk-section {
+    scroll-margin-top: 1rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat,
+.agentpoc-risk-page .card {
+    border-color: var(--agentpoc-risk-border);
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.04);
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat .h4 {
+    line-height: 1.2;
+}
+
+.agentpoc-risk-page .agentpoc-risk-item:first-child {
+    border-top: 0 !important;
+}
+
+.agentpoc-risk-page .agentpoc-risk-search {
+    width: min(100%, 320px);
+}
+
+.agentpoc-risk-page .agentpoc-risk-table th {
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    color: #495057;
+}
+
+.agentpoc-risk-page .agentpoc-risk-table td {
+    vertical-align: middle;
+}
+
+.agentpoc-risk-page .badge.bg-warning {
+    color: #212529;
+}
+
+.agentpoc-risk-page .nav-tabs .nav-link {
+    font-weight: 600;
+}
+
+.agentpoc-risk-page .agentpoc-risk-loading {
+    min-height: 240px;
+}
+
+.agentpoc-student-risk-page code {
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+}
+
+.agentpoc-student-risk-page .card {
+    overflow: hidden;
+}
+
+.agentpoc-student-risk-page .table td,
+.agentpoc-student-risk-page .table th {
+    vertical-align: middle;
+}
+
+.agentpoc-student-risk-page #agentpoc-student-risk-level .badge {
+    font-size: 1rem;
+    padding: 0.5rem 0.75rem;
+}
+
+
+/* Risk Dashboard visual refresh — aligned to coordination/UI-design/AI-risk-page.png. */
+.agentpoc-risk-page {
+    --agentpoc-risk-bg: #f6f8fc;
+    --agentpoc-risk-card: #ffffff;
+    --agentpoc-risk-text: #172033;
+    --agentpoc-risk-muted: #6f7890;
+    --agentpoc-risk-line: #e7ebf2;
+    --agentpoc-risk-primary: #3157d5;
+    --agentpoc-risk-primary-soft: #eef2ff;
+    --agentpoc-risk-high: #dc4254;
+    --agentpoc-risk-high-soft: #fff0f2;
+    --agentpoc-risk-medium: #e9a21a;
+    --agentpoc-risk-medium-soft: #fff7e5;
+    --agentpoc-risk-low: #2ca66f;
+    --agentpoc-risk-low-soft: #eaf8f1;
+    --agentpoc-risk-info: #4c76e8;
+    color: var(--agentpoc-risk-text);
+    background: var(--agentpoc-risk-bg);
+    border-radius: 18px;
+    padding: 22px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    background: linear-gradient(135deg, #182d72 0%, #3157d5 62%, #5e74df 100%);
+    border-radius: 18px;
+    padding: 24px 26px;
+    box-shadow: 0 16px 36px rgba(35, 57, 127, 0.18);
+    color: #fff;
+}
+
+.agentpoc-risk-page .agentpoc-risk-hero-main {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 16px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-hero-icon,
+.agentpoc-risk-page .agentpoc-risk-insight-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
+.agentpoc-risk-page .agentpoc-risk-hero-icon {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    font-size: 1.25rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-eyebrow,
+.agentpoc-risk-page .agentpoc-risk-section-kicker {
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.agentpoc-risk-page .agentpoc-risk-eyebrow {
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 3px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-title {
+    color: #fff;
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.agentpoc-risk-page .agentpoc-risk-subtitle {
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.84rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-hero-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.agentpoc-risk-page .agentpoc-risk-snapshot-chip {
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border-radius: 999px;
+    padding: 7px 11px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.agentpoc-risk-page .agentpoc-risk-refresh-btn {
+    border: 0;
+    border-radius: 10px;
+    background: #fff;
+    color: #2748ba;
+    font-weight: 700;
+    padding: 9px 14px;
+    box-shadow: 0 6px 18px rgba(17, 31, 74, 0.14);
+}
+
+.agentpoc-risk-page .agentpoc-risk-refresh-btn:hover,
+.agentpoc-risk-page .agentpoc-risk-refresh-btn:focus {
+    background: #f4f6ff;
+    color: #1e3ca9;
+}
+
+.agentpoc-risk-page .agentpoc-risk-view-switch {
+    display: inline-flex;
+    gap: 4px;
+    background: #e9edf5;
+    padding: 4px;
+    border-radius: 11px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-view-button {
+    border: 0;
+    color: #6a7387;
+    background: transparent;
+    padding: 8px 15px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.agentpoc-risk-page .agentpoc-risk-view-button.active {
+    background: #fff;
+    color: #294cc5;
+    box-shadow: 0 2px 8px rgba(43, 60, 105, 0.1);
+}
+
+.agentpoc-risk-page .agentpoc-risk-alert {
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 8px 20px rgba(51, 65, 99, 0.08);
+}
+
+.agentpoc-risk-page .agentpoc-risk-section {
+    scroll-margin-top: 1rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-section-heading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 16px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-section-kicker {
+    color: #8290ad;
+    margin-bottom: 4px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-section-title {
+    margin: 0;
+    color: #1c2740;
+    font-size: 1.16rem;
+    font-weight: 700;
+}
+
+.agentpoc-risk-page .agentpoc-risk-section-description {
+    color: var(--agentpoc-risk-muted);
+    font-size: 0.83rem;
+    margin-top: 4px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-coverage-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #fff;
+    color: #48546c;
+    border: 1px solid var(--agentpoc-risk-line);
+    padding: 7px 11px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat-card,
+.agentpoc-risk-page .agentpoc-risk-dimension-card,
+.agentpoc-risk-page .agentpoc-risk-content-card,
+.agentpoc-risk-page .agentpoc-risk-insight-card {
+    border: 1px solid var(--agentpoc-risk-line);
+    background: var(--agentpoc-risk-card);
+    border-radius: 15px;
+    box-shadow: 0 8px 24px rgba(33, 48, 85, 0.055);
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat-card {
+    min-height: 132px;
+    padding: 17px 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #3556c8;
+    background: var(--agentpoc-risk-primary-soft);
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat-label {
+    color: #768198;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat-value {
+    color: #1c2740;
+    font-size: 1.72rem;
+    line-height: 1;
+    font-weight: 750;
+    margin: 11px 0 6px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-stat-foot {
+    color: #8b95a8;
+    font-size: 0.75rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-distribution-card {
+    padding: 17px 18px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-distribution-head,
+.agentpoc-risk-page .agentpoc-risk-dimension-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-distribution-total {
+    color: #667188;
+    font-size: 0.76rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-segmented-bar {
+    display: flex;
+    overflow: hidden;
+    width: 100%;
+    height: 9px;
+    border-radius: 999px;
+    background: #edf0f5;
+    margin: 15px 0 13px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-segmented-bar > span {
+    min-width: 0;
+    transition: width 0.25s ease;
+}
+
+.agentpoc-risk-page .agentpoc-risk-segment-high { background: var(--agentpoc-risk-high); }
+.agentpoc-risk-page .agentpoc-risk-segment-medium { background: var(--agentpoc-risk-medium); }
+.agentpoc-risk-page .agentpoc-risk-segment-low { background: var(--agentpoc-risk-low); }
+
+.agentpoc-risk-page .agentpoc-risk-legend {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 9px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #69758c;
+    font-size: 0.75rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-legend-item strong {
+    color: #1f2b45;
+    margin-left: auto;
+    font-size: 0.84rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: 0 0 7px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-dot.high { background: var(--agentpoc-risk-high); }
+.agentpoc-risk-page .agentpoc-risk-dot.medium { background: var(--agentpoc-risk-medium); }
+.agentpoc-risk-page .agentpoc-risk-dot.low { background: var(--agentpoc-risk-low); }
+
+.agentpoc-risk-page .agentpoc-risk-dimension-card {
+    padding: 16px 16px 14px;
+    min-height: 154px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-dimension-name {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: #23304c;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.agentpoc-risk-page .agentpoc-risk-dimension-icon {
+    width: 31px;
+    height: 31px;
+    border-radius: 9px;
+    background: #f1f4fa;
+    color: #52627f;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.agentpoc-risk-page .agentpoc-risk-denominator {
+    color: #8a94a8;
+    font-size: 0.7rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-card {
+    overflow: hidden;
+    border-color: #dfe4fb;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    background: linear-gradient(90deg, #f3f5ff 0%, #fafbff 100%);
+    border-bottom: 1px solid #e6e9fb;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    color: #4a58c5;
+    background: #e7eafe;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-body {
+    padding: 17px 18px;
+    color: #525e75;
+    font-size: 0.84rem;
+    line-height: 1.65;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-body p:last-child {
+    margin-bottom: 0;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-action {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 11px;
+    padding: 11px 0;
+    border-top: 1px solid #edf0f6;
+}
+
+.agentpoc-risk-page .agentpoc-risk-priority-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 24px;
+    border-radius: 7px;
+    background: #eef1fb;
+    color: #4355be;
+    font-size: 0.69rem;
+    font-weight: 800;
+}
+
+.agentpoc-risk-page .agentpoc-risk-content-card {
+    padding: 17px 18px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-card-heading {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 8px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-card-heading h4 {
+    color: #26324d;
+    font-size: 0.92rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.agentpoc-risk-page .agentpoc-risk-card-heading small {
+    display: block;
+    margin-top: 1px;
+    color: #8b94a7;
+    font-size: 0.71rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-card-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    flex: 0 0 34px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-card-icon.danger { color: #c6384b; background: var(--agentpoc-risk-high-soft); }
+.agentpoc-risk-page .agentpoc-risk-card-icon.warning { color: #b67808; background: var(--agentpoc-risk-medium-soft); }
+.agentpoc-risk-page .agentpoc-risk-card-icon.info { color: #3e61c9; background: #eef3ff; }
+.agentpoc-risk-page .agentpoc-risk-card-icon.success { color: #26875e; background: var(--agentpoc-risk-low-soft); }
+
+.agentpoc-risk-page .agentpoc-risk-item {
+    border-top: 1px solid #eef1f6 !important;
+    padding: 11px 0 !important;
+}
+
+.agentpoc-risk-page .agentpoc-risk-item strong {
+    color: #2c3852;
+    font-size: 0.82rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-item .small {
+    color: #7b8599 !important;
+    font-size: 0.73rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-secondary-btn {
+    border: 1px solid #d9deea;
+    background: #fff;
+    color: #40506f;
+    border-radius: 9px;
+    font-weight: 600;
+    padding: 7px 11px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-secondary-btn:hover {
+    background: #f6f8fc;
+    color: #294cc5;
+}
+
+.agentpoc-risk-page .agentpoc-risk-table {
+    margin: 0;
+}
+
+.agentpoc-risk-page .agentpoc-risk-table thead th {
+    border-top: 0;
+    border-bottom: 1px solid #e8ecf3;
+    background: #f9fafc;
+    color: #7a8498;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: none;
+    padding: 11px 13px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-table tbody td {
+    border-top: 1px solid #eef1f5;
+    padding: 12px 13px;
+    color: #44506a;
+    font-size: 0.8rem;
+}
+
+.agentpoc-risk-page .agentpoc-risk-student-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 170px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #edf1fc;
+    color: #3e55b7;
+    font-size: 0.7rem;
+    font-weight: 800;
+    flex: 0 0 32px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-student-name {
+    color: #273653;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.agentpoc-risk-page .agentpoc-risk-student-name:hover {
+    color: #3157d5;
+    text-decoration: underline;
+}
+
+.agentpoc-risk-page .agentpoc-risk-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 0.69rem;
+    line-height: 1;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.agentpoc-risk-page .agentpoc-risk-pill.high { color: #bb3144; background: var(--agentpoc-risk-high-soft); }
+.agentpoc-risk-page .agentpoc-risk-pill.medium { color: #9d6800; background: var(--agentpoc-risk-medium-soft); }
+.agentpoc-risk-page .agentpoc-risk-pill.low { color: #237d58; background: var(--agentpoc-risk-low-soft); }
+.agentpoc-risk-page .agentpoc-risk-pill.incomplete { color: #647087; background: #edf0f5; }
+
+.agentpoc-risk-page .agentpoc-risk-driver-chip {
+    display: inline-flex;
+    border-radius: 6px;
+    padding: 3px 6px;
+    margin: 1px 3px 1px 0;
+    background: #f1f3f7;
+    color: #5a657b;
+    font-size: 0.67rem;
+    white-space: nowrap;
+}
+
+.agentpoc-risk-page .agentpoc-risk-detail-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #3157d5;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.agentpoc-risk-page .agentpoc-risk-detail-link:hover {
+    color: #213fbd;
+    text-decoration: underline;
+}
+
+.agentpoc-risk-page .agentpoc-risk-search .input-group-text,
+.agentpoc-risk-page .agentpoc-risk-search .form-control {
+    background: #fff;
+    border-color: #dfe4ed;
+}
+
+.agentpoc-risk-page .agentpoc-risk-search .input-group-text {
+    border-radius: 10px 0 0 10px;
+    color: #8993a6;
+}
+
+.agentpoc-risk-page .agentpoc-risk-search .form-control {
+    border-radius: 0 10px 10px 0;
+    min-height: 40px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-loading {
+    min-height: 240px;
+    color: #68748d;
+}
+
+@media (max-width: 767.98px) {
+    .agentpoc-risk-page {
+        padding: 14px;
+        border-radius: 12px;
+    }
+
+    .agentpoc-risk-page .agentpoc-risk-hero,
+    .agentpoc-risk-page .agentpoc-risk-section-heading,
+    .agentpoc-risk-page .agentpoc-risk-insight-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .agentpoc-risk-page .agentpoc-risk-hero {
+        padding: 19px;
+    }
+
+    .agentpoc-risk-page .agentpoc-risk-hero-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .agentpoc-risk-page .agentpoc-risk-title {
+        font-size: 1.35rem;
+    }
+
+    .agentpoc-risk-page .agentpoc-risk-view-switch {
+        width: 100%;
+    }
+
+    .agentpoc-risk-page .agentpoc-risk-view-button {
+        flex: 1 1 0;
+    }
+
+    .agentpoc-risk-page .agentpoc-risk-search {
+        width: 100%;
+    }
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-label {
+    color: #7b86a0;
+    font-size: 0.69rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-action {
+    border: 1px solid #e7eaf4;
+    background: #fbfcff;
+    border-radius: 10px;
+    padding: 9px 10px;
+    min-height: 67px;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-action strong {
+    display: block;
+    color: #2d3954;
+    font-size: 0.76rem;
+    line-height: 1.3;
+}
+
+.agentpoc-risk-page .agentpoc-risk-insight-action .small {
+    margin-top: 3px;
+    font-size: 0.67rem;
+    line-height: 1.35;
+}
+
+@media (max-width: 991.98px) {
+    .agentpoc-risk-page .agentpoc-risk-insight-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .agentpoc-risk-page .agentpoc-risk-insight-actions-grid {
+        grid-template-columns: 1fr;
+    }
+}

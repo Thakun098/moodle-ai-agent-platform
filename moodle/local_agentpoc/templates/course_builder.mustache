@@ -46,6 +46,19 @@
     <div id="step-view-upload" class="step-view card shadow-sm mb-4">
         <div class="card-body p-4">
             <div class="form-group mb-4">
+                <label for="course-format-select" class="font-weight-bold">
+                    Moodle Course Format <span class="text-danger">*</span>
+                </label>
+                <select id="course-format-select" class="custom-select form-control" required>
+                    <option value="" selected disabled>Select a course format</option>
+                    {{#formats}}
+                        <option value="{{value}}">{{name}} ({{value}})</option>
+                    {{/formats}}
+                </select>
+                <small class="form-text text-muted">This teacher-selected format is pinned to the Run and used at execution.</small>
+            </div>
+
+            <div class="form-group mb-4">
                 <label for="course-category-select" class="font-weight-bold">
                     {{#str}} coursecategory, local_agentpoc {{/str}} <span class="text-danger">*</span>
                 </label>
@@ -233,6 +246,10 @@
                     </div>
                     <div class="card-body p-4">
                         <div class="d-flex mb-3">
+                            <div class="text-muted mr-3" style="width: 140px;">Course format</div>
+                            <div class="font-weight-bold" id="approve-summary-format"></div>
+                        </div>
+                        <div class="d-flex mb-3">
                             <div class="text-muted mr-3" style="width: 140px;">Course title</div>
                             <div class="font-weight-bold" id="approve-summary-title"></div>
                         </div>
@@ -291,6 +308,16 @@
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-white py-3"><h6 class="mb-0 font-weight-bold">Activity overview by week</h6></div>
             <div class="card-body p-3" id="approve-activity-overview"></div>
+        </div>
+
+        <div class="card shadow-sm mb-4" id="approve-official-preview-card">
+            <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center">
+                <h6 class="mb-0 font-weight-bold">Official Preview</h6>
+                <span class="badge badge-light border" id="approve-preview-identity"></span>
+            </div>
+            <div class="card-body p-3" id="approve-official-preview">
+                <!-- Injected from the finalized current CoursePlan revision. -->
+            </div>
         </div>
 
         <div id="ai-review-ack-area" class="alert alert-warning d-none mb-4">

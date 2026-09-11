@@ -273,7 +273,12 @@ describe("Plans Routes & Preview Lifecycle Integration (T0601â€“T0605)", ()
   it("GET /api/plans/:planId and GET /api/plans/:planId/preview handle latest default and explicit revisions (T0601â€“T0604)", async () => {
     const planId = randomUUID();
     const runId = randomUUID();
-    await runRepo.createRun({ runId, model: "gemma4:e2b", status: "preview" });
+    await runRepo.createRun({
+      runId,
+      model: "gemma4:e2b",
+      status: "preview",
+      syllabusMetadata: { course_format: "tiles" },
+    });
 
     const courseEnvelopeRev1: CoursePlanEnvelope = {
       schema_version: "0.1",
@@ -368,6 +373,7 @@ describe("Plans Routes & Preview Lifecycle Integration (T0601â€“T0605)", ()
     expect(prevLatestData.title).toBe("Course Title Rev 2");
     expect(prevLatestData.warnings).toEqual(["Warning 1"]);
     expect(prevLatestData.assumptions).toEqual(["Assumption 1"]);
+    expect(prevLatestData.execution_config).toEqual({ course_format: "tiles" });
 
     // 5. GET /api/plans/:planId/preview?revision=1 returns rev 1
     const previewRev1 = await app.inject({

@@ -157,12 +157,16 @@ export async function executeAssignmentPlan(config: AssignmentExecutionConfig): 
     if (planEnvelope.operation === "update") {
       const updateTarget = target as AssignmentUpdateTarget;
       activityId = Number(updateTarget.activity_id);
+      const before = await readAssignmentState(mcpClientManager, activityId);
+      if (before.activity_id !== activityId || before.course_id !== courseId || before.section_id !== sectionId) {
+        throw new CourseExecutionError("ASSIGNMENT_TARGET_MISMATCH", "Assignment no longer belongs to the requested course and section.");
+      }
       const updateResult = await executeRuntimeToolCall(
         { ...baseContext, stepNumber: stepNumber++ },
         {
           toolCallId: crypto.randomUUID(),
           toolName: "moodle_update_assignment",
-          arguments: { activity_id: activityId, name: planEnvelope.content.title, intro, grade: planEnvelope.content.grade },
+          arguments: { activity_id: activityId, expected_course_id: courseId, expected_section_id: sectionId, name: planEnvelope.content.title, intro, grade: planEnvelope.content.grade },
           context: { localRef: planEnvelope.content.ref },
         }
       );

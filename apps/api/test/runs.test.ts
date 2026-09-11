@@ -5,27 +5,36 @@ import {
   runMigrations,
   RunRepository,
 } from "@moodle-agent-poc/agent-runtime";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config/config-loader.js";
 
 function createMultipartPayload(
   filename: string,
   fileContent: Buffer | string,
-  contentType = "text/plain"
+  contentType = "text/plain",
+  fields: Record<string, string> = {},
+  includeDefaultFormat = true
 ): { body: Buffer; headers: Record<string, string> } {
   const boundary = "----VitestTestBoundary123456789";
   const contentBuf = Buffer.isBuffer(fileContent)
     ? fileContent
     : Buffer.from(fileContent, "utf8");
 
+  const multipartFields = includeDefaultFormat
+    ? { course_format: "topics", ...fields }
+    : fields;
+  const fieldParts = Object.entries(multipartFields).map(([name, value]) => Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+    "utf8"
+  ));
   const headerPart = Buffer.from(
     `--${boundary}\r\nContent-Disposition: form-data; name="syllabus"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`,
     "utf8"
   );
   const footerPart = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
 
-  const body = Buffer.concat([headerPart, contentBuf, footerPart]);
+  const body = Buffer.concat([...fieldParts, headerPart, contentBuf, footerPart]);
   return {
     body,
     headers: {
@@ -203,6 +212,11 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
     app = buildApp({
       config,
       fastifyOptions: { logger: false },
+      mcpClientManager: {
+        callTool: async (name: string) => name === "moodle_list_course_formats"
+          ? { status: "success", data: [{ value: "topics", name: "Topics" }, { value: "weeks", name: "Weekly" }] }
+          : { status: "error", code: "UNEXPECTED_TOOL", message: name },
+      } as any,
     });
   });
 
@@ -262,6 +276,50 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
     const data = JSON.parse(response.body);
     expect(data.syllabus.course_title).toBeNull();
     expect(data.syllabus.sections_count).toBe(2);
+  });
+
+  it("persists the teacher-selected course format on the Run configuration", async () => {
+    const textContent = `Course Title: Dynamic Format Test\nWeek 1: Introduction\n- Topic 1`;
+    const { body, headers } = createMultipartPayload("pinned.txt", textContent, "text/plain", { course_format: "weeks" });
+
+    const response = await app.inject({ method: "POST", url: "/api/runs", headers, payload: body });
+    expect(response.statusCode).toBe(201);
+    const data = JSON.parse(response.body);
+    expect(data.course_format).toBe("weeks");
+    const fetched = await runRepo.getRun(data.run_id);
+    expect(fetched?.syllabusMetadata?.course_format).toBe("weeks");
+  });
+
+  it("rejects a missing course format before creating a Run", async () => {
+    const createRun = vi.spyOn(runRepo, "createRun");
+    const { body, headers } = createMultipartPayload(
+      "missing-format.txt",
+      "Course Title: Missing Format\nWeek 1: Introduction",
+      "text/plain",
+      {},
+      false
+    );
+
+    const response = await app.inject({ method: "POST", url: "/api/runs", headers, payload: body });
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body).error.message).toContain("course_format is required");
+    expect(createRun).not.toHaveBeenCalled();
+    createRun.mockRestore();
+  });
+
+  it("rejects a syntactically valid format that is not enabled in Moodle", async () => {
+    const { body, headers } = createMultipartPayload(
+      "unavailable-format.txt",
+      "Course Title: Unavailable Format\nWeek 1: Introduction",
+      "text/plain",
+      { course_format: "social" }
+    );
+
+    const response = await app.inject({ method: "POST", url: "/api/runs", headers, payload: body });
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body).error.message).toContain("not available");
   });
 
   it("successfully ingests a valid DOCX syllabus", async () => {

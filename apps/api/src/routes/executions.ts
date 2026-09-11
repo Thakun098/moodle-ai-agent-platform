@@ -126,6 +126,20 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
 
     assertExecutionTargetCompatible(planRevision.rawEnvelope, execRequest);
 
+    if (planRevision.operation === "update" && !planRevision.executionContext) {
+      reply.status(409).send({ error: { code: "EXECUTION_CONTEXT_REQUIRED", message: "This update revision has no pinned Moodle identity. Replan before execution.", details: null, request_id: request.id } });
+      return;
+    }
+    const executionContext = planRevision.executionContext ?? await getPlanRepo().bindExecutionContext(
+      execRequest.plan_id, execRequest.revision, { target: execRequest.target }
+    );
+    const sameTarget = Object.keys(execRequest.target).length === Object.keys(executionContext.target).length &&
+      Object.entries(execRequest.target).every(([key, value]) => (executionContext.target as unknown as Record<string, unknown>)[key] === value);
+    if (!sameTarget) {
+      reply.status(409).send({ error: { code: "EXECUTION_TARGET_MISMATCH", message: "Execution target differs from the pinned revision target.", details: null, request_id: request.id } });
+      return;
+    }
+
     const manager = options.mcpClientManager ?? createConfiguredMcpManager(options.config);
     const owns = options.mcpClientManager === undefined;
     try {
@@ -134,7 +148,9 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
       const executionOptions = { toolTimeoutMs: options.config.agentToolTimeoutMs, runTimeoutMs: options.config.agentRunTimeoutMs };
 
       if (planRevision.planType === "course" && planRevision.operation === "create") {
-        const result = await executeCoursePlan({ runId, planEnvelope: planRevision.rawEnvelope as unknown as CoursePlanEnvelope, target: execRequest.target as CourseCreateTarget, mcpClientManager: manager, repositories, options: { ...executionOptions, moodleBaseUrl: options.config.moodleBaseUrl } });
+        const configuredFormat = (run.syllabusMetadata as { course_format?: unknown } | null | undefined)?.course_format;
+        const courseFormat = typeof configuredFormat === "string" && configuredFormat.trim() ? configuredFormat.trim() : "topics";
+        const result = await executeCoursePlan({ runId, planEnvelope: planRevision.rawEnvelope as unknown as CoursePlanEnvelope, target: execRequest.target as CourseCreateTarget, mcpClientManager: manager, repositories, options: { ...executionOptions, moodleBaseUrl: options.config.moodleBaseUrl, courseFormat } });
         reply.send({ run_id: runId, plan_id: execRequest.plan_id, revision: execRequest.revision, status: result.status, course_id: result.courseId, course_shortname: result.courseShortname, course_url: result.courseUrl, created_entities: result.createdEntities, mappings: result.mappings });
         return;
       }
@@ -144,7 +160,7 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
         return;
       }
       if (planRevision.planType === "quiz" && planRevision.operation === "update") {
-        const result = await executeQuizUpdate({ runId, planEnvelope: planRevision.rawEnvelope as unknown as QuizUpdatePlanEnvelope, target: execRequest.target as QuizUpdateTarget, mcpClientManager: manager, repositories, options: executionOptions });
+        const result = await executeQuizUpdate({ runId, planEnvelope: planRevision.rawEnvelope as unknown as QuizUpdatePlanEnvelope, target: execRequest.target as QuizUpdateTarget, questionBindings: executionContext.questionBindings, mcpClientManager: manager, repositories, options: executionOptions });
         reply.send({ run_id: runId, plan_id: result.planId, revision: result.revision, status: result.status, operation: "update", activity_id: result.activityId, quiz_id: result.quizId, verified: result.verified, questions_count: result.questionsCount });
         return;
       }

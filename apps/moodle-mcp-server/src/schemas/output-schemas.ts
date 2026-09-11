@@ -18,6 +18,11 @@ export const MoodleCategoryDataSchema = z
 
 export const ListCourseCategoriesDataSchema = z.array(MoodleCategoryDataSchema);
 
+export const MoodleCourseFormatDataSchema = z
+  .object({ value: z.string(), name: z.string() })
+  .strict();
+export const ListCourseFormatsDataSchema = z.array(MoodleCourseFormatDataSchema);
+
 export const CreateCourseDataSchema = z
   .object({
     course_id: z.number(),
@@ -35,6 +40,17 @@ export const CreateSectionDataSchema = z
     section_num: z.number(),
     name: z.string(),
     summary: z.string(),
+  })
+  .strict();
+
+export const CreateResourceDataSchema = z
+  .object({
+    activity_id: z.number(),
+    resource_id: z.number(),
+    section_id: z.number(),
+    name: z.string(),
+    filename: z.string(),
+    moodle_material_id: z.number(),
   })
   .strict();
 
@@ -132,6 +148,10 @@ export const QuizQuestionSlotDataSchema = z
     question_text: z.string(),
     default_mark: z.number(),
     answers: z.array(QuizQuestionAnswerDataSchema),
+    general_feedback: z.string().optional(),
+    correct_answer: z.boolean().optional(),
+    case_sensitive: z.boolean().optional(),
+    grading_guidance: z.string().optional(),
   })
   .strict();
 
@@ -182,6 +202,7 @@ export const StructureActivityDataSchema = z
     name: z.string(),
     intro: z.string(),
     grade: z.number(),
+    files: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -204,6 +225,7 @@ export const CourseStructureDataSchema = z
         shortname: z.string(),
         category_id: z.number(),
         visible: z.number(),
+        format: z.string().optional(),
       })
       .strict(),
     sections: z.array(StructureSectionDataSchema),
@@ -225,8 +247,10 @@ export function createSuccessEnvelopeSchema<T extends z.ZodTypeAny>(dataSchema: 
 // ==========================================
 
 export const ListCourseCategoriesOutputSchema = createSuccessEnvelopeSchema(ListCourseCategoriesDataSchema);
+export const ListCourseFormatsOutputSchema = createSuccessEnvelopeSchema(ListCourseFormatsDataSchema);
 export const CreateCourseOutputSchema = createSuccessEnvelopeSchema(CreateCourseDataSchema);
 export const CreateSectionOutputSchema = createSuccessEnvelopeSchema(CreateSectionDataSchema);
+export const CreateResourceOutputSchema = createSuccessEnvelopeSchema(CreateResourceDataSchema);
 export const CreateAssignmentOutputSchema = createSuccessEnvelopeSchema(CreateAssignmentDataSchema);
 export const AssignmentDetailsOutputSchema = createSuccessEnvelopeSchema(AssignmentDetailsDataSchema);
 export const UpdateAssignmentOutputSchema = createSuccessEnvelopeSchema(UpdateAssignmentDataSchema);

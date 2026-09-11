@@ -388,11 +388,16 @@ describe("Approval Gate & Lifecycle Integration (Phase 16)", () => {
     const app = buildApp({
       config: testConfig, // modelName: "openai/gpt-oss-120b", ollamaModel: "gemma4:e2b"
       runRepo: mockRunRepo,
+      mcpClientManager: { discoverTools: vi.fn(async () => []), callTool: vi.fn(async () => ({ status: "success", data: [{ value: "topics", label: "Topics" }] })) } as any,
     });
 
     // Multipart upload
     const boundary = "---------------------------974767299852498929531610575";
     const body = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="course_format"',
+      "",
+      "topics",
       `--${boundary}`,
       'Content-Disposition: form-data; name="file"; filename="syllabus.txt"',
       "Content-Type: text/plain",

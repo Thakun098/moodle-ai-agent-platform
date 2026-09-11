@@ -48,7 +48,7 @@ async function setup() {
   };
   const server = new McpServer({ name: "assignment-p12", version: "1" });
   server.registerTool("moodle_get_assignment", { inputSchema: z.object({ activity_id: z.number().int().positive() }) }, async () => ({ content: [{ type: "text", text: "ok" }], structuredContent: { status: "success", data: state } }));
-  server.registerTool("moodle_update_assignment", { inputSchema: z.object({ activity_id: z.number(), name: z.string().optional(), intro: z.string().optional(), grade: z.number().optional() }) }, async (args) => {
+  server.registerTool("moodle_update_assignment", { inputSchema: z.object({ activity_id: z.number(), expected_course_id: z.number().optional(), expected_section_id: z.number().optional(), name: z.string().optional(), intro: z.string().optional(), grade: z.number().optional() }) }, async (args) => {
     state = { ...state, name: args.name ?? state.name, intro: args.intro ?? state.intro, grade: args.grade ?? state.grade };
     return { content: [{ type: "text", text: "ok" }], structuredContent: { status: "success", data: { activity_id: state.activity_id, assignment_id: state.assignment_id, name: state.name, intro: state.intro, grade: state.grade } } };
   });

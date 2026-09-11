@@ -67,6 +67,18 @@ export interface CreateSectionParams {
   summary?: string;
 }
 
+export interface CreateResourceParams {
+  courseId: number;
+  sectionId: number;
+  name: string;
+  filename: string;
+  moodleMaterialId: number;
+  sourceRunId: string;
+  sourceStructureRevision: number;
+  sourceSectionRef: string;
+  sourceMaterialRevision: number;
+}
+
 export interface CreateAssignmentParams {
   courseId: number;
   sectionId: number;
@@ -77,6 +89,8 @@ export interface CreateAssignmentParams {
 
 export interface UpdateAssignmentParams {
   activityId: number;
+  expectedCourseId?: number;
+  expectedSectionId?: number;
   name?: string;
   intro?: string;
   grade?: number;
@@ -132,6 +146,9 @@ export type CreateQuizQuestionParams =
 
 export interface UpdateQuizQuestionParamsBase {
   questionBankEntryId: number;
+  activityId?: number;
+  maxMark?: number;
+  expectedVersion?: number;
   name?: string;
   questionText?: string;
   defaultMark?: number;
@@ -188,6 +205,11 @@ export interface MoodleCategory {
   visible: number;
 }
 
+export interface MoodleCourseFormat {
+  value: string;
+  name: string;
+}
+
 export interface MoodleCreatedCourse {
   courseId: number;
   fullname: string;
@@ -202,6 +224,15 @@ export interface MoodleCreatedSection {
   sectionNum: number;
   name: string;
   summary: string;
+}
+
+export interface MoodleCreatedResource {
+  activityId: number;
+  resourceId: number;
+  sectionId: number;
+  name: string;
+  filename: string;
+  moodleMaterialId: number;
 }
 
 export interface MoodleCreatedAssignment {
@@ -283,6 +314,10 @@ export interface MoodleQuizQuestionSlot {
   questionText: string;
   defaultMark: number;
   answers: MoodleQuizQuestionAnswer[];
+  generalFeedback?: string;
+  correctAnswer?: boolean;
+  caseSensitive?: boolean;
+  gradingGuidance?: string;
 }
 
 export interface MoodleCreatedQuestion {
@@ -323,6 +358,7 @@ export interface MoodleStructureActivity {
   name: string;
   intro: string;
   grade: number;
+  files?: string[];
 }
 
 export interface MoodleStructureSection {
@@ -340,6 +376,7 @@ export interface MoodleCourseStructure {
     shortname: string;
     categoryId: number;
     visible: number;
+    format?: string;
   };
   sections: MoodleStructureSection[];
 }

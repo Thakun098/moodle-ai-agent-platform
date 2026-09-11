@@ -134,4 +134,31 @@ describe("Optional Activity Finalization — ADR-0002", () => {
     await app.close();
   });
 
+  it("removes a planned File Resource from the finalized plan without deleting its MaterialSnapshot", async () => {
+    const repos = baseRepos([]);
+    const run = { runId: "run-1", status: "planning", model: "test-model", normalizedSyllabus, syllabusMetadata: {} as Record<string, unknown> };
+    repos.runRepo.getRun = vi.fn().mockResolvedValue(run);
+    repos.runRepo.setResourcePublication = vi.fn().mockImplementation(async (_runId: string, sectionRef: string, publish: boolean) => {
+      const publication = (run.syllabusMetadata.resource_publication as Record<string, boolean> | undefined) ?? {};
+      run.syllabusMetadata.resource_publication = { ...publication, [sectionRef]: publish };
+      return { ...run };
+    });
+    const snapshot = {
+      id: "snapshot-1", runId: "run-1", structureRevision: 1, sectionRef: "section-01", revision: 1,
+      filesJson: [{ moodleMaterialId: 77, filename: "Week_01_Material.pdf", publishToCourse: true, useForGrounding: true, extractionStatus: "success" }],
+    };
+    repos.snapshotRepo.getLatestSnapshot = vi.fn().mockResolvedValue(snapshot);
+    const app = buildApp({ config, runRepo: repos.runRepo as any, structureRevisionRepo: repos.structureRepo as any, activityIntentRepo: repos.intentRepo as any, snapshotRepo: repos.snapshotRepo as any, planRepo: repos.planRepo as any, fastifyOptions: { logger: false } });
+
+    const remove = await app.inject({ method: "PUT", url: "/api/runs/run-1/sections/section-01/resource-publication", payload: { publish: false } });
+    expect(remove.statusCode).toBe(200);
+    expect(JSON.parse(remove.body).publish).toBe(false);
+
+    const finalized = await app.inject({ method: "POST", url: "/api/runs/run-1/plans/course/finalize" });
+    expect(finalized.statusCode).toBe(201);
+    expect(repos.saved[0].rawEnvelope.content.sections[0].resources).toEqual([]);
+    expect(repos.snapshotRepo.getLatestSnapshot).toHaveBeenCalled();
+    await app.close();
+  });
+
 });

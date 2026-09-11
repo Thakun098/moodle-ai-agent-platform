@@ -10,7 +10,7 @@ import {
   type MaterialSnapshotRecord,
   type SectionActivityDraftRecord,
 } from "@moodle-agent-poc/agent-runtime";
-import type { ActivityPlan, AnyPlanEnvelope } from "@moodle-agent-poc/contracts";
+import type { ActivityPlan, AnyPlanEnvelope, FileResourcePlan } from "@moodle-agent-poc/contracts";
 import {
   BoundedMaterialContextProvider,
   type MaterialSnapshot,
@@ -33,6 +33,30 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
 import { createConfiguredModelClient } from "../config/model-client-factory.js";
+
+function resourceTitleFromFilename(filename: string): string {
+  const lastDot = filename.lastIndexOf(".");
+  return (lastDot > 0 ? filename.slice(0, lastDot) : filename).trim();
+}
+
+function resourcesFromSnapshot(section: { ref: string; position: number }, snapshot: MaterialSnapshotRecord | null, publish = true): FileResourcePlan[] {
+  if (!publish) return [];
+  const files = snapshot && Array.isArray(snapshot.filesJson) ? snapshot.filesJson as MaterialSnapshotFile[] : [];
+  return files
+    .filter((file) => file.publishToCourse && file.extractionStatus === "success")
+    .map((file, index) => ({
+      ref: `resource-${String(section.position).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`,
+      type: "resource" as const,
+      title: resourceTitleFromFilename(file.filename),
+      filename: file.filename,
+      moodle_material_id: file.moodleMaterialId,
+      source_run_id: snapshot!.runId,
+      source_structure_revision: snapshot!.structureRevision,
+      source_section_ref: snapshot!.sectionRef,
+      source_material_revision: snapshot!.revision,
+      source_refs: [{ source: file.filename, section: section.ref }],
+    }));
+}
 
 export interface SectionGenerationRoutesOptions {
   config: AppConfig;
@@ -212,6 +236,23 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
     reply.send({ run_id: runId, section_ref: sectionRef, state: result.state, material_snapshot_id: snapshot.id, activities: result.activities, blocked: result.blocked ?? null });
   });
 
+  fastify.put<{ Params: { runId: string; sectionRef: string }; Body: { publish?: unknown } }>("/api/runs/:runId/sections/:sectionRef/resource-publication", async (request, reply) => {
+    const { runId, sectionRef } = request.params;
+    const publishValue = request.body && typeof request.body === "object" ? request.body.publish : undefined;
+    const publish = publishValue === true || publishValue === 1 || publishValue === "1";
+    if (publishValue !== true && publishValue !== false && publishValue !== 1 && publishValue !== 0 && publishValue !== "1" && publishValue !== "0") {
+      reply.status(400).send({ error: { code: "BAD_REQUEST", message: "publish must be a boolean.", details: null, request_id: request.id } });
+      return;
+    }
+    const run = await getRunRepo().getRun(runId);
+    if (!run) {
+      reply.status(404).send({ error: { code: "NOT_FOUND", message: `Run ${runId} not found`, details: null, request_id: request.id } });
+      return;
+    }
+    const updated = await getRunRepo().setResourcePublication(runId, sectionRef, publish);
+    reply.send({ run_id: runId, section_ref: sectionRef, publish, resource_publication: updated.syllabusMetadata?.resource_publication ?? {} });
+  });
+
   fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/plans/course/finalize", async (request, reply) => {
     const { runId } = request.params;
     const runRepo = getRunRepo();
@@ -233,6 +274,11 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
     const useOptionalActivityPath = persistedIntents.length > 0 || structure.content.sections.every((section) => section.activity_intents.length === 0);
     let plan;
     let reviewRequirements: Array<{ code: string; activity_ref?: string }> = [];
+    const publication = run.syllabusMetadata?.resource_publication ?? {};
+    const resourcesBySection = new Map<string, FileResourcePlan[]>();
+    for (const section of structure.content.sections) {
+      resourcesBySection.set(section.ref, resourcesFromSnapshot(section, await getSnapshotRepo().getLatestSnapshot(runId, structure.revision, section.ref), publication[section.ref] !== false));
+    }
     if (useOptionalActivityPath) {
       const selectedActivitiesBySection = new Map<string, FinalizationSelectedActivity[]>();
       for (const record of persistedIntents) {
@@ -290,6 +336,7 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
         revision: targetPlanRevision,
         structure,
         selectedActivitiesBySection,
+        resourcesBySection,
         ...(run.normalizedSyllabus ? { syllabus: run.normalizedSyllabus } : {}),
       });
     } else {
@@ -309,7 +356,7 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
           }
         }
       }
-      plan = assembleFinalCoursePlan({ planId: targetPlanId, revision: targetPlanRevision, structure, draftsBySection, currentSnapshotIds, materialSourcesBySection, ...(run.normalizedSyllabus ? { syllabus: run.normalizedSyllabus } : {}) });
+      plan = assembleFinalCoursePlan({ planId: targetPlanId, revision: targetPlanRevision, structure, draftsBySection, currentSnapshotIds, materialSourcesBySection, resourcesBySection, ...(run.normalizedSyllabus ? { syllabus: run.normalizedSyllabus } : {}) });
     }
     if (latestPlanRevision) {
       const candidateSignature = canonicalJsonSignature({ title: plan.title, summary: plan.summary, warnings: plan.warnings, assumptions: plan.assumptions, content: plan.content, reviewRequirements });

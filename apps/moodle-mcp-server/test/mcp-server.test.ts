@@ -41,16 +41,19 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
   });
 
   describe('T0913 — In-Memory Tool Discovery Proof', () => {
-    it('discovers all 14 canonical Moodle tools with input and output schemas', async () => {
+    it('discovers all canonical Moodle tools with input and output schemas', async () => {
       const response = await client.listTools();
       expect(response.tools).toBeDefined();
-      expect(response.tools.length).toBe(14);
+      expect(response.tools.length).toBe(17);
 
       const expectedToolNames = [
         'moodle_list_course_categories',
+        'moodle_list_course_formats',
+        'moodle_create_resource',
         'moodle_create_course',
         'moodle_create_section',
         'moodle_get_course_structure',
+        'moodle_get_course_risk_evidence',
         'moodle_create_assignment',
         'moodle_get_assignment',
         'moodle_update_assignment',
@@ -77,7 +80,7 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
     });
   });
 
-  describe('T0914 — In-Memory Tool Execution Proofs (All 14 Tools)', () => {
+  describe('T0914 — In-Memory Tool Execution Proofs', () => {
     it('executes moodle_list_course_categories (T0903)', async () => {
       const result = await client.callTool({
         name: 'moodle_list_course_categories',
@@ -90,6 +93,18 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
       expect(content.status).toBe('success');
       expect(content.data.length).toBe(2);
       expect(content.data[0]?.name).toBe('Miscellaneous');
+    });
+
+    it('executes moodle_list_course_formats', async () => {
+      const result = await client.callTool({
+        name: 'moodle_list_course_formats',
+        arguments: {},
+      });
+
+      expect(result.isError).toBeFalsy();
+      const content = result.structuredContent as { status: string; data: Array<{ value: string; name: string }> };
+      expect(content.status).toBe('success');
+      expect(content.data.map((format) => format.value)).toEqual(['topics', 'weeks']);
     });
 
     it('executes moodle_create_course (T0904)', async () => {
@@ -130,6 +145,17 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
       const content = result.structuredContent as { status: string; data: { section_id: number; section_num: number } };
       expect(content.status).toBe('success');
       expect(content.data.section_num).toBe(1);
+    });
+
+    it('executes moodle_create_resource from an existing material snapshot file', async () => {
+      const result = await client.callTool({
+        name: 'moodle_create_resource',
+        arguments: { course_id: 101, section_id: 201, name: 'week-1', filename: 'week-1.txt', moodle_material_id: 10, source_run_id: 'run-01', source_structure_revision: 1, source_section_ref: 'section-01', source_material_revision: 1 },
+      });
+      expect(result.isError).toBeFalsy();
+      const content = result.structuredContent as { status: string; data: { name: string; filename: string; moodle_material_id: number } };
+      expect(content.status).toBe('success');
+      expect(content.data).toMatchObject({ name: 'week-1', filename: 'week-1.txt', moodle_material_id: 10 });
     });
 
     it('executes Assignment tools: create, get, update (T0907)', async () => {
@@ -383,6 +409,23 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
       expect((updateEssayRes.structuredContent as any).data.version).toBe(2);
     });
 
+    it('executes consolidated factual CourseRiskEvidence without Risk severity', async () => {
+      const courseRes = await client.callTool({
+        name: 'moodle_create_course',
+        arguments: { category_id: 1, fullname: 'Risk Evidence Course', shortname: 'RISK-EVIDENCE' },
+      });
+      const courseId = (courseRes.structuredContent as any).data.course_id;
+      const result = await client.callTool({
+        name: 'moodle_get_course_risk_evidence',
+        arguments: { course_id: courseId },
+      });
+      expect(result.isError).toBeFalsy();
+      const payload = (result.structuredContent as any).data;
+      expect(payload.schema_version).toBe('0.1');
+      expect(payload.course.course_id).toBe(courseId);
+      expect(payload.dataset_status).toHaveLength(6);
+      expect(payload.risk_level).toBeUndefined();
+    });
     it('executes moodle_get_course_structure and returns full course tree (T0906)', async () => {
       const courseRes = await client.callTool({
         name: 'moodle_create_course',

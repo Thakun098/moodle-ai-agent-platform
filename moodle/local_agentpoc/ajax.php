@@ -71,8 +71,23 @@ try {
                 'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             ];
             $mimetype = $mimetypemap[$ext] ?? (mime_content_type($file['tmp_name']) ?: 'application/octet-stream');
-            $run = $client->create_run($file['tmp_name'], $filename, $mimetype);
+            $courseformat = required_param('course_format', PARAM_ALPHANUMEXT);
+            $availableformats = \local_agentpoc\external\list_course_formats::execute();
+            $availablevalues = array_column($availableformats, 'value');
+            if (!in_array($courseformat, $availablevalues, true)) {
+                throw new \moodle_exception('invalidparameter', 'debug', '', 'The selected Moodle course format is not available.');
+            }
+            $run = $client->create_run($file['tmp_name'], $filename, $mimetype, $courseformat);
             $response['data'] = $run;
+            break;
+
+        case 'list_course_formats':
+            $response['data'] = \local_agentpoc\external\list_course_formats::execute();
+            break;
+
+        case 'get_course_structure':
+            $courseid = required_param('course_id', PARAM_INT);
+            $response['data'] = \local_agentpoc\external\get_course_structure::execute($courseid);
             break;
 
         case 'generate_plan':
@@ -112,6 +127,13 @@ try {
             $runid = required_param('run_id', PARAM_ALPHANUMEXT);
             $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
             $response['data'] = $client->get_activity_intents($runid, $sectionref);
+            break;
+
+        case 'set_resource_publication':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
+            $publish = required_param('publish', PARAM_BOOL);
+            $response['data'] = $client->set_resource_publication($runid, $sectionref, (bool)$publish);
             break;
 
         case 'generate_activity':
@@ -169,7 +191,9 @@ try {
                 $sectionref,
                 $file['tmp_name'],
                 $filename,
-                (int)$USER->id
+                (int)$USER->id,
+                true,
+                true
             );
             $response['data'] = ['id' => $materialid, 'run_id' => $runid, 'section_ref' => $sectionref, 'revision' => 0];
             break;

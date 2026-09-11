@@ -104,7 +104,16 @@ class get_quiz_questions extends external_api {
                 }
             }
 
-            $result[] = [
+            $grading = ['generalfeedback' => (string) $questiondata->generalfeedback];
+            if ($questiondata->qtype === 'truefalse') {
+                $trueanswer = $questiondata->options->answers[$questiondata->options->trueanswer];
+                $grading['correct_answer'] = (float) $trueanswer->fraction > 0.5 ? 1 : 0;
+            } else if ($questiondata->qtype === 'shortanswer') {
+                $grading['case_sensitive'] = (int) $questiondata->options->usecase;
+            } else if ($questiondata->qtype === 'essay') {
+                $grading['grading_guidance'] = (string) $questiondata->options->graderinfo;
+            }
+            $result[] = $grading + [
                 'slot_id'                 => (int) $slot->id,
                 'slot_number'             => (int) $slot->slot,
                 'page'                    => (int) $slot->page,
@@ -142,6 +151,10 @@ class get_quiz_questions extends external_api {
                 'qtype'                  => new external_value(PARAM_PLUGIN, 'Question type (multichoice, truefalse, shortanswer, essay)'),
                 'questiontext'           => new external_value(PARAM_RAW, 'Question text HTML'),
                 'defaultmark'            => new external_value(PARAM_FLOAT, 'Default mark of question'),
+                'generalfeedback'        => new external_value(PARAM_RAW, 'General feedback'),
+                'correct_answer'         => new external_value(PARAM_INT, 'True/false correct answer', VALUE_OPTIONAL),
+                'case_sensitive'         => new external_value(PARAM_INT, 'Short answer case sensitivity', VALUE_OPTIONAL),
+                'grading_guidance'       => new external_value(PARAM_RAW, 'Essay grading guidance', VALUE_OPTIONAL),
                 'answers'                => new external_multiple_structure(
                     new external_single_structure([
                         'id'       => new external_value(PARAM_INT, 'Answer ID'),

@@ -5,10 +5,33 @@ import {
   ListCourseCategoriesDataSchema,
   ListCourseCategoriesInputSchema,
   ListCourseCategoriesOutputSchema,
+  ListCourseFormatsDataSchema,
+  ListCourseFormatsInputSchema,
+  ListCourseFormatsOutputSchema,
 } from '../schemas/index.js';
-import type { MoodleCategoryMcpData } from '../types.js';
+import type { MoodleCategoryMcpData, MoodleCourseFormatMcpData } from '../types.js';
 
 export function registerCategoryTools(server: McpServer, moodleClient: MoodleClient): void {
+  server.registerTool(
+    'moodle_list_course_formats',
+    {
+      description: 'List enabled Moodle course formats available to the configured user token.',
+      inputSchema: ListCourseFormatsInputSchema,
+      outputSchema: ListCourseFormatsOutputSchema,
+    },
+    async (rawArgs) => {
+      try {
+        ListCourseFormatsInputSchema.parse(rawArgs ?? {});
+        const formats = await moodleClient.listCourseFormats();
+        const data: MoodleCourseFormatMcpData[] = formats.map((format) => ({ value: format.value, name: format.name }));
+        const validated = ListCourseFormatsDataSchema.parse(data);
+        return formatMcpSuccess(validated, `Retrieved ${validated.length} course formats`);
+      } catch (err) {
+        return formatMcpError(err);
+      }
+    }
+  );
+
   server.registerTool(
     'moodle_list_course_categories',
     {

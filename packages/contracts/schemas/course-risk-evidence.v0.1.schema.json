@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moodle-agent-poc.local/schemas/course-risk-evidence.v0.1.schema.json",
+  "title": "CourseRiskEvidence v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","observed_at","course","dataset_status","enrolments","activities","completion","quizzes","assignments","competencies"],
+  "properties": {
+    "schema_version": {"const":"0.1"},
+    "observed_at": {"type":"integer","minimum":0},
+    "course": {"$ref":"#/$defs/course"},
+    "dataset_status": {"type":"array","items":{"$ref":"#/$defs/datasetState"}},
+    "enrolments": {"type":"array","items":{"$ref":"#/$defs/enrolment"}},
+    "activities": {"type":"array","items":{"$ref":"#/$defs/activity"}},
+    "completion": {"type":"array","items":{"$ref":"#/$defs/completion"}},
+    "quizzes": {"type":"array","items":{"$ref":"#/$defs/quiz"}},
+    "assignments": {"type":"array","items":{"$ref":"#/$defs/assignment"}},
+    "competencies": {"$ref":"#/$defs/competencies"}
+  },
+  "$defs": {
+    "nullableInt": {"type":["integer","null"]},
+    "nullableNum": {"type":["number","null"]},
+    "sourceRef": {
+      "type":"object","additionalProperties":false,
+      "required":["source","component","entity_type","entity_id","course_id"],
+      "properties": {
+        "source":{"const":"moodle"},"component":{"type":"string","minLength":1},"entity_type":{"type":"string","minLength":1},"entity_id":{"type":"string","minLength":1},"course_id":{"type":"integer","minimum":1},"activity_id":{"type":"integer","minimum":1},"student_id":{"type":"integer","minimum":1}
+      }
+    },
+    "datasetState": {
+      "type":"object","additionalProperties":false,"required":["dataset","status","observed_at"],
+      "properties": {"dataset":{"enum":["enrolments","timeline","completion","quizzes","assignments","competencies"]},"status":{"enum":["OK","PARTIAL","UNAVAILABLE","ERROR"]},"observed_at":{"type":"integer","minimum":0},"message":{"type":"string"}}
+    },
+    "course": {
+      "type":"object","additionalProperties":false,"required":["course_id","fullname","shortname","format","start_at","end_at"],
+      "properties": {"course_id":{"type":"integer","minimum":1},"fullname":{"type":"string"},"shortname":{"type":"string"},"format":{"type":"string"},"start_at":{"$ref":"#/$defs/nullableInt"},"end_at":{"$ref":"#/$defs/nullableInt"}}
+    },
+    "enrolment": {
+      "type":"object","additionalProperties":false,"required":["student_id","active","enrolled_at","source_ref"],
+      "properties": {"student_id":{"type":"integer","minimum":1},"active":{"type":"boolean"},"enrolled_at":{"$ref":"#/$defs/nullableInt"},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "activity": {
+      "type":"object","additionalProperties":false,"required":["activity_id","instance_id","module_name","section_id","section_num","name","visible","completion_tracking","completion_expected_at","available_from","available_until","due_at","source_ref"],
+      "properties": {"activity_id":{"type":"integer","minimum":1},"instance_id":{"type":"integer","minimum":1},"module_name":{"type":"string"},"section_id":{"type":"integer","minimum":1},"section_num":{"type":"integer","minimum":0},"name":{"type":"string"},"visible":{"type":"boolean"},"completion_tracking":{"enum":["NONE","MANUAL","AUTOMATIC"]},"completion_expected_at":{"$ref":"#/$defs/nullableInt"},"available_from":{"$ref":"#/$defs/nullableInt"},"available_until":{"$ref":"#/$defs/nullableInt"},"due_at":{"$ref":"#/$defs/nullableInt"},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "completion": {
+      "type":"object","additionalProperties":false,"required":["student_id","activity_id","state","completed_at","source_ref"],
+      "properties": {"student_id":{"type":"integer","minimum":1},"activity_id":{"type":"integer","minimum":1},"state":{"enum":["INCOMPLETE","COMPLETE","COMPLETE_PASS","COMPLETE_FAIL","UNKNOWN"]},"completed_at":{"$ref":"#/$defs/nullableInt"},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "gradeToPass": {
+      "type":"object","additionalProperties":false,"required":["configured","value","source_ref"],
+      "properties": {"configured":{"type":"boolean"},"value":{"$ref":"#/$defs/nullableNum"},"source_ref":{"anyOf":[{"$ref":"#/$defs/sourceRef"},{"type":"null"}]}}
+    },
+    "quizAttempt": {
+      "type":"object","additionalProperties":false,"required":["attempt_id","attempt_no","state","started_at","finished_at","raw_score","source_ref"],
+      "properties": {"attempt_id":{"type":"integer","minimum":1},"attempt_no":{"type":"integer","minimum":1},"state":{"type":"string"},"started_at":{"$ref":"#/$defs/nullableInt"},"finished_at":{"$ref":"#/$defs/nullableInt"},"raw_score":{"$ref":"#/$defs/nullableNum"},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "quizStudent": {
+      "type":"object","additionalProperties":false,"required":["student_id","final_grade_state","final_grade","attempts","source_ref"],
+      "properties": {"student_id":{"type":"integer","minimum":1},"final_grade_state":{"enum":["AVAILABLE","PENDING","NOT_ATTEMPTED","NOT_APPLICABLE","UNAVAILABLE"]},"final_grade":{"$ref":"#/$defs/nullableNum"},"attempts":{"type":"array","items":{"$ref":"#/$defs/quizAttempt"}},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "quiz": {
+      "type":"object","additionalProperties":false,"required":["activity_id","quiz_id","time_open","time_close","attempts_allowed","raw_score_max","grade_max","grade_to_pass","students","source_ref"],
+      "properties": {"activity_id":{"type":"integer","minimum":1},"quiz_id":{"type":"integer","minimum":1},"time_open":{"$ref":"#/$defs/nullableInt"},"time_close":{"$ref":"#/$defs/nullableInt"},"attempts_allowed":{"$ref":"#/$defs/nullableInt"},"raw_score_max":{"$ref":"#/$defs/nullableNum"},"grade_max":{"$ref":"#/$defs/nullableNum"},"grade_to_pass":{"$ref":"#/$defs/gradeToPass"},"students":{"type":"array","items":{"$ref":"#/$defs/quizStudent"}},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "assignmentStudent": {
+      "type":"object","additionalProperties":false,"required":["student_id","submission_state","submitted_at","modified_at","attempt_no","grade_state","grade","graded_at","source_ref"],
+      "properties": {"student_id":{"type":"integer","minimum":1},"submission_state":{"enum":["NOT_ATTEMPTED","DRAFT","SUBMITTED","UNKNOWN"]},"submitted_at":{"$ref":"#/$defs/nullableInt"},"modified_at":{"$ref":"#/$defs/nullableInt"},"attempt_no":{"$ref":"#/$defs/nullableInt"},"grade_state":{"enum":["AVAILABLE","PENDING","NOT_ATTEMPTED","NOT_APPLICABLE","UNAVAILABLE"]},"grade":{"$ref":"#/$defs/nullableNum"},"graded_at":{"$ref":"#/$defs/nullableInt"},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "assignment": {
+      "type":"object","additionalProperties":false,"required":["activity_id","assignment_id","due_at","cutoff_at","grade_max","grade_to_pass","students","source_ref"],
+      "properties": {"activity_id":{"type":"integer","minimum":1},"assignment_id":{"type":"integer","minimum":1},"due_at":{"$ref":"#/$defs/nullableInt"},"cutoff_at":{"$ref":"#/$defs/nullableInt"},"grade_max":{"$ref":"#/$defs/nullableNum"},"grade_to_pass":{"$ref":"#/$defs/gradeToPass"},"students":{"type":"array","items":{"$ref":"#/$defs/assignmentStudent"}},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "competency": {
+      "type":"object","additionalProperties":false,"required":["competency_id","shortname","idnumber","scale_id","source_ref"],
+      "properties": {"competency_id":{"type":"integer","minimum":1},"shortname":{"type":"string"},"idnumber":{"type":"string"},"scale_id":{"type":"integer","minimum":1},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "competencyLink": {
+      "type":"object","additionalProperties":false,"required":["activity_id","competency_id","rule_outcome","source_ref"],
+      "properties": {"activity_id":{"type":"integer","minimum":1},"competency_id":{"type":"integer","minimum":1},"rule_outcome":{"$ref":"#/$defs/nullableInt"},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "competencyEvidence": {
+      "type":"object","additionalProperties":false,"required":["evidence_id","action","created_at","source_ref"],
+      "properties": {"evidence_id":{"type":"integer","minimum":1},"action":{"type":"integer"},"created_at":{"type":"integer","minimum":0},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "competencyRating": {
+      "type":"object","additionalProperties":false,"required":["student_id","competency_id","grade","proficiency","rated_at","review_state","evidence","source_ref"],
+      "properties": {"student_id":{"type":"integer","minimum":1},"competency_id":{"type":"integer","minimum":1},"grade":{"$ref":"#/$defs/nullableInt"},"proficiency":{"type":["boolean","null"]},"rated_at":{"$ref":"#/$defs/nullableInt"},"review_state":{"enum":["IDLE","WAITING_FOR_REVIEW","IN_REVIEW","NOT_AVAILABLE"]},"evidence":{"type":"array","items":{"$ref":"#/$defs/competencyEvidence"}},"source_ref":{"$ref":"#/$defs/sourceRef"}}
+    },
+    "competencies": {
+      "type":"object","additionalProperties":false,"required":["course_competencies","activity_links","ratings"],
+      "properties": {"course_competencies":{"type":"array","items":{"$ref":"#/$defs/competency"}},"activity_links":{"type":"array","items":{"$ref":"#/$defs/competencyLink"}},"ratings":{"type":"array","items":{"$ref":"#/$defs/competencyRating"}}}
+    }
+  }
+}

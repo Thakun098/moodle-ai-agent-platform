@@ -3,10 +3,12 @@ import type {
   MoodleAddedQuestionSlot,
   MoodleAssignmentDetails,
   MoodleCategory,
+  MoodleCourseFormat,
   MoodleCourseStructure,
   MoodleCreatedAssignment,
   MoodleCreatedCourse,
   MoodleCreatedQuestion,
+  MoodleCreatedResource,
   MoodleCreatedQuiz,
   MoodleCreatedSection,
   MoodleQuizDetails,
@@ -44,6 +46,12 @@ function expectString(val: unknown, fieldName: string): string {
   throw new MoodleResponseError(`Expected string for '${fieldName}', received: ${typeof val}`);
 }
 
+function expectBooleanFlag(val: unknown, fieldName: string): boolean {
+  const flag = expectNumber(val, fieldName);
+  if (flag !== 0 && flag !== 1) throw new MoodleResponseError(`Expected 0 or 1 for '${fieldName}'.`);
+  return flag === 1;
+}
+
 function expectQtype(val: unknown, fieldName: string): SupportedQuestionType {
   const str = expectString(val, fieldName);
   if (str === 'multichoice' || str === 'truefalse' || str === 'shortanswer' || str === 'essay') {
@@ -72,6 +80,19 @@ export function parseCategories(raw: unknown): MoodleCategory[] {
   });
 }
 
+export function parseCourseFormats(raw: unknown): MoodleCourseFormat[] {
+  if (!Array.isArray(raw)) {
+    throw new MoodleResponseError(`Expected array of course formats, received: ${typeof raw}`);
+  }
+  return raw.map((item, idx) => {
+    if (!isObject(item)) throw new MoodleResponseError(`Course format at index ${idx} is not an object`);
+    return {
+      value: expectString(item.value, `course_formats[${idx}].value`),
+      name: expectString(item.name, `course_formats[${idx}].name`),
+    };
+  });
+}
+
 export function parseCreatedCourse(raw: unknown): MoodleCreatedCourse {
   if (!isObject(raw)) {
     throw new MoodleResponseError('Expected object for created course response');
@@ -95,6 +116,18 @@ export function parseCreatedSection(raw: unknown): MoodleCreatedSection {
     sectionNum: expectNumber(raw.section_num, 'section_num'),
     name: expectString(raw.name, 'name'),
     summary: typeof raw.summary === 'string' ? raw.summary : '',
+  };
+}
+
+export function parseCreatedResource(raw: unknown): MoodleCreatedResource {
+  if (!isObject(raw)) throw new MoodleResponseError('Expected object for created resource response');
+  return {
+    activityId: expectNumber(raw.activity_id, 'activity_id'),
+    resourceId: expectNumber(raw.resource_id, 'resource_id'),
+    sectionId: expectNumber(raw.section_id, 'section_id'),
+    name: expectString(raw.name, 'name'),
+    filename: expectString(raw.filename, 'filename'),
+    moodleMaterialId: expectNumber(raw.moodle_material_id, 'moodle_material_id'),
   };
 }
 
@@ -222,6 +255,10 @@ export function parseQuizQuestionSlots(raw: unknown): MoodleQuizQuestionSlot[] {
       questionText: typeof slot.questiontext === 'string' ? slot.questiontext : '',
       defaultMark: expectNumber(slot.defaultmark, `slots[${idx}].defaultmark`),
       answers,
+      ...(slot.generalfeedback !== undefined ? { generalFeedback: expectString(slot.generalfeedback, 'generalfeedback') } : {}),
+      ...(slot.correct_answer !== undefined ? { correctAnswer: expectBooleanFlag(slot.correct_answer, 'correct_answer') } : {}),
+      ...(slot.case_sensitive !== undefined ? { caseSensitive: expectBooleanFlag(slot.case_sensitive, 'case_sensitive') } : {}),
+      ...(slot.grading_guidance !== undefined ? { gradingGuidance: expectString(slot.grading_guidance, 'grading_guidance') } : {}),
     };
   });
 }
@@ -287,9 +324,10 @@ export function parseCourseStructure(raw: unknown): MoodleCourseStructure {
     id: expectNumber(raw.course.id, 'course.id'),
     fullname: expectString(raw.course.fullname, 'course.fullname'),
     shortname: expectString(raw.course.shortname, 'course.shortname'),
-    categoryId: typeof raw.course.category_id !== 'undefined' ? expectNumber(raw.course.category_id, 'course.category_id') : 0,
-    visible: typeof raw.course.visible !== 'undefined' ? expectNumber(raw.course.visible, 'course.visible') : 1,
-  };
+      categoryId: typeof raw.course.category_id !== 'undefined' ? expectNumber(raw.course.category_id, 'course.category_id') : 0,
+      visible: typeof raw.course.visible !== 'undefined' ? expectNumber(raw.course.visible, 'course.visible') : 1,
+      ...(typeof raw.course.format !== 'undefined' ? { format: expectString(raw.course.format, 'course.format') } : {}),
+    };
 
   const sections: MoodleStructureSection[] = raw.sections.map((sec, sIdx) => {
     if (!isObject(sec)) {
@@ -307,6 +345,7 @@ export function parseCourseStructure(raw: unknown): MoodleCourseStructure {
         name: expectString(act.name, `section[${sIdx}].activities[${aIdx}].name`),
         intro: typeof act.intro === 'string' ? act.intro : '',
         grade: typeof act.grade !== 'undefined' ? expectNumber(act.grade, `section[${sIdx}].activities[${aIdx}].grade`) : 100,
+        ...(Array.isArray(act.files) ? { files: act.files.map((file, fileIdx) => expectString(file, `section[${sIdx}].activities[${aIdx}].files[${fileIdx}]`)) } : {}),
       };
     });
 

@@ -74,6 +74,24 @@ describe("QuizPlanner (T0510, R3, R4)", () => {
     expect(envelope.content.questions_to_add[0]?.type).toBe("multichoice");
   });
 
+  it("persists plan-time question bindings outside the model envelope", async () => {
+    const savePlanRevision = vi.fn(async data => data);
+    const planner = new QuizPlanner({
+      modelClient: { chat: vi.fn(async () => ({ rawText: JSON.stringify(validModelOutput) })) } as any,
+      planRepository: { savePlanRevision } as any,
+    });
+    const target = { course_id: 10, section_id: 20, quiz_id: 30 };
+    const input = { ...sampleInput, current: { ...sampleInput.current, questions: [{
+      ref: "question-existing", slot_number: 1, question_bank_entry_id: 501, version: 4,
+      name: "Existing", type: "truefalse" as const, question: "Existing?", default_mark: 1, answers: [],
+    }] } };
+    const result = await planner.planQuizUpdate({ input, runId: "run", executionTarget: target });
+    expect(savePlanRevision).toHaveBeenCalledWith(expect.objectContaining({ executionContext: {
+      target, questionBindings: { "question-existing": { questionBankEntryId: 501, version: 4 } },
+    } }));
+    expect(result).not.toHaveProperty("executionContext");
+  });
+
   it("rejects ungrounded quiz-level source references (R3)", async () => {
     const outputWithUngroundedQuizSource: QuizUpdateModelOutput = {
       ...validModelOutput,

@@ -9,3 +9,6 @@ export * from "./material-snapshot-repository.js";
 export * from "./section-activity-draft-repository.js";
 export * from "./idempotency-repository.js";
 export * from "./activity-intent-repository.js";
+export * from "./risk-snapshot-repository.js";
+export * from "./risk-change-event-repository.js";
+export * from "./risk-insight-repository.js";

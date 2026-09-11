@@ -28,6 +28,18 @@ export {
   validateNormalizedSyllabus,
 } from "./validation/syllabus-validator.js";
 
+export {
+  STUDENT_RISK_RESULT_SCHEMA_ID,
+  isStudentRiskResultV01,
+  validateStudentRiskResult,
+} from "./validation/student-risk-result-validator.js";
+
+export {
+  COURSE_RISK_EVIDENCE_SCHEMA_ID,
+  isCourseRiskEvidence,
+  validateCourseRiskEvidence,
+} from "./validation/course-risk-evidence-validator.js";
+
 export type {
   ContractValidationError,
   ContractValidationResult,
@@ -45,6 +57,7 @@ export type {
   CoursePlanEnvelope,
   EssayQuestionPlan,
   ExecutionRequest,
+  FileResourcePlan,
   ExecutionTarget,
   ExistingSectionTarget,
   AssignmentUpdateTarget,
@@ -75,9 +88,39 @@ export type {
   VerificationResult,
 } from "./verification/contracts.js";
 
+export { compareQuestionReadback, type ObservedQuestion } from "./verification/question-comparison.js";
+
 export type {
   NormalizedSyllabus,
   SyllabusMetadata,
   SyllabusScheduleItem,
   SyllabusSourceLocation,
 } from "./syllabus/contracts.js";
+
+export type {
+  CourseRiskEvidence,
+  CourseRiskEvidenceActivity,
+  CourseRiskEvidenceAssignment,
+  CourseRiskEvidenceAssignmentStudent,
+  CourseRiskEvidenceCompetency,
+  CourseRiskEvidenceCompetencyActivityLink,
+  CourseRiskEvidenceCompetencyDataset,
+  CourseRiskEvidenceCompetencyEvidenceItem,
+  CourseRiskEvidenceCompetencyRating,
+  CourseRiskEvidenceCompletion,
+  CourseRiskEvidenceCourse,
+  CourseRiskEvidenceEnrolment,
+  CourseRiskEvidenceGradeToPass,
+  CourseRiskEvidenceQuiz,
+  CourseRiskEvidenceQuizAttempt,
+  CourseRiskEvidenceQuizStudent,
+  MoodleRiskSourceReference,
+  RiskAcademicGradeState,
+  RiskAssignmentSubmissionState,
+  RiskCompetencyReviewState,
+  RiskCompletionState,
+  RiskCompletionTracking,
+  RiskEvidenceDatasetName,
+  RiskEvidenceDatasetState,
+  RiskEvidenceDatasetStatus,
+} from "./risk/contracts.js";

@@ -50,6 +50,8 @@ function extractMoodleId(targetType: string, data: unknown): number | null {
       return typeof obj.question_bank_entry_id === "number"
         ? obj.question_bank_entry_id
         : null;
+    case "resource":
+      return typeof obj.activity_id === "number" ? obj.activity_id : null;
     default:
       return null;
   }

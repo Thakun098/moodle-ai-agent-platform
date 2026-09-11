@@ -102,7 +102,7 @@ export function serializeQuestionToMcpArgs(
       return {
         ...common,
         qtype: "multichoice",
-        ...(mcq.feedback ? { general_feedback: mcq.feedback } : {}),
+        general_feedback: mcq.feedback,
         options: {
           single: true,
           shuffle_answers: true,
@@ -119,7 +119,7 @@ export function serializeQuestionToMcpArgs(
       return {
         ...common,
         qtype: "truefalse",
-        ...(tf.feedback ? { general_feedback: tf.feedback } : {}),
+        general_feedback: tf.feedback,
         options: { correct_answer: tf.correct_answer },
       };
     }

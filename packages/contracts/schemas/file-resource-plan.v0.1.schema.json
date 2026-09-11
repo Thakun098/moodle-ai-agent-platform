@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moodle-agent-poc:schema:planning:file-resource-plan:0.1",
+  "title": "FileResourcePlan v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ref": { "type": "string", "pattern": "^resource-[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "type": { "const": "resource" },
+    "title": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "filename": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "moodle_material_id": { "type": ["string", "integer"], "minLength": 1 },
+    "source_run_id": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "source_structure_revision": { "type": "integer", "minimum": 1 },
+    "source_section_ref": { "type": "string", "pattern": "^section-[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "source_material_revision": { "type": "integer", "minimum": 1 },
+    "source_refs": { "type": "array", "items": { "$ref": "urn:moodle-agent-poc:schema:planning:source-reference:0.1" } }
+  },
+  "required": ["ref", "type", "title", "filename", "moodle_material_id", "source_run_id", "source_structure_revision", "source_section_ref", "source_material_revision", "source_refs"]
+}

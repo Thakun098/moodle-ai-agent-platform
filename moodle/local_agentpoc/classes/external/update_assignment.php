@@ -47,6 +47,8 @@ class update_assignment extends external_api {
             'name'        => new external_value(PARAM_TEXT, 'New assignment title (optional)', VALUE_DEFAULT, null),
             'intro'       => new external_value(PARAM_RAW, 'New assignment description HTML (optional)', VALUE_DEFAULT, null),
             'grade'       => new external_value(PARAM_FLOAT, 'New maximum grade value (optional)', VALUE_DEFAULT, null),
+            'expected_course_id' => new external_value(PARAM_INT, 'Expected course before mutation', VALUE_DEFAULT, null),
+            'expected_section_id' => new external_value(PARAM_INT, 'Expected section before mutation', VALUE_DEFAULT, null),
         ]);
     }
 
@@ -60,7 +62,8 @@ class update_assignment extends external_api {
      * @return array Updated assignment record
      * @throws moodle_exception
      */
-    public static function execute(int $activity_id, ?string $name = null, ?string $intro = null, ?float $grade = null): array {
+    public static function execute(int $activity_id, ?string $name = null, ?string $intro = null, ?float $grade = null,
+            ?int $expected_course_id = null, ?int $expected_section_id = null): array {
         global $DB;
 
         // 1. Parameter validation.
@@ -69,6 +72,8 @@ class update_assignment extends external_api {
             'name'        => $name,
             'intro'       => $intro,
             'grade'       => $grade,
+            'expected_course_id' => $expected_course_id,
+            'expected_section_id' => $expected_section_id,
         ]);
 
         if ($params['grade'] !== null && $params['grade'] <= 0) {
@@ -77,6 +82,10 @@ class update_assignment extends external_api {
 
         // 2. Resolve assignment module and context.
         list($course, $cm, $context) = helper::get_course_and_cm_from_cmid($params['activity_id'], 'assign');
+        if (($params['expected_course_id'] !== null && (int) $course->id !== $params['expected_course_id']) ||
+                ($params['expected_section_id'] !== null && (int) $cm->section !== $params['expected_section_id'])) {
+            throw new \invalid_parameter_exception('Assignment target changed before mutation.');
+        }
 
         // 3. Context validation & capabilities (R4).
         self::validate_context($context);

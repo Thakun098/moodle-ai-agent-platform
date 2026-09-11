@@ -24,6 +24,8 @@ export interface CategoryListingResult {
 
 export interface CourseExecutorOptions extends SafeToolExecutionOptions {
   moodleBaseUrl?: string | undefined;
+  /** Teacher-authorized format carried by the Run configuration. */
+  courseFormat?: string | undefined;
 }
 
 export interface CourseExecutionConfig {
@@ -42,6 +44,7 @@ export interface CreatedEntitiesCount {
   quizzes: number;
   questions: number;
   slots: number;
+  resources?: number;
 }
 
 export interface ExecutionMappingItem {

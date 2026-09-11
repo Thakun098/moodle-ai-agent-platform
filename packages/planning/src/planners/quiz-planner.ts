@@ -5,6 +5,7 @@ import {
   type AnyPlanEnvelope,
   type QuizUpdatePlanEnvelope,
   type SourceReference,
+  type QuizUpdateTarget,
 } from "@moodle-agent-poc/contracts";
 import {
   buildProvenanceAllowlistFromSources,
@@ -24,6 +25,7 @@ export interface QuizPlannerOptions {
 }
 
 export interface UpdateQuizPlanParams {
+  executionTarget?: QuizUpdateTarget;
   input: QuizPlanningInput;
   planId?: string;
   runId?: string;
@@ -127,6 +129,13 @@ export class QuizPlanner {
         content: envelope.content as unknown as Record<string, unknown>,
         rawEnvelope: envelope as unknown as AnyPlanEnvelope,
         validationStatus: "valid",
+        ...(params.executionTarget ? { executionContext: {
+          target: params.executionTarget,
+          questionBindings: Object.fromEntries(input.current.questions.map((question) => [question.ref, {
+            questionBankEntryId: question.question_bank_entry_id,
+            version: question.version,
+          }])),
+        } } : {}),
       });
     }
 

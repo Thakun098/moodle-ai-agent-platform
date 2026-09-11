@@ -1,12 +1,16 @@
+import type { CourseRiskEvidence } from '@moodle-agent-poc/contracts';
 import { MoodleHttpClient } from './http.js';
+import { parseCourseRiskEvidenceResponse } from './risk-response-validator.js';
 import {
   parseAddedQuestionSlot,
   parseAssignmentDetails,
   parseCategories,
+  parseCourseFormats,
   parseCourseStructure,
   parseCreatedAssignment,
   parseCreatedCourse,
   parseCreatedQuestion,
+  parseCreatedResource,
   parseCreatedQuiz,
   parseCreatedSection,
   parseQuizDetails,
@@ -22,6 +26,7 @@ import {
   serializeCreateCourseParams,
   serializeCreateQuizParams,
   serializeCreateQuizQuestionParams,
+  serializeCreateResourceParams,
   serializeCreateSectionParams,
   serializeUpdateAssignmentParams,
   serializeUpdateQuizParams,
@@ -33,15 +38,18 @@ import type {
   CreateCourseParams,
   CreateQuizParams,
   CreateQuizQuestionParams,
+  CreateResourceParams,
   CreateSectionParams,
   MoodleAddedQuestionSlot,
   MoodleAssignmentDetails,
   MoodleCategory,
+  MoodleCourseFormat,
   MoodleClientConfig,
   MoodleCourseStructure,
   MoodleCreatedAssignment,
   MoodleCreatedCourse,
   MoodleCreatedQuestion,
+  MoodleCreatedResource,
   MoodleCreatedQuiz,
   MoodleCreatedSection,
   MoodleQuizDetails,
@@ -69,6 +77,11 @@ export class MoodleClient {
     return parseCategories(raw);
   }
 
+  async listCourseFormats(): Promise<MoodleCourseFormat[]> {
+    const raw = await this.http.post('local_agentpoc_list_course_formats');
+    return parseCourseFormats(raw);
+  }
+
   /**
    * Create a hidden course with required shortname (T0703, R8, P7-D5).
    */
@@ -87,6 +100,12 @@ export class MoodleClient {
     return parseCreatedSection(raw);
   }
 
+  async createResource(params: CreateResourceParams): Promise<MoodleCreatedResource> {
+    const form = serializeCreateResourceParams(params);
+    const raw = await this.http.post('local_agentpoc_create_resource', form);
+    return parseCreatedResource(raw);
+  }
+
   /**
    * Retrieve the complete hierarchical course tree (T0705).
    */
@@ -100,6 +119,14 @@ export class MoodleClient {
   /**
    * Create an assignment with frozen defaults via can_add_moduleinfo (T0706, R14, P7-R2).
    */
+  /** Retrieve consolidated factual evidence for deterministic Risk processing. */
+  async getCourseRiskEvidence(courseId: number): Promise<CourseRiskEvidence> {
+    const form = new URLSearchParams();
+    appendDefined(form, 'course_id', courseId);
+    const raw = await this.http.post('local_agentpoc_get_course_risk_evidence', form);
+    return parseCourseRiskEvidenceResponse(raw);
+  }
+
   async createAssignment(params: CreateAssignmentParams): Promise<MoodleCreatedAssignment> {
     const form = serializeCreateAssignmentParams(params);
     const raw = await this.http.post('local_agentpoc_create_assignment', form);

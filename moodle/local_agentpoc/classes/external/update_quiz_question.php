@@ -30,6 +30,7 @@ use stdClass;
 defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->libdir . '/questionlib.php');
+require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
 /**
  * External function to update a question creating a new version under the existing question bank entry (T0719, R10, R11, R13).
@@ -53,6 +54,9 @@ class update_quiz_question extends external_api {
             'defaultmark'            => new external_value(PARAM_FLOAT, 'New default mark value (optional)', VALUE_DEFAULT, null),
             'generalfeedback'        => new external_value(PARAM_RAW, 'New general feedback HTML (optional)', VALUE_DEFAULT, null),
             'qtype_options_json'     => new external_value(PARAM_RAW, 'JSON encoded qtype specific options (optional)', VALUE_DEFAULT, null),
+            'activity_id'           => new external_value(PARAM_INT, 'Quiz activity containing the question', VALUE_DEFAULT, null),
+            'maxmark'               => new external_value(PARAM_FLOAT, 'Desired mark for the target quiz slot', VALUE_DEFAULT, null),
+            'expected_version'      => new external_value(PARAM_INT, 'Expected question version before mutation', VALUE_DEFAULT, null),
         ]);
     }
 
@@ -74,7 +78,10 @@ class update_quiz_question extends external_api {
         ?string $questiontext = null,
         ?float $defaultmark = null,
         ?string $generalfeedback = null,
-        ?string $qtype_options_json = null
+        ?string $qtype_options_json = null,
+        ?int $activity_id = null,
+        ?float $maxmark = null,
+        ?int $expected_version = null
     ): array {
         global $DB;
 
@@ -86,6 +93,9 @@ class update_quiz_question extends external_api {
             'defaultmark'            => $defaultmark,
             'generalfeedback'        => $generalfeedback,
             'qtype_options_json'     => $qtype_options_json,
+            'activity_id'           => $activity_id,
+            'maxmark'               => $maxmark,
+            'expected_version'      => $expected_version,
         ]);
 
         if ($params['defaultmark'] !== null && $params['defaultmark'] <= 0) {
@@ -95,6 +105,33 @@ class update_quiz_question extends external_api {
         // 2. Resolve current concrete question ID and bank entry (P7-D4).
         $currentquestionid = helper::get_latest_ready_question_id_for_bank_entry($params['question_bank_entry_id']);
         $currentquestiondata = question_bank::load_question_data($currentquestionid);
+        $currentversion = helper::get_question_version_info($currentquestionid);
+        if ($params['expected_version'] !== null && (int) $currentversion->version !== $params['expected_version']) {
+            throw new invalid_parameter_exception('Question version changed since planning.');
+        }
+        if (($params['activity_id'] === null) !== ($params['maxmark'] === null) ||
+                ($params['maxmark'] !== null && $params['maxmark'] <= 0)) {
+            throw new invalid_parameter_exception('A quiz activity and positive slot mark must be supplied together.');
+        }
+        $quizobj = null;
+        $quizstructure = null;
+        $targetslot = null;
+        if ($params['activity_id'] !== null) {
+            list($quizcourse, $quizcm, $quizcontext) = helper::get_course_and_cm_from_cmid($params['activity_id'], 'quiz');
+            self::validate_context($quizcontext);
+            require_capability('local/agentpoc:manage', $quizcontext);
+            require_capability('mod/quiz:manage', $quizcontext);
+            $quizobj = \mod_quiz\quiz_settings::create($quizcm->instance);
+            $quizstructure = \mod_quiz\structure::create_for_quiz($quizobj);
+            foreach ($quizstructure->get_slots() as $slot) {
+                $slotversion = helper::get_question_version_info((int) $slot->questionid);
+                if ((int) $slotversion->questionbankentryid === $params['question_bank_entry_id']) {
+                    $targetslot = $slot;
+                    break;
+                }
+            }
+            if (!$targetslot) throw new invalid_parameter_exception('Question does not belong to the target quiz.');
+        }
 
         // 3. Resolve context from category and validate capabilities (R4).
         $category = $DB->get_record('question_categories', ['id' => $currentquestiondata->category], '*', MUST_EXIST);
@@ -292,11 +329,23 @@ class update_quiz_question extends external_api {
         }
 
         // 7. Save question (creates new concrete question ID and version under the same bank entry).
+        // Keep version and slot-grade changes atomic if either supported API fails.
+        $transaction = $DB->start_delegated_transaction();
         $qtypeobj = question_bank::get_qtype($qtype);
         $savedquestion = $qtypeobj->save_question($question, $form);
 
         // 8. Retrieve updated version metadata (P7-D4).
         $versioninfo = helper::get_question_version_info($savedquestion->id);
+        if ($targetslot !== null) {
+            $quizstructure->update_slot_version((int) $targetslot->id, (int) $versioninfo->version);
+            $quizstructure->update_slot_maxmark($targetslot, $params['maxmark']);
+            $calculator = $quizobj->get_grade_calculator();
+            $calculator->recompute_quiz_sumgrades();
+            $calculator->recompute_all_attempt_sumgrades();
+            $calculator->recompute_all_final_grades();
+            quiz_update_grades($quizobj->get_quiz());
+        }
+        $transaction->allow_commit();
 
         return [
             'question_bank_entry_id' => (int) $versioninfo->questionbankentryid,

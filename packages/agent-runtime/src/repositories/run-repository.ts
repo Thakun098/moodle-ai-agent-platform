@@ -60,6 +60,19 @@ export class RunRepository {
     return updated;
   }
 
+  async setResourcePublication(runId: string, sectionRef: string, publish: boolean): Promise<PocRunRecord> {
+    const current = await this.getRun(runId);
+    if (!current) throw new Error(`Run not found for resource publication update: ${runId}`);
+    const metadata = current.syllabusMetadata ?? {};
+    const publication = { ...(metadata.resource_publication ?? {}), [sectionRef]: publish };
+    const [updated] = await this.db.update(pocRun).set({
+      syllabusMetadata: { ...metadata, resource_publication: publication },
+      updatedAt: new Date().toISOString(),
+    }).where(eq(pocRun.runId, runId)).returning();
+    if (!updated) throw new Error(`Run not found for resource publication update: ${runId}`);
+    return updated;
+  }
+
   async updateStatus(
     runId: string,
     status: PocRunStatus,
@@ -126,4 +139,3 @@ export class RunRepository {
     return this.updateStatus(runId, "failed", error);
   }
 }
-

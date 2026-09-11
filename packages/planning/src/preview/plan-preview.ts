@@ -14,6 +14,7 @@
   ShortAnswerQuestionPlan,
   SourceReference,
   TrueFalseQuestionPlan,
+  FileResourcePlan,
 } from "@moodle-agent-poc/contracts";
 
 export interface QuestionTypeCounts {
@@ -28,6 +29,7 @@ export interface PlanMetrics {
   assignments?: number;
   quizzes?: number;
   questions?: number;
+  resources?: number;
   questions_by_type?: QuestionTypeCounts;
 }
 
@@ -43,7 +45,21 @@ export interface CoursePreview {
     summary?: string;
     source_refs: SourceReference[];
     activities: Array<AssignmentPreview | QuizPreview>;
+    resources: FileResourcePreview[];
   }>;
+}
+
+export interface FileResourcePreview {
+  type: "resource";
+  ref: string;
+  title: string;
+  filename: string;
+  moodle_material_id: string | number;
+  source_run_id: string;
+  source_structure_revision: number;
+  source_section_ref: string;
+  source_material_revision: number;
+  source_refs: SourceReference[];
 }
 
 export interface AssignmentPreview {
@@ -213,6 +229,21 @@ function formatQuizPreview(quiz: QuizPlan): QuizPreview {
   };
 }
 
+function formatResourcePreview(resource: FileResourcePlan): FileResourcePreview {
+  return {
+    type: "resource",
+    ref: resource.ref,
+    title: resource.title,
+    filename: resource.filename,
+    moodle_material_id: resource.moodle_material_id,
+    source_run_id: resource.source_run_id,
+    source_structure_revision: resource.source_structure_revision,
+    source_section_ref: resource.source_section_ref,
+    source_material_revision: resource.source_material_revision,
+    source_refs: cloneSourceReferences(resource.source_refs),
+  };
+}
+
 function formatQuizUpdatePreview(content: QuizUpdateContent): QuizPreview {
   return {
     type: "quiz",
@@ -249,6 +280,11 @@ export function extractPlanSourceReferences(envelope: AnyPlanEnvelope): SourceRe
                 }
               }
             }
+          }
+        }
+        if (section.resources) {
+          for (const resource of section.resources) {
+            collected.push(...resource.source_refs);
           }
         }
       }
@@ -320,6 +356,7 @@ export function buildPlanPreview(envelope: AnyPlanEnvelope): PlanPreview {
     let totalAssignments = 0;
     let totalQuizzes = 0;
     let totalQuestions = 0;
+    let totalResources = 0;
 
     const sections = (content.sections || []).map((section: SectionPlan) => {
       const activities: Array<AssignmentPreview | QuizPreview> = (
@@ -351,6 +388,10 @@ export function buildPlanPreview(envelope: AnyPlanEnvelope): PlanPreview {
         ...(section.summary ? { summary: section.summary } : {}),
         source_refs: cloneSourceReferences(section.source_refs),
         activities,
+        resources: (section.resources || []).map((resource) => {
+          totalResources++;
+          return formatResourcePreview(resource);
+        }),
       };
     });
 
@@ -366,6 +407,7 @@ export function buildPlanPreview(envelope: AnyPlanEnvelope): PlanPreview {
     metrics.assignments = totalAssignments;
     metrics.quizzes = totalQuizzes;
     metrics.questions = totalQuestions;
+    metrics.resources = totalResources;
     metrics.questions_by_type = qTypeCounts;
   } else if (envelope.plan_type === "assignment") {
     const content = envelope.content as unknown as AssignmentPlan;

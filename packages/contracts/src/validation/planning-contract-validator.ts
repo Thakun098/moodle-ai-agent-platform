@@ -67,7 +67,11 @@ function loadSchemas(): AnySchema[] {
       }
 
       return schema as AnySchema;
-    });
+    })
+    // The planning registry is intentionally frozen to planning-contract schemas.
+    // Risk/verification/syllabus schemas have dedicated validators and must not
+    // silently expand listPlanningSchemaIds().
+    .filter((schema) => (schema as { $id: string }).$id.startsWith("urn:moodle-agent-poc:schema:planning:"));
 }
 
 const schemas = loadSchemas();

@@ -1,0 +1,25 @@
+{
+  "trend_profile_version": "trend-profile.v0.1",
+  "daily_time_offset_minutes": 0,
+  "significant_metric_movement": {
+    "progress": {
+      "progress_gap_pp": 5,
+      "timeline_compliance": 0.1
+    },
+    "performance": {
+      "recent_fail_count": 1,
+      "recent_low_score_count": 1,
+      "persistent_fail_count": 1,
+      "persistent_low_score_count": 1,
+      "persistent_low_score_rate": 0.1
+    },
+    "competency": {
+      "confirmed_gap_count": 1,
+      "confirmed_gap_rate": 0.1
+    },
+    "submission": {
+      "late_count": 1,
+      "overdue_count": 1
+    }
+  }
+}

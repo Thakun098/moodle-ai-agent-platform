@@ -20,6 +20,8 @@ const template = readFileSync(new URL("../templates/course_builder.mustache", im
 const ajax = readFileSync(new URL("../ajax.php", import.meta.url), "utf8");
 const client = readFileSync(new URL("../classes/api/ai_platform_client.php", import.meta.url), "utf8");
 const lang = readFileSync(new URL("../lang/en/local_agentpoc.php", import.meta.url), "utf8");
+const services = readFileSync(new URL("../db/services.php", import.meta.url), "utf8");
+const createPage = readFileSync(new URL("../course/create.php", import.meta.url), "utf8");
 
 function loadModule() {
     const state = {handlers: new Map(), modalCalls: [], values: new Map()};
@@ -88,6 +90,19 @@ assert.match(source, /Stale - regenerate/, "Material replacement can surface a s
 assert.match(source, /Generated Activity Preview/, "Teacher can review generated Activity content in Step 3");
 assert.match(source, /Teacher review required/, "AI-expanded Activity warning is visible before approval");
 
+// Ticket 01 — canonical QuizPlan review renderer.
+assert.match(source, /renderQuizActivityPreview\(intent\.activity, \$preview\)/, "Activity preview uses the shared Quiz renderer");
+assert.match(source, /question\.question/, "Quiz renderer reads the canonical question field");
+assert.doesNotMatch(source, /question\.question_text \|\| question\.text \|\| question\.name/, "Quiz renderer does not fall back to legacy question fields");
+assert.match(source, /correct_choice_refs/, "Multiple-choice preview marks the canonical correct choice");
+assert.match(source, /Accepted answers/, "Short-answer preview displays accepted answers");
+assert.match(source, /Case-sensitive/, "Short-answer preview displays case sensitivity");
+assert.match(source, /Correct answer/, "True\/False preview displays the correct answer");
+assert.match(source, /Grading guidance/, "Essay preview displays grading guidance");
+assert.match(source, /Feedback/, "Quiz preview displays feedback");
+assert.match(source, /Default mark/, "Quiz preview displays default mark");
+assert.match(source, /renderQuizActivityPreview\(act, \$quizPreview\)/, "Official preview path reuses the Quiz renderer");
+
 // Step 3 progress/footer behavior.
 assert.match(template, /activity-summary-selected/, "Step 3 shows selected Activity count");
 assert.match(template, /activity-summary-ready/, "Step 3 shows ready Activity count");
@@ -108,5 +123,41 @@ assert.match(ajax, /case 'generate_activity'/, "Moodle BFF exposes per-Activity 
 assert.match(client, /strtoupper\(\$method\) === 'PUT'/, "AI Platform client supports PUT for Activity selection");
 assert.match(client, /function set_activity_intents/, "AI Platform client implements Activity selection");
 assert.doesNotMatch(source, /confirmStructureAndShowMaterials/, "old Material-under-Structure navigation is removed");
+
+// Ticket 02 — teacher-selected dynamic Moodle Course Format.
+assert.match(template, /id="course-format-select"/, "Step 1 renders a required Course Format dropdown");
+assert.match(template, /\{\{#formats\}\}/, "Course Format options come from dynamic Moodle data");
+assert.match(source, /courseFormat/, "selected Course Format is held in UI state");
+assert.match(source, /course_format/, "selected Course Format is sent when creating the Run");
+assert.match(source, /select a Moodle Course Format|Moodle Course Format/, "Run cannot start without a Course Format selection");
+assert.match(source, /approve-summary-format/, "selected Course Format is shown in approval metadata");
+assert.match(ajax, /case 'list_course_formats'/, "BFF exposes Moodle Course Format discovery");
+assert.match(ajax, /required_param\('course_format'/, "BFF requires the teacher-selected Course Format");
+assert.match(client, /course_format/, "BFF forwards Course Format to the AI Platform Run");
+assert.match(services, /local_agentpoc_list_course_formats/, "Moodle webservice exposes format discovery");
+assert.match(createPage, /list_course_formats::execute/, "Course Builder page receives formats from Moodle");
+
+// Ticket 03 — upload-once deterministic File Resource.
+assert.match(source, /plannedResources/, "Material state tracks deterministic planned resources");
+assert.match(source, /File Resource Ready/, "uploaded material is immediately shown as a ready resource");
+assert.match(ajax, /true,\s*true\s*\n\s*\);/, "Material upload seals the source for course publication by default");
+assert.match(client, /create_material_snapshot/, "sealed Moodle material is forwarded once for grounding and planning");
+assert.match(source, /set_resource_publication/, "teacher can remove or re-add a planned File Resource");
+assert.match(source, /Include this file as a Moodle File Resource/, "resource publication is a teacher-controlled choice");
+assert.match(ajax, /case 'set_resource_publication'/, "BFF persists File Resource publication selection");
+
+// Ticket 05 — Official Preview renders the finalized approvable revision.
+assert.match(template, /id="approve-official-preview"/, "Approve step has an Official Preview container");
+assert.match(source, /function renderOfficialPreview/, "Official Preview has a dedicated renderer");
+assert.match(source, /renderOfficialPreview\(preview, state\.currentEnvelope\)/, "Official Preview receives the finalized current envelope");
+assert.match(source, /approve-preview-identity/, "Official Preview displays plan ID and revision");
+assert.match(source, /Course Format/, "Official Preview displays selected Course Format");
+assert.match(source, /preview\.execution_config\.course_format/, "Official Preview displays the Course Format persisted with the Run");
+assert.doesNotMatch(source, /appendPreviewValue\(\$course, 'Course Format', state\.courseFormat/, "Official Preview does not trust transient Course Format state");
+assert.match(source, /File Resources/, "Official Preview displays planned File Resources");
+assert.match(source, /renderAssignmentActivityPreview/, "Official Preview displays full Assignment content");
+assert.match(source, /renderQuizActivityPreview\(activity, \$activity\)/, "Official Preview reuses the canonical Quiz renderer");
+assert.match(source, /Empty Shell/, "Official Preview displays Empty Shell indicators");
+assert.match(source, /Teacher Review Required/, "Official Preview displays AI review indicators");
 
 console.log("ADR-0002 approved four-step combined Activity UI static regression passed.");

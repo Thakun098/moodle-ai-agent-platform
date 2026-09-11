@@ -36,6 +36,9 @@ class ai_platform_client {
     /** @var int Request timeout in seconds */
     protected int $timeout;
 
+    /** @var string Server-side shared credential for Risk BFF calls. */
+    protected string $riskservicekey;
+
     /**
      * Constructor.
      *
@@ -48,6 +51,7 @@ class ai_platform_client {
 
         $configuredtimeout = get_config('local_agentpoc', 'aiplatformtimeout');
         $this->timeout = $timeout ?? ($configuredtimeout ? (int)$configuredtimeout : 180);
+        $this->riskservicekey = trim((string)get_config('local_agentpoc', 'riskservicekey'));
     }
 
     /**
@@ -60,7 +64,7 @@ class ai_platform_client {
      * @return array Decoded response data
      * @throws \moodle_exception On network, HTTP or contract error
      */
-    protected function request(string $method, string $endpoint, $data = null, array $headers = []): array {
+    protected function request(string $method, string $endpoint, $data = null, array $headers = [], bool $preserveapierror = false): array {
         $curl = new \curl(['ignoresecurity' => true]);
         $curl->setHeader($headers);
 
@@ -84,12 +88,12 @@ class ai_platform_client {
                 $response = $curl->post($url, $data, $options);
             } else {
                 $json = json_encode($data);
-                $curl->setHeader(['Content-Type: application/json']);
+                $curl->setHeader(array_merge($headers, ['Content-Type: application/json']));
                 $response = $curl->post($url, $json, $options);
             }
         } else if (strtoupper($method) === 'PUT') {
             $json = json_encode($data);
-            $curl->setHeader(['Content-Type: application/json']);
+            $curl->setHeader(array_merge($headers, ['Content-Type: application/json']));
             $response = $curl->put($url, $json, $options);
         } else {
             throw new \coding_exception('Unsupported HTTP method: ' . $method);
@@ -105,10 +109,17 @@ class ai_platform_client {
 
         if ($httpcode >= 400) {
             $errormsg = 'HTTP ' . $httpcode;
+            $apicode = 'AI_PLATFORM_HTTP_ERROR';
             if (is_array($decoded) && isset($decoded['error']['message'])) {
                 $errormsg = $decoded['error']['message'];
+                if (isset($decoded['error']['code']) && is_string($decoded['error']['code'])) {
+                    $apicode = $decoded['error']['code'];
+                }
             } else if (is_string($response) && $response !== '') {
                 $errormsg .= ': ' . substr($response, 0, 200);
+            }
+            if ($preserveapierror) {
+                throw new risk_api_exception($httpcode, $apicode, $errormsg);
             }
             throw new \moodle_exception('erroraiplatform', 'local_agentpoc', '', $errormsg);
         }
@@ -120,6 +131,66 @@ class ai_platform_client {
         return $decoded;
     }
 
+    /** Build server-side headers for authenticated Risk BFF requests. */
+    protected function risk_headers(int $courseid, int $actorid): array {
+        if ($this->riskservicekey === '') {
+            throw new \moodle_exception('erroraiplatform', 'local_agentpoc', '', 'Risk service credential is not configured.');
+        }
+        return [
+            'X-AgentPOC-Service-Key: ' . $this->riskservicekey,
+            'X-AgentPOC-Actor-Ref: moodle-user:' . $actorid,
+            'X-AgentPOC-Actor-Type: teacher',
+            'X-AgentPOC-Course-Ref: course:' . $courseid,
+            'X-AgentPOC-Request-Origin: MOODLE_BFF',
+        ];
+    }
+
+    /** Fetches one snapshot-consistent Course Risk Dashboard projection. */
+    public function get_risk_dashboard(int $courseid, int $actorid, ?string $snapshotid = null): array {
+        $query = $snapshotid !== null && $snapshotid !== '' ? ['snapshot_id' => $snapshotid] : null;
+        return $this->request('GET', '/api/risk/courses/' . $courseid . '/dashboard', $query, $this->risk_headers($courseid, $actorid), true);
+    }
+
+    /** Fetches one Student Risk drill-down pinned to a snapshot. */
+    public function get_student_risk(int $courseid, int $studentid, string $snapshotid, int $actorid): array {
+        return $this->request('GET', '/api/risk/courses/' . $courseid . '/students/' . $studentid, ['snapshot_id' => $snapshotid], $this->risk_headers($courseid, $actorid), true);
+    }
+
+    /** Fetches one Activity Risk drill-down pinned to a snapshot. */
+    public function get_activity_risk(int $courseid, int $activityid, string $snapshotid, int $actorid): array {
+        return $this->request('GET', '/api/risk/courses/' . $courseid . '/activities/' . $activityid, ['snapshot_id' => $snapshotid], $this->risk_headers($courseid, $actorid), true);
+    }
+
+    /** Fetches one Competency Risk drill-down pinned to a snapshot. */
+    public function get_competency_risk(int $courseid, int $competencyid, string $snapshotid, int $actorid): array {
+        return $this->request('GET', '/api/risk/courses/' . $courseid . '/competencies/' . $competencyid, ['snapshot_id' => $snapshotid], $this->risk_headers($courseid, $actorid), true);
+    }
+
+    /** Fetches validated Course AI Insight pinned to a Risk snapshot. */
+    public function get_course_risk_insight(int $courseid, string $snapshotid, int $actorid): array {
+        return $this->request('GET', '/api/risk/courses/' . $courseid . '/insight', ['snapshot_id' => $snapshotid], $this->risk_headers($courseid, $actorid), true);
+    }
+
+    /** Forces regeneration of validated Course AI Insight for test tooling, bypassing cache only. */
+    public function regenerate_course_risk_insight(int $courseid, string $snapshotid, int $actorid): array {
+        return $this->request('POST', '/api/risk/courses/' . $courseid . '/insight/regenerate', ['snapshot_id' => $snapshotid], $this->risk_headers($courseid, $actorid), true);
+    }
+
+    /** Fetches validated Student AI Insight pinned to a Risk snapshot. */
+    public function get_student_risk_insight(int $courseid, int $studentid, string $snapshotid, int $actorid): array {
+        return $this->request('GET', '/api/risk/courses/' . $courseid . '/students/' . $studentid . '/insight', ['snapshot_id' => $snapshotid], $this->risk_headers($courseid, $actorid), true);
+    }
+
+    /** Forces regeneration of validated Student AI Insight for test tooling, bypassing cache only. */
+    public function regenerate_student_risk_insight(int $courseid, int $studentid, string $snapshotid, int $actorid): array {
+        return $this->request('POST', '/api/risk/courses/' . $courseid . '/students/' . $studentid . '/insight/regenerate', ['snapshot_id' => $snapshotid], $this->risk_headers($courseid, $actorid), true);
+    }
+
+    /** Triggers the shared manual Risk refresh path. */
+    public function refresh_risk_course(int $courseid, int $actorid): array {
+        return $this->request('POST', '/api/risk/courses/' . $courseid . '/refresh', new \stdClass(), $this->risk_headers($courseid, $actorid), true);
+    }
+
     /**
      * Uploads syllabus and creates a new run.
      *
@@ -128,10 +199,11 @@ class ai_platform_client {
      * @param string $mimetype File MIME type.
      * @return array Run metadata including run_id and ingestion summary.
      */
-    public function create_run(string $filepath, string $filename, string $mimetype): array {
+    public function create_run(string $filepath, string $filename, string $mimetype, string $courseformat = 'topics'): array {
         $cfile = curl_file_create($filepath, $mimetype, $filename);
         $data = [
             '_is_multipart' => true,
+            'course_format' => $courseformat,
             'file' => $cfile,
         ];
         return $this->request('POST', '/api/runs', $data);
@@ -245,6 +317,11 @@ class ai_platform_client {
     /** Reads one section's deterministic generation state. */
     public function get_section_generation_status(string $runid, string $sectionref): array {
         return $this->request('GET', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/generation-status');
+    }
+
+    /** Persists whether the current MaterialSnapshot should be published as a File Resource. */
+    public function set_resource_publication(string $runid, string $sectionref, bool $publish): array {
+        return $this->request('PUT', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/resource-publication', ['publish' => $publish]);
     }
 
     /** Assembles the frozen CoursePlan after all sections pass the completion gate. */

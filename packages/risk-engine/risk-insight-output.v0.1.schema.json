@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "risk-insight-output.v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "coverage_qualification", "findings", "actions"],
+  "properties": {
+    "summary": { "type": "string", "minLength": 1 },
+    "coverage_qualification": { "type": ["string", "null"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "risk_refs", "trend_refs", "rule_refs", "evidence_refs"],
+        "properties": {
+          "text": { "type": "string" },
+          "risk_refs": { "type": "array", "items": { "type": "string" } },
+          "trend_refs": { "type": "array", "items": { "type": "string" } },
+          "rule_refs": { "type": "array", "items": { "type": "string" } },
+          "evidence_refs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action_code", "priority_band", "target_ref", "rationale"],
+        "properties": {
+          "action_code": { "type": "string" },
+          "priority_band": { "enum": ["P1", "P2", "P3", "P4"] },
+          "target_ref": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

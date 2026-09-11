@@ -60,6 +60,9 @@ export const EssayOptionsSchema = z
 export const ListCourseCategoriesInputSchema = z.object({}).strict();
 export type ListCourseCategoriesInput = z.infer<typeof ListCourseCategoriesInputSchema>;
 
+export const ListCourseFormatsInputSchema = z.object({}).strict();
+export type ListCourseFormatsInput = z.infer<typeof ListCourseFormatsInputSchema>;
+
 // ==========================================
 // 2. moodle_create_course (T0904)
 // ==========================================
@@ -88,6 +91,21 @@ export const CreateSectionInputSchema = z
   })
   .strict();
 export type CreateSectionInput = z.infer<typeof CreateSectionInputSchema>;
+
+export const CreateResourceInputSchema = z
+  .object({
+    course_id: z.number().int().positive(),
+    section_id: z.number().int().positive(),
+    name: z.string().trim().min(1),
+    filename: z.string().trim().min(1),
+    moodle_material_id: z.number().int().positive(),
+    source_run_id: z.string().trim().min(1),
+    source_structure_revision: z.number().int().positive(),
+    source_section_ref: z.string().trim().regex(/^section-[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+    source_material_revision: z.number().int().positive(),
+  })
+  .strict();
+export type CreateResourceInput = z.infer<typeof CreateResourceInputSchema>;
 
 // ==========================================
 // 4. moodle_get_course_structure (T0906)
@@ -133,6 +151,8 @@ export type GetAssignmentInput = z.infer<typeof GetAssignmentInputSchema>;
 export const UpdateAssignmentInputSchema = z
   .object({
     activity_id: z.number().int().positive('activity_id must be a positive integer'),
+    expected_course_id: z.number().int().positive().optional(),
+    expected_section_id: z.number().int().positive().optional(),
     name: z.string().trim().min(1, 'name must not be empty').optional(),
     intro: z.string().optional(),
     grade: z.number().positive('grade must be a positive number').optional(),
@@ -236,6 +256,9 @@ export type CreateQuizQuestionInput = z.infer<typeof CreateQuizQuestionInputSche
 
 const UpdateQuestionBase = z.object({
   question_bank_entry_id: z.number().int().positive('question_bank_entry_id must be a positive integer'),
+  activity_id: z.number().int().positive().optional(),
+  max_mark: z.number().positive().optional(),
+  expected_version: z.number().int().positive().optional(),
   name: z.string().trim().min(1, 'name must not be empty').optional(),
   question_text: z.string().trim().min(1, 'question_text must not be empty').optional(),
   default_mark: z.number().positive('default_mark must be a positive number').optional(),

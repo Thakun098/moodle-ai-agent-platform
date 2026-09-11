@@ -71,6 +71,7 @@ export function registerCourseTools(server: McpServer, moodleClient: MoodleClien
             shortname: res.course.shortname,
             category_id: res.course.categoryId,
             visible: res.course.visible,
+            ...(res.course.format !== undefined ? { format: res.course.format } : {}),
           },
           sections: res.sections.map((s) => ({
             section_id: s.sectionId,
@@ -82,9 +83,10 @@ export function registerCourseTools(server: McpServer, moodleClient: MoodleClien
               instance_id: a.instanceId,
               module_name: a.moduleName,
               name: a.name,
-              intro: a.intro,
-              grade: a.grade,
-            })),
+            intro: a.intro,
+            grade: a.grade,
+            ...(a.files !== undefined ? { files: a.files } : {}),
+          })),
           })),
         };
 

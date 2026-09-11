@@ -2,13 +2,14 @@ import {
   validatePlanningContract,
   type AnyPlanEnvelope,
 } from "@moodle-agent-poc/contracts";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { AppDatabase } from "../db/connection.js";
 import {
   pocPlan,
   type NewPocPlanRecord,
   type PocPlanRecord,
   type PocPlanValidationStatus,
+  type PlanExecutionContext,
 } from "../db/schema/plans.js";
 
 export class PlanRepository {
@@ -28,6 +29,7 @@ export class PlanRepository {
     validationStatus: PocPlanValidationStatus;
     validationErrors?: unknown;
     reviewRequirements?: Array<{ code: string; activity_ref?: string }>;
+    executionContext?: PlanExecutionContext;
   }): Promise<PocPlanRecord> {
     if (data.validationStatus === "valid") {
       const validation = validatePlanningContract(data.rawEnvelope);
@@ -55,6 +57,7 @@ export class PlanRepository {
       validationStatus: data.validationStatus,
       validationErrors: data.validationErrors ?? null,
       reviewRequirements: data.reviewRequirements ?? [],
+      executionContext: data.executionContext ?? null,
     };
     const [created] = await this.db.insert(pocPlan).values(insertData).returning();
     if (!created) {
@@ -75,6 +78,16 @@ export class PlanRepository {
       .where(and(eq(pocPlan.planId, planId), eq(pocPlan.revision, revision)))
       .limit(1);
     return record ?? null;
+  }
+
+  /** First execution pins create-targets atomically; subsequent calls cannot retarget retries. */
+  async bindExecutionContext(planId: string, revision: number, context: PlanExecutionContext): Promise<PlanExecutionContext> {
+    const [bound] = await this.db.update(pocPlan).set({ executionContext: context })
+      .where(and(eq(pocPlan.planId, planId), eq(pocPlan.revision, revision), isNull(pocPlan.executionContext)))
+      .returning();
+    const current = bound ?? await this.getPlanRevision(planId, revision);
+    if (!current?.executionContext) throw new Error("Plan execution context could not be bound.");
+    return current.executionContext;
   }
 
   async getLatestRevision(planId: string): Promise<PocPlanRecord | null> {

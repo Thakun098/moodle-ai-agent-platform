@@ -3,6 +3,8 @@ import type { PlanRepository, PocPlanRecord } from "@moodle-agent-poc/agent-runt
 import {
   validatePlanningContract,
   type AnyPlanEnvelope,
+  type CoursePlanContent,
+  type FileResourcePlan,
   type SourceReference,
 } from "@moodle-agent-poc/contracts";
 import {
@@ -33,6 +35,33 @@ function assertExactSourceSubset(
         "PLAN_DOMAIN_INVALID",
         `Direct edit cannot introduce or alter source provenance: ${JSON.stringify(ref)}`
       );
+    }
+  }
+}
+
+function resourceBinding(resource: FileResourcePlan): string {
+  return JSON.stringify([
+    resource.moodle_material_id,
+    resource.filename,
+    resource.source_run_id,
+    resource.source_structure_revision,
+    resource.source_section_ref,
+    resource.source_material_revision,
+  ]);
+}
+
+function assertResourceBindingsUnchanged(candidate: AnyPlanEnvelope, latest: AnyPlanEnvelope): void {
+  if (candidate.plan_type !== "course" || latest.plan_type !== "course") return;
+  const latestResources = new Map<string, FileResourcePlan>();
+  for (const section of (latest.content as unknown as CoursePlanContent).sections ?? []) {
+    for (const resource of section.resources ?? []) latestResources.set(resource.ref, resource);
+  }
+  for (const section of (candidate.content as unknown as CoursePlanContent).sections ?? []) {
+    for (const resource of section.resources ?? []) {
+      const previous = latestResources.get(resource.ref);
+      if (!previous || resourceBinding(previous) !== resourceBinding(resource)) {
+        throw new PlanningError("PLAN_DOMAIN_INVALID", `Direct edit cannot introduce or alter File Resource source binding for "${resource.ref}".`);
+      }
     }
   }
 }
@@ -106,6 +135,7 @@ export class PlanRevisionHelper {
     const latestSources = extractPlanSourceReferences(latest.rawEnvelope);
     const nextSources = extractPlanSourceReferences(nextEnvelope);
     assertExactSourceSubset(nextSources, latestSources);
+    assertResourceBindingsUnchanged(nextEnvelope, latest.rawEnvelope);
 
     // Retain normal domain validation as a second gate for ref uniqueness and other invariants.
     const allowlist = buildProvenanceAllowlistFromSources(latestSources);
@@ -124,6 +154,7 @@ export class PlanRevisionHelper {
       rawEnvelope: nextEnvelope,
       validationStatus: "valid",
       reviewRequirements: latest.reviewRequirements ?? [],
+      ...(latest.executionContext ? { executionContext: latest.executionContext } : {}),
     });
   }
 
@@ -201,6 +232,8 @@ export class PlanRevisionHelper {
       content: nextEnvelope.content,
       rawEnvelope: nextEnvelope,
       validationStatus: "valid",
+      ...(latest.executionContext ? { executionContext: latest.executionContext } : {}),
+      reviewRequirements: latest.reviewRequirements ?? [],
     });
   }
 }

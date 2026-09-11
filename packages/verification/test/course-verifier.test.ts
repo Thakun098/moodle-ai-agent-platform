@@ -18,6 +18,17 @@ const plan: CoursePlanEnvelope = {
   }
 };
 
+const resourcePlan: CoursePlanEnvelope = {
+  ...plan,
+  content: {
+    ...plan.content,
+    sections: [{
+      ...plan.content.sections[0],
+      resources: [{ ref: "resource-01-01", type: "resource", title: "Week 1 Material", filename: "week-1.md", moodle_material_id: 77, source_run_id: "run-v", source_structure_revision: 1, source_section_ref: "section-01", source_material_revision: 1, source_refs: [] }],
+    }],
+  },
+};
+
 function repos() {
   const verificationRepo = { recordVerification: vi.fn(async (x) => x) };
   const runRepo = { completeRun: vi.fn(async () => ({})), failRun: vi.fn(async () => ({})) };
@@ -34,21 +45,46 @@ function manager(courseName = "Verify Course") {
     discoverTools: vi.fn(async () => []),
     callTool: vi.fn(async (name: string) => {
       if (name === "moodle_get_course_structure") return { status: "success", data: {
-        course: { id: 10, fullname: courseName },
+        course: { id: 10, category_id: 1, visible: 0, fullname: courseName },
         sections: [{ section_id: 20, section_num: 1, name: "Week 1", activities: [
           { activity_id: 30, module_name: "assign", name: "A1", intro: "Desc\n\nInstructions:\n1. Do it\n\nLearning Objectives:\n- Learn", grade: 10 },
           { activity_id: 40, module_name: "quiz", name: "Q1", intro: "Quiz desc", grade: 100 },
         ] }]
       } };
-      return { status: "success", data: [{ question_bank_entry_id: 50, qtype: "truefalse", question_text: "Sky blue?", default_mark: 1 }] };
+      return { status: "success", data: [{ question_bank_entry_id: 50, qtype: "truefalse", question_text: "Sky blue?", default_mark: 1, max_mark: 1, general_feedback: "Yes", answers: [{ text: "True", fraction: 1 }, { text: "False", fraction: 0 }] }] };
     })
   } as any;
+}
+
+function resourceRepos() {
+  const value = repos();
+  value.mappingRepo.listRunMappings = vi.fn(async () => [
+    ...(await repos().mappingRepo.listRunMappings()),
+    { localRef: "resource-01-01", moodleId: 60, moodleMetadata: { filename: "week-1.md" } },
+  ]);
+  return value;
+}
+
+function resourceManager(includeFiles: boolean) {
+  const base = manager();
+  base.callTool = vi.fn(async (name: string) => {
+    if (name === "moodle_get_course_structure") return { status: "success", data: {
+      course: { id: 10, category_id: 1, visible: 0, fullname: "Verify Course" },
+      sections: [{ section_id: 20, section_num: 1, name: "Week 1", activities: [
+        { activity_id: 30, module_name: "assign", name: "A1", intro: "Desc\n\nInstructions:\n1. Do it\n\nLearning Objectives:\n- Learn", grade: 10 },
+        { activity_id: 40, module_name: "quiz", name: "Q1", intro: "Quiz desc", grade: 100 },
+        { activity_id: 60, module_name: "resource", name: "Week 1 Material", intro: "", grade: 0, ...(includeFiles ? { files: ["week-1.md"] } : {}) },
+      ] }],
+    } };
+    return { status: "success", data: [{ question_bank_entry_id: 50, qtype: "truefalse", question_text: "Sky blue?", default_mark: 1, max_mark: 1, general_feedback: "Yes", answers: [{ text: "True", fraction: 1 }, { text: "False", fraction: 0 }] }] };
+  });
+  return base;
 }
 
 describe("Phase 14 course verifier", () => {
   it("passes deterministic course read-back and completes run", async () => {
     const r = repos();
-    const result = await verifyCoursePlan({ runId: "run-v", planEnvelope: plan, mcpClientManager: manager(), repositories: r });
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: manager(), repositories: r });
     expect(result).toEqual({ plan_id: "plan-v", revision: 1, passed: true, issues: [] });
     expect(r.verificationRepo.recordVerification).toHaveBeenCalledOnce();
     expect(r.runRepo.completeRun).toHaveBeenCalledOnce();
@@ -57,9 +93,20 @@ describe("Phase 14 course verifier", () => {
 
   it("records deterministic mismatch and fails run", async () => {
     const r = repos();
-    const result = await verifyCoursePlan({ runId: "run-v", planEnvelope: plan, mcpClientManager: manager("Wrong"), repositories: r });
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: manager("Wrong"), repositories: r });
     expect(result.passed).toBe(false);
     if (!result.passed) expect(result.issues.some((x) => x.path === "/course/fullname")).toBe(true);
     expect(r.runRepo.failRun).toHaveBeenCalledOnce();
+  });
+
+  it("does not trust create-resource mapping metadata when Moodle file read-back is absent", async () => {
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: resourcePlan, mcpClientManager: resourceManager(false), repositories: resourceRepos() });
+    expect(result.passed).toBe(false);
+    if (!result.passed) expect(result.issues.some((issue) => issue.path.endsWith("/filename"))).toBe(true);
+  });
+
+  it("passes File Resource verification only when Moodle read-back contains the expected filename", async () => {
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: resourcePlan, mcpClientManager: resourceManager(true), repositories: resourceRepos() });
+    expect(result.passed).toBe(true);
   });
 });

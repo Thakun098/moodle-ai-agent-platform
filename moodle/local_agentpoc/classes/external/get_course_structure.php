@@ -17,6 +17,7 @@
 namespace local_agentpoc\external;
 
 use context_course;
+use context_module;
 use core_external\external_api;
 use core_external\external_function_parameters;
 use core_external\external_multiple_structure;
@@ -99,13 +100,29 @@ class get_course_structure extends external_api {
 
                     $intro = '';
                     $grade = 0.0;
+                    $filesout = [];
 
                     if ($instancerecord) {
                         $intro = (string) ($instancerecord->intro ?? '');
                         $grade = isset($instancerecord->grade) ? (float) $instancerecord->grade : 0.0;
                     }
+                    if ($modname === 'resource') {
+                        $resourcefiles = get_file_storage()->get_area_files(
+                            context_module::instance($cm->id)->id,
+                            'mod_resource',
+                            'content',
+                            0,
+                            'sortorder, id',
+                            false
+                        );
+                        foreach ($resourcefiles as $resourcefile) {
+                            if (!$resourcefile->is_directory()) {
+                                $filesout[] = (string) $resourcefile->get_filename();
+                            }
+                        }
+                    }
 
-                    $activitiesout[] = [
+                    $activitydata = [
                         'activity_id' => (int) $cm->id, // P7-D2: CMID is canonical activity_id
                         'instance_id' => (int) $cm->instance,
                         'modulename'  => $modname,
@@ -113,6 +130,10 @@ class get_course_structure extends external_api {
                         'intro'       => $intro,
                         'grade'       => $grade,
                     ];
+                    if ($filesout) {
+                        $activitydata['files'] = $filesout;
+                    }
+                    $activitiesout[] = $activitydata;
                 }
             }
 
@@ -132,6 +153,7 @@ class get_course_structure extends external_api {
                 'shortname'   => (string) $course->shortname,
                 'category_id' => (int) $course->category,
                 'visible'     => (int) $course->visible,
+                'format'      => (string) $course->format,
             ],
             'sections' => $sectionsout,
         ];
@@ -150,6 +172,7 @@ class get_course_structure extends external_api {
                 'shortname'   => new external_value(PARAM_TEXT, 'Course short name'),
                 'category_id' => new external_value(PARAM_INT, 'Category ID containing the course'),
                 'visible'     => new external_value(PARAM_INT, 'Course visibility (0 = hidden)'),
+                'format'      => new external_value(PARAM_ALPHANUMEXT, 'Course format identifier'),
             ]),
             'sections' => new external_multiple_structure(
                 new external_single_structure([
@@ -165,6 +188,11 @@ class get_course_structure extends external_api {
                             'name'        => new external_value(PARAM_TEXT, 'Activity title/name'),
                             'intro'       => new external_value(PARAM_RAW, 'Activity intro/description HTML'),
                             'grade'       => new external_value(PARAM_FLOAT, 'Maximum grade value for activity'),
+                            'files'       => new external_multiple_structure(
+                                new external_value(PARAM_FILE, 'Resource filename'),
+                                'Files attached to a Resource activity',
+                                VALUE_OPTIONAL
+                            ),
                         ])
                     ),
                 ])

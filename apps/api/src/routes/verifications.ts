@@ -73,6 +73,8 @@ export const verificationRoutes: FastifyPluginAsync<VerificationRoutesOptions> =
         planEnvelope: plan.rawEnvelope as unknown as CoursePlanEnvelope,
         mcpClientManager: manager,
         repositories: { mappingRepo: repos.mappingRepo, verificationRepo: repos.verificationRepo, runRepo: repos.runRepo },
+        courseFormat: ((run.syllabusMetadata as { course_format?: unknown } | null | undefined)?.course_format as string | undefined),
+        categoryId: plan.executionContext && "category_id" in plan.executionContext.target ? plan.executionContext.target.category_id : undefined,
       });
       reply.status(result.passed ? 200 : 409).send(result);
     } finally {

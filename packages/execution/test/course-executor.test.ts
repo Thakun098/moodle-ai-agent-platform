@@ -160,6 +160,31 @@ describe("CourseExecutor (T1102 to T1110, P11-D1 to P11-D8, C1 to C7)", () => {
       }
     );
 
+    server.registerTool(
+      "moodle_create_resource",
+      {
+        description: "Create file resource",
+        inputSchema: z.object({
+          course_id: z.number(),
+          section_id: z.number(),
+          name: z.string(),
+          filename: z.string(),
+          moodle_material_id: z.number(),
+          source_run_id: z.string(),
+          source_structure_revision: z.number(),
+          source_section_ref: z.string(),
+          source_material_revision: z.number(),
+        }),
+      },
+      async (args) => ({
+        content: [{ type: "text", text: "Resource created" }],
+        structuredContent: {
+          status: "success",
+          data: { activity_id: 801, resource_id: 901, section_id: args.section_id, name: args.name, filename: args.filename, moodle_material_id: args.moodle_material_id },
+        },
+      }),
+    );
+
     // 3. moodle_create_assignment
     server.registerTool(
       "moodle_create_assignment",
@@ -408,10 +433,13 @@ describe("CourseExecutor (T1102 to T1110, P11-D1 to P11-D8, C1 to C7)", () => {
       target: { category_id: 10 },
       mcpClientManager,
       repositories: repos as unknown as AgentLoopRepositories,
-      options: { moodleBaseUrl: "http://localhost:8000" },
+      options: { moodleBaseUrl: "http://localhost:8000", courseFormat: "weeks" },
     });
 
     const result = await executor.execute();
+
+    const courseCall = repos.toolCalls.find((call) => call.toolName === "moodle_create_course");
+    expect(courseCall?.arguments).toMatchObject({ format: "weeks" });
 
     // 1. Result verification
     expect(result.status).toBe("awaiting_verification");
@@ -468,6 +496,39 @@ describe("CourseExecutor (T1102 to T1110, P11-D1 to P11-D8, C1 to C7)", () => {
     const essayMap = mappings.find((m) => m.localRef === "q-essay");
     expect(essayMap?.moodleId).toBe(504);
 
+    await mcpClientManager.close();
+    await server.close();
+  });
+
+  it("creates one planned File Resource from the sealed material reference after the section exists", async () => {
+    const repos = createMockRepositories();
+    const server = createFakeMoodleMcpServer();
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const mcpClientManager = new McpClientManager({ type: "in_memory", transport: clientTransport });
+    await mcpClientManager.connect();
+
+    const resourcePlan = {
+      ...validCoursePlanEnvelope,
+      content: {
+        course: { title: "Resource Course", course_code: "RES1" },
+        sections: [{
+          ref: "sec-1", position: 1, title: "Week 1", source_refs: [], activities: [],
+          resources: [{ ref: "resource-01-01", type: "resource" as const, title: "Week_01_Material", filename: "Week_01_Material.pdf", moodle_material_id: 77, source_run_id: "run-resource", source_structure_revision: 2, source_section_ref: "sec-1", source_material_revision: 3, source_refs: [] }],
+        }],
+      },
+    };
+    const result = await executeCoursePlan({
+      runId: "run-resource",
+      planEnvelope: resourcePlan,
+      target: { category_id: 10 },
+      mcpClientManager,
+      repositories: repos as unknown as AgentLoopRepositories,
+    });
+
+    expect(result.createdEntities.resources).toBe(1);
+    expect(repos.mappings.find((mapping) => mapping.localRef === "resource-01-01")).toMatchObject({ moodleId: 801, targetType: "resource" });
+    expect(repos.toolCalls.find((call) => call.toolName === "moodle_create_resource")?.arguments).toMatchObject({ name: "Week_01_Material", filename: "Week_01_Material.pdf", moodle_material_id: 77, source_run_id: "run-resource", source_structure_revision: 2, source_section_ref: "sec-1", source_material_revision: 3 });
     await mcpClientManager.close();
     await server.close();
   });

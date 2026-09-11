@@ -26,6 +26,11 @@ export interface MoodleCategoryMcpData {
   visible: number;
 }
 
+export interface MoodleCourseFormatMcpData {
+  value: string;
+  name: string;
+}
+
 export interface MoodleCreatedCourseMcpData {
   course_id: number;
   fullname: string;
@@ -40,6 +45,15 @@ export interface MoodleCreatedSectionMcpData {
   section_num: number;
   name: string;
   summary: string;
+}
+
+export interface MoodleCreatedResourceMcpData {
+  activity_id: number;
+  resource_id: number;
+  section_id: number;
+  name: string;
+  filename: string;
+  moodle_material_id: number;
 }
 
 export interface MoodleCreatedAssignmentMcpData {
@@ -121,6 +135,10 @@ export interface MoodleQuizQuestionSlotMcpData {
   question_text: string;
   default_mark: number;
   answers: MoodleQuizQuestionAnswerMcpData[];
+  general_feedback?: string;
+  correct_answer?: boolean;
+  case_sensitive?: boolean;
+  grading_guidance?: string;
 }
 
 export interface MoodleCreatedQuestionMcpData {
@@ -161,6 +179,7 @@ export interface MoodleStructureActivityMcpData {
   name: string;
   intro: string;
   grade: number;
+  files?: string[];
 }
 
 export interface MoodleStructureSectionMcpData {
@@ -178,6 +197,7 @@ export interface MoodleCourseStructureMcpData {
     shortname: string;
     category_id: number;
     visible: number;
+    format?: string;
   };
   sections: MoodleStructureSectionMcpData[];
 }

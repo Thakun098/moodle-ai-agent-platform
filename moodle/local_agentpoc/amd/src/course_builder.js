@@ -13,6 +13,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         ajaxurl: '',
         categories: [],
         selectedCategoryId: null,
+        courseFormat: null,
         selectedFile: null,
         teacherInstruction: '',
         runId: null,
@@ -172,6 +173,85 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         };
     }
 
+    function appendPreviewList($container, label, values) {
+        if (!Array.isArray(values) || !values.length) return;
+        var $field = $('<div class="mb-2"></div>');
+        $field.append($('<div class="font-weight-bold"></div>').text(label));
+        var $list = $('<ul class="mb-0 pl-4"></ul>');
+        values.forEach(function(value) {
+            $list.append($('<li></li>').text(String(value)));
+        });
+        $field.append($list);
+        $container.append($field);
+    }
+
+    function appendPreviewValue($container, label, value) {
+        if (value === undefined || value === null || value === '') return;
+        var $field = $('<div class="mb-2"></div>');
+        $field.append($('<span class="font-weight-bold"></span>').text(label + ': '));
+        $field.append($('<span></span>').text(String(value)));
+        $container.append($field);
+    }
+
+    function renderCanonicalQuestionPreview(question, index, $container) {
+        var $card = $('<div class="border rounded p-2 mb-2"></div>');
+        var questionNumber = index + 1;
+        var questionText = question && typeof question.question === 'string' && question.question.trim()
+            ? question.question
+            : 'Question content unavailable';
+        $card.append($('<div class="font-weight-bold mb-2"></div>').text(questionNumber + '. ' + questionText));
+
+        var type = question && question.type ? question.type : 'unknown';
+        var typeLabel = type === 'multichoice' ? 'Multiple Choice'
+            : type === 'truefalse' ? 'True/False'
+                : type === 'shortanswer' ? 'Short Answer'
+                    : type === 'essay' ? 'Essay' : 'Unknown';
+        appendPreviewValue($card, 'Type', typeLabel);
+
+        if (type === 'multichoice') {
+            var correctRefs = Array.isArray(question.correct_choice_refs) ? question.correct_choice_refs : [];
+            var $choices = $('<div class="mb-2"></div>');
+            $choices.append($('<div class="font-weight-bold"></div>').text('Choices'));
+            var choices = Array.isArray(question.choices) ? question.choices : [];
+            var $choiceList = $('<ul class="mb-0 pl-4"></ul>');
+            choices.forEach(function(choice) {
+                var isCorrect = correctRefs.indexOf(choice.ref) !== -1;
+                var $choice = $('<li></li>').toggleClass('font-weight-bold text-success', isCorrect);
+                $choice.append(document.createTextNode((isCorrect ? '✓ ' : '') + String(choice.text || '')));
+                if (isCorrect) $choice.append($('<span class="badge badge-success ml-2"></span>').text('Correct'));
+                $choiceList.append($choice);
+            });
+            $choices.append($choiceList);
+            $card.append($choices);
+        } else if (type === 'truefalse') {
+            appendPreviewValue($card, 'Correct answer', question.correct_answer === true ? 'True' : question.correct_answer === false ? 'False' : 'Not specified');
+        } else if (type === 'shortanswer') {
+            appendPreviewList($card, 'Accepted answers', question.accepted_answers);
+            appendPreviewValue($card, 'Case-sensitive', question.case_sensitive === true ? 'Yes' : 'No');
+        } else if (type === 'essay') {
+            appendPreviewList($card, 'Grading guidance', question.grading_guidance);
+        }
+
+        appendPreviewValue($card, 'Feedback', question.feedback);
+        appendPreviewValue($card, 'Default mark', question.default_mark);
+        $container.append($card);
+    }
+
+    // Renders the canonical QuizPlan shape. Keep this as the single UI
+    // mapping for Activity Structure and the later Official Preview.
+    function renderQuizActivityPreview(quiz, $container) {
+        if (quiz.title) $container.append($('<div class="font-weight-bold mb-1"></div>').text(quiz.title));
+        if (quiz.description) $container.append($('<div class="mb-2"></div>').text(quiz.description));
+        var questions = Array.isArray(quiz.questions) ? quiz.questions : [];
+        if (!questions.length) {
+            $container.append($('<div class="text-muted"></div>').text('No questions yet.'));
+            return;
+        }
+        questions.forEach(function(question, index) {
+            renderCanonicalQuestionPreview(question, index, $container);
+        });
+    }
+
     function saveStructureRevision(structure) {
         return callBff('save_structure_revision', {
             run_id: state.runId,
@@ -187,6 +267,83 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             renderPreview(envelope, envelope);
             return result;
         });
+    }
+
+    function renderAssignmentActivityPreview(assignment, $container) {
+        $container.append($('<div class="font-weight-bold mb-1"></div>').text(assignment.title || 'Assignment'));
+        appendPreviewValue($container, 'Description', assignment.description);
+        appendPreviewList($container, 'Instructions', assignment.instructions);
+        appendPreviewList($container, 'Learning objectives', assignment.learning_objectives);
+        appendPreviewValue($container, 'Grade', assignment.grade);
+    }
+
+    function renderOfficialPreview(preview, envelope) {
+        var $container = $('#approve-official-preview');
+        $container.empty();
+        var content = envelope && envelope.content ? envelope.content : (preview && preview.structure && preview.structure.type === 'course' ? preview.structure : {});
+        var course = content.course || {};
+        var warnings = (envelope && envelope.warnings) || preview.warnings || [];
+        var assumptions = (envelope && envelope.assumptions) || preview.assumptions || [];
+        $('#approve-preview-identity').text('Plan ' + (envelope.plan_id || preview.plan_id || 'unknown') + ' • Revision ' + (envelope.revision || preview.revision || '?'));
+
+        var $course = $('<div class="border rounded bg-light p-3 mb-3"></div>');
+        $course.append($('<div class="h5 mb-1"></div>').text(course.title || envelope.title || preview.title || 'Untitled Course'));
+        appendPreviewValue($course, 'Summary', course.summary || envelope.summary || preview.summary);
+        var persistedCourseFormat = preview && preview.execution_config ? preview.execution_config.course_format : null;
+        appendPreviewValue($course, 'Course Format', persistedCourseFormat || 'Unavailable');
+        $container.append($course);
+
+        var sections = content.sections || [];
+        sections.forEach(function(section, index) {
+            var $section = $('<div class="border rounded p-3 mb-3"></div>');
+            $section.append($('<div class="font-weight-bold mb-1"></div>').text((index + 1) + '. ' + (section.title || 'Section ' + (index + 1))));
+            if (section.summary) $section.append($('<div class="small text-muted mb-2"></div>').text(section.summary));
+
+            var resources = section.resources || [];
+            if (resources.length) {
+                var $resourceBlock = $('<div class="mb-3"></div>').append($('<div class="font-weight-bold"></div>').text('File Resources'));
+                var $resourceList = $('<ul class="mb-0 pl-4"></ul>');
+                resources.forEach(function(resource) {
+                    $resourceList.append($('<li></li>').text(resource.title + ' (' + resource.filename + ')'));
+                });
+                $resourceBlock.append($resourceList);
+                $section.append($resourceBlock);
+            } else {
+                $section.append($('<div class="small text-muted mb-3"></div>').text('No planned File Resource'));
+            }
+
+            (section.activities || []).forEach(function(activity) {
+                var $activity = $('<div class="border-top pt-2 mt-2"></div>');
+                var isShell = warnings.some(function(warning) { return String(warning).indexOf(activity.ref) !== -1 && String(warning).indexOf('Empty Activity Shell') !== -1; });
+                var needsReview = warnings.some(function(warning) { return String(warning).indexOf(activity.ref) !== -1 && String(warning).indexOf('Teacher Review Required') !== -1; });
+                var label = activity.type === 'quiz' ? 'Quiz' : 'Assignment';
+                var $badges = $('<span class="ml-2"></span>');
+                if (isShell) $badges.append($('<span class="badge badge-warning mr-1"></span>').text('Empty Shell'));
+                if (needsReview) $badges.append($('<span class="badge badge-warning"></span>').text('Teacher Review Required'));
+                $activity.append($('<div class="font-weight-bold mb-2"></div>').text(label).append($badges));
+                if (activity.type === 'quiz') renderQuizActivityPreview(activity, $activity);
+                else renderAssignmentActivityPreview(activity, $activity);
+                $section.append($activity);
+            });
+            $container.append($section);
+        });
+
+        var notes = warnings.concat(assumptions);
+        var $notes = $('<div class="alert alert-info small mb-0"></div>');
+        $notes.append($('<div class="font-weight-bold mb-1"></div>').text('Warnings and assumptions'));
+        if (!notes.length) $notes.append($('<div></div>').text('None'));
+        notes.forEach(function(note) { $notes.append($('<div></div>').text('• ' + note)); });
+        $container.append($notes);
+    }
+
+    function applyPlanRevision(plan, preview) {
+        state.revision = plan.revision;
+        state.currentEnvelope = plan.rawEnvelope;
+        state.requiresAiReview = (plan.reviewRequirements || []).some(function(item) { return item && item.code === 'AI_EXPANDED_CONTENT'; });
+        $('#ack-ai-expanded-content').prop('checked', false);
+        $('#ai-review-ack-area').toggleClass('d-none', !state.requiresAiReview);
+        $('#btn-approve-execute').prop('disabled', state.requiresAiReview);
+        renderPreview(preview, plan.rawEnvelope);
     }
 
     function renderPreview(preview, envelope) {
@@ -241,6 +398,12 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                         $actList.append($li);
                     });
                     $secBody.append($actList);
+                    activities.forEach(function(act) {
+                        if (act.type !== 'quiz') return;
+                        var $quizPreview = $('<div class="border rounded bg-light p-2 mt-2 small"></div>');
+                        renderQuizActivityPreview(act, $quizPreview);
+                        $secBody.append($quizPreview);
+                    });
                 }
             }
 
@@ -309,9 +472,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             envelope: JSON.stringify(newEnvelope),
             summary: 'Updated course title and summary'
         }).then(function(res) {
-            state.revision = res.plan.revision;
-            state.currentEnvelope = res.plan.rawEnvelope;
-            renderPreview(res.preview, res.plan.rawEnvelope);
+            applyPlanRevision(res.plan, res.preview);
         }).catch(function(err) {
             showError('Failed to save revised course title: ' + err.message, err.details);
         });
@@ -360,9 +521,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             envelope: JSON.stringify(newEnvelope),
             summary: 'Updated section ' + (index + 1) + ' title'
         }).then(function(res) {
-            state.revision = res.plan.revision;
-            state.currentEnvelope = res.plan.rawEnvelope;
-            renderPreview(res.preview, res.plan.rawEnvelope);
+            applyPlanRevision(res.plan, res.preview);
         }).catch(function(err) {
             showError('Failed to save revised section: ' + err.message, err.details);
         });
@@ -399,9 +558,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             envelope: JSON.stringify(newEnvelope),
             summary: 'Deleted section ' + (index + 1)
         }).then(function(res) {
-            state.revision = res.plan.revision;
-            state.currentEnvelope = res.plan.rawEnvelope;
-            renderPreview(res.preview, res.plan.rawEnvelope);
+            applyPlanRevision(res.plan, res.preview);
         }).catch(function(err) {
             showError('Failed to delete section: ' + err.message, err.details);
         });
@@ -425,9 +582,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             envelope: JSON.stringify(newEnvelope),
             summary: 'Removed activity from section ' + (sectionIndex + 1)
         }).then(function(res) {
-            state.revision = res.plan.revision;
-            state.currentEnvelope = res.plan.rawEnvelope;
-            renderPreview(res.preview, res.plan.rawEnvelope);
+            applyPlanRevision(res.plan, res.preview);
         }).catch(function(err) {
             showError('Failed to remove activity: ' + err.message, err.details);
         });
@@ -466,9 +621,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             envelope: JSON.stringify(newEnvelope),
             summary: 'Added section ' + descriptor.number
         }).then(function(res) {
-            state.revision = res.plan.revision;
-            state.currentEnvelope = res.plan.rawEnvelope;
-            renderPreview(res.preview, res.plan.rawEnvelope);
+            applyPlanRevision(res.plan, res.preview);
         }).catch(function(err) {
             showError('Failed to add section: ' + err.message, err.details);
         });
@@ -480,6 +633,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
 
         var catName = $('#course-category-select option:selected').text();
         $('#approve-summary-category').text(catName);
+        $('#approve-summary-format').text($('#course-format-select option:selected').text() || state.courseFormat || 'Unknown');
         $('#approve-summary-filename').text(state.selectedFile ? state.selectedFile.name : 'syllabus.txt');
 
         var sections = (state.currentEnvelope && state.currentEnvelope.content) ? state.currentEnvelope.content.sections : [];
@@ -526,6 +680,10 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             showError('Please select a syllabus file first.');
             return;
         }
+        if (!state.courseFormat) {
+            showError('Please select a Moodle Course Format before generating the course structure.');
+            return;
+        }
 
         clearError();
         $('#btn-generate-plan').prop('disabled', true);
@@ -535,6 +693,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         var formData = new FormData();
         formData.append('syllabus_file', state.selectedFile);
         formData.append('category_id', state.selectedCategoryId);
+        formData.append('course_format', state.courseFormat);
 
         var notes = $('#optional-notes').val().trim();
         if (notes) {
@@ -543,6 +702,8 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
 
         callBff('upload_and_create_run', formData, true).then(function(runData) {
             state.runId = runData.run_id;
+            state.courseFormat = runData.course_format || state.courseFormat;
+            $('#course-format-select').val(state.courseFormat).prop('disabled', true);
             state.stagedMode = true;
             state.teacherInstruction = notes;
             startProgressPolling();
@@ -632,6 +793,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             return callBff('get_preview', {plan_id: state.planId, revision: state.revision}).then(function(preview) {
                 renderPreview(preview, state.currentEnvelope);
                 populateApproveView();
+                renderOfficialPreview(preview, state.currentEnvelope);
                 setStep(4);
             });
         }).catch(function(err) {
@@ -649,7 +811,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         updateActivityFinalizeState();
 
         sections.forEach(function(section) {
-            var materialState = state.sectionMaterials[section.ref] || {snapshotId: null, filename: null};
+            var materialState = state.sectionMaterials[section.ref] || {snapshotId: null, filename: null, plannedResources: []};
             state.sectionMaterials[section.ref] = materialState;
 
             var weekTitle = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' — ' + (section.title || 'Untitled week'));
@@ -678,11 +840,15 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             $material.append($materialTop);
             $material.append($('<div class="small text-muted mb-2"></div>').text('Upload one file set for this week. If omitted, selected activities use the syllabus fallback policy.'));
             var $materialLabel = $('<div class="small mb-2"></div>');
+            var $publishResource = $('<label class="custom-control custom-checkbox small mb-2 d-block"></label>');
+            var $publishResourceInput = $('<input type="checkbox" class="custom-control-input" checked>');
+            $publishResourceInput.attr('id', 'publish-resource-' + section.ref);
+            $publishResource.append($publishResourceInput).append($('<span class="custom-control-label"></span>').text('Include this file as a Moodle File Resource in the course'));
             var $materialControls = $('<div class="d-flex flex-wrap align-items-center"></div>');
             var $file = $('<input type="file" class="form-control-file mr-2 mb-2" style="max-width: 360px;" accept=".txt,.md,.markdown,.docx,.pdf,.pptx">');
             var $upload = $('<button type="button" class="btn btn-outline-secondary btn-sm mb-2"></button>');
             $materialControls.append($file).append($upload);
-            $material.append($materialLabel).append($materialControls);
+            $material.append($materialLabel).append($publishResource).append($materialControls);
             $body.append($material);
 
             var $panelsRow = $('<div class="row"></div>');
@@ -733,14 +899,20 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             }
 
             function updateMaterialView() {
+                var creating = (state.activityIntents[section.ref] || []).some(function(intent) { return intent.status === 'creating'; });
                 if (materialState.filename) {
                     $materialLabel.html('<i class="fa fa-file-text-o text-success mr-1"></i> Current Material: ').append($('<strong></strong>').text(materialState.filename));
+                    if (materialState.plannedResources && materialState.plannedResources.length) {
+                        $materialLabel.append($('<span class="badge badge-success ml-2"></span>').text('File Resource Ready'));
+                        $materialLabel.append($('<div class="small text-success mt-1"></div>').text('Planned title: ' + materialState.plannedResources[0].title));
+                    }
                     $upload.text('Replace Material');
                 } else {
                     $materialLabel.html('<i class="fa fa-info-circle text-muted mr-1"></i> No Material uploaded — syllabus fallback will be used.');
                     $upload.text('Upload Material');
                 }
-                var creating = (state.activityIntents[section.ref] || []).some(function(intent) { return intent.status === 'creating'; });
+                $publishResourceInput.prop('checked', materialState.includeResource !== false);
+                $publishResourceInput.prop('disabled', !materialState.filename || creating);
                 $upload.prop('disabled', creating);
             }
 
@@ -760,12 +932,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                         $preview.append($instructions);
                     }
                 } else if (intent.activity.type === 'quiz') {
-                    var questions = intent.activity.questions || [];
-                    if (!questions.length) $preview.append($('<div class="text-muted"></div>').text('No questions yet.'));
-                    questions.forEach(function(question, index) {
-                        var text = question.question_text || question.text || question.name || ('Question ' + (index + 1));
-                        $preview.append($('<div class="mb-1"></div>').text((index + 1) + '. ' + text));
-                    });
+                    renderQuizActivityPreview(intent.activity, $preview);
                 }
                 $panel.append($preview);
             }
@@ -947,6 +1114,23 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             $quiz.on('change', saveSelection);
             $assignment.on('change', saveSelection);
 
+            $publishResourceInput.on('change', function() {
+                var publish = $publishResourceInput.is(':checked');
+                materialState.includeResource = publish;
+                $publishResourceInput.prop('disabled', true);
+                callBff('set_resource_publication', {
+                    run_id: state.runId,
+                    section_ref: section.ref,
+                    publish: publish ? 1 : 0
+                }).catch(function(err) {
+                    materialState.includeResource = !publish;
+                    $publishResourceInput.prop('checked', !publish);
+                    showError('Failed to update File Resource selection: ' + err.message, err.details);
+                }).finally(function() {
+                    updateMaterialView();
+                });
+            });
+
             $upload.on('click', function() {
                 var file = $file[0].files && $file[0].files[0];
                 if (!file) {
@@ -964,6 +1148,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                 }).then(function(result) {
                     materialState.snapshotId = (result.snapshot && (result.snapshot.persisted_id || result.snapshot.id)) || result.id;
                     materialState.filename = file.name;
+                    materialState.plannedResources = result.planned_resources || [];
                     return callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref});
                 }).then(function(result) {
                     state.activityIntents[section.ref] = result.intents || [];
@@ -1081,6 +1266,17 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             state.ajaxurl = config.ajaxurl;
             state.categories = config.categories || [];
             state.selectedCategoryId = $('#course-category-select').val();
+            state.courseFormat = $('#course-format-select').val() || null;
+
+            function updateGenerateButton() {
+                $('#btn-generate-plan').prop('disabled', !state.selectedFile || !state.courseFormat);
+            }
+
+            // Course format is a teacher choice, never an LLM-generated field.
+            $('#course-format-select').on('change', function() {
+                state.courseFormat = $(this).val() || null;
+                updateGenerateButton();
+            });
 
             // Category select change
             $('#course-category-select').on('change', function() {
@@ -1100,7 +1296,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                     state.selectedFile = file;
                     $('#selected-file-name').text(file.name + ' (' + Math.round(file.size / 1024) + ' KB)');
                     $('#selected-file-info').removeClass('d-none');
-                    $('#btn-generate-plan').prop('disabled', false);
+                    updateGenerateButton();
                 }
             });
 

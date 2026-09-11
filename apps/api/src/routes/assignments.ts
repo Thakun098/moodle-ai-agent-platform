@@ -101,6 +101,7 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRoutesOptions> = asy
         return;
       }
       const envelope = await getPlanner().planAssignmentUpdate({
+        executionTarget: target,
         input: {
           current: toExistingAssignmentState(observed),
           instruction: body.instruction.trim(),

@@ -45,6 +45,7 @@ describe("PlanRevisionHelper (T0508, Remediated R7, R8, Phase 6 Grounding)", () 
     rawEnvelope: initialEnvelope,
     validationStatus: "valid",
     validationErrors: null,
+    executionContext: { target: { category_id: 1 } },
     createdAt: new Date().toISOString(),
   };
 
@@ -99,6 +100,7 @@ describe("PlanRevisionHelper (T0508, Remediated R7, R8, Phase 6 Grounding)", () 
         runId: "run-original-1", // preserved original runId (R7)
         revision: 2,
         validationStatus: "valid",
+        executionContext: initialRecord.executionContext,
       })
     );
   });

@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   PLANNING_CONTRACTS_SCHEMA_ID,
+  validateAgainstPlanningSchema,
   UnknownPlanningSchemaError,
   listPlanningSchemaIds,
-  validateAgainstPlanningSchema,
   validatePlanEnvelope,
   validatePlanningContract,
   validateSourceReference,
@@ -31,8 +31,30 @@ describe("planning schema registry", () => {
   it("compiles and registers every canonical schema", () => {
     const schemaIds = listPlanningSchemaIds();
 
-    expect(schemaIds).toHaveLength(14);
+    expect(schemaIds).toHaveLength(15);
     expect(schemaIds).toContain(PLANNING_CONTRACTS_SCHEMA_ID);
+    const fileResourceSchemaId = "urn:moodle-agent-poc:schema:planning:file-resource-plan:0.1";
+    expect(schemaIds.filter((schemaId) => schemaId === fileResourceSchemaId)).toHaveLength(1);
+    expect(validateAgainstPlanningSchema(fileResourceSchemaId, {
+      ref: "resource-01-01",
+      type: "resource",
+      title: "Week 1 Material",
+      filename: "week-1.pdf",
+      moodle_material_id: 77,
+      source_run_id: "run-01",
+      source_structure_revision: 2,
+      source_section_ref: "section-01",
+      source_material_revision: 3,
+      source_refs: [],
+    })).toEqual({ valid: true, errors: [] });
+    expect(validateAgainstPlanningSchema(fileResourceSchemaId, {
+      ref: "resource-01-01",
+      type: "resource",
+      title: "Week 1 Material",
+      filename: "week-1.pdf",
+      moodle_material_id: 77,
+      source_refs: [],
+    }).valid).toBe(false);
     expect(new Set(schemaIds).size).toBe(schemaIds.length);
   });
 

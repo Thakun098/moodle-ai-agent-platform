@@ -44,4 +44,18 @@ if ($hassiteconfig) {
         180,
         PARAM_INT
     ));
+
+    $settings->add(new admin_setting_configpasswordunmask(
+        'local_agentpoc/riskservicekey',
+        get_string('riskservicekey', 'local_agentpoc'),
+        get_string('riskservicekey_desc', 'local_agentpoc'),
+        ''
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'local_agentpoc/riskaitesttools',
+        get_string('riskaitesttools', 'local_agentpoc'),
+        get_string('riskaitesttools_desc', 'local_agentpoc'),
+        0
+    ));
 }

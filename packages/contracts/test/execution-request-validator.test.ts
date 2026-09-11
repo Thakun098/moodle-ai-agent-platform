@@ -29,7 +29,7 @@ function filenames(group: "intended-valid" | "intended-invalid"): string[] {
 describe("ExecutionRequest v0.1 DRAFT", () => {
   it("registers the draft schema without changing frozen contract IDs", () => {
     expect(listPlanningSchemaIds()).toContain(EXECUTION_REQUEST_SCHEMA_ID);
-    expect(listPlanningSchemaIds()).toHaveLength(14);
+    expect(listPlanningSchemaIds()).toHaveLength(15);
   });
 
   for (const filename of filenames("intended-valid")) {

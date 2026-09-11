@@ -4,6 +4,7 @@ import type {
   CreateCourseParams,
   CreateQuizParams,
   CreateQuizQuestionParams,
+  CreateResourceParams,
   CreateSectionParams,
   EssayQuestionOptions,
   MultichoiceQuestionOptions,
@@ -119,6 +120,20 @@ export function serializeCreateSectionParams(params: CreateSectionParams): URLSe
   return form;
 }
 
+export function serializeCreateResourceParams(params: CreateResourceParams): URLSearchParams {
+  const form = new URLSearchParams();
+  appendDefined(form, 'course_id', params.courseId);
+  appendDefined(form, 'section_id', params.sectionId);
+  appendDefined(form, 'name', params.name);
+  appendDefined(form, 'filename', params.filename);
+  appendDefined(form, 'moodle_material_id', params.moodleMaterialId);
+  appendDefined(form, 'source_run_id', params.sourceRunId);
+  appendDefined(form, 'source_structure_revision', params.sourceStructureRevision);
+  appendDefined(form, 'source_section_ref', params.sourceSectionRef);
+  appendDefined(form, 'source_material_revision', params.sourceMaterialRevision);
+  return form;
+}
+
 export function serializeCreateAssignmentParams(params: CreateAssignmentParams): URLSearchParams {
   const form = new URLSearchParams();
   appendDefined(form, 'course_id', params.courseId);
@@ -132,6 +147,8 @@ export function serializeCreateAssignmentParams(params: CreateAssignmentParams):
 export function serializeUpdateAssignmentParams(params: UpdateAssignmentParams): URLSearchParams {
   const form = new URLSearchParams();
   appendDefined(form, 'activity_id', params.activityId);
+  appendDefined(form, 'expected_course_id', params.expectedCourseId);
+  appendDefined(form, 'expected_section_id', params.expectedSectionId);
   appendDefined(form, 'name', params.name);
   appendDefined(form, 'intro', params.intro);
   appendDefined(form, 'grade', params.grade);
@@ -176,6 +193,9 @@ export function serializeUpdateQuizQuestionParams(
 ): URLSearchParams {
   const form = new URLSearchParams();
   appendDefined(form, 'question_bank_entry_id', params.questionBankEntryId);
+  appendDefined(form, 'activity_id', params.activityId);
+  appendDefined(form, 'maxmark', params.maxMark);
+  appendDefined(form, 'expected_version', params.expectedVersion);
   appendDefined(form, 'name', params.name);
   appendDefined(form, 'questiontext', params.questionText);
   appendDefined(form, 'defaultmark', params.defaultMark);

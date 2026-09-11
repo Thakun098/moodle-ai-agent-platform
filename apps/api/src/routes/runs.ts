@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { extname } from "node:path";
-import { getDatabase, PlanRepository, RunRepository } from "@moodle-agent-poc/agent-runtime";
+import { getDatabase, McpClientManager, PlanRepository, RunRepository } from "@moodle-agent-poc/agent-runtime";
+import { listCourseFormats } from "@moodle-agent-poc/execution";
 import {
   detectMediaType,
   ingestSyllabus,
@@ -16,13 +17,33 @@ export interface RunsRoutesOptions {
   config: AppConfig;
   runRepo?: RunRepository | undefined;
   planRepo?: PlanRepository | undefined;
+  mcpClientManager?: McpClientManager | undefined;
+}
+
+function createConfiguredMcpManager(config: AppConfig): McpClientManager {
+  const env: Record<string, string> = { PATH: process.env.PATH || "" };
+  if (config.moodleBaseUrl) env.MOODLE_BASE_URL = config.moodleBaseUrl;
+  if (config.moodleToken) env.MOODLE_TOKEN = config.moodleToken;
+
+  return new McpClientManager({
+    serverParams: {
+      command: config.mcpServerCommand ?? "node",
+      args: [...(config.mcpServerArgs ?? ["apps/moodle-mcp-server/dist/index.js"])],
+      env,
+    },
+  });
 }
 
 export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
   fastify,
   options
 ) => {
-  const { config, runRepo: injectedRepo, planRepo: injectedPlanRepo } = options;
+  const {
+    config,
+    runRepo: injectedRepo,
+    planRepo: injectedPlanRepo,
+    mcpClientManager: injectedMcp,
+  } = options;
 
   // Lazy resolution so booting Fastify without DATABASE_URL does not fail for /health
   const getRunRepo = (): RunRepository => {
@@ -62,6 +83,54 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
 
     const buffer = await fileData.toBuffer();
 
+    const courseFormatField = (fileData.fields as Record<string, { value?: unknown }> | undefined)?.course_format;
+    const courseFormat = typeof courseFormatField?.value === "string" && courseFormatField.value.trim()
+      ? courseFormatField.value.trim()
+      : undefined;
+    if (!courseFormat) {
+      reply.status(400).send({
+        error: {
+          code: "BAD_REQUEST",
+          message: "course_format is required.",
+          details: null,
+          request_id: request.id,
+        },
+      });
+      return;
+    }
+    if (!/^[a-z][a-z0-9_-]*$/u.test(courseFormat)) {
+      reply.status(400).send({
+        error: {
+          code: "BAD_REQUEST",
+          message: "course_format must be a valid Moodle course-format identifier.",
+          details: null,
+          request_id: request.id,
+        },
+      });
+      return;
+    }
+
+    const manager = injectedMcp ?? createConfiguredMcpManager(config);
+    const ownsManager = injectedMcp === undefined;
+    let availableFormats;
+    try {
+      if (ownsManager) await manager.connect();
+      availableFormats = await listCourseFormats(manager);
+    } finally {
+      if (ownsManager) await manager.close();
+    }
+    if (!availableFormats.some((format) => format.value === courseFormat)) {
+      reply.status(400).send({
+        error: {
+          code: "COURSE_FORMAT_UNAVAILABLE",
+          message: `course_format "${courseFormat}" is not available on the target Moodle site.`,
+          details: { available_formats: availableFormats },
+          request_id: request.id,
+        },
+      });
+      return;
+    }
+
     // 3. Request-level validation: file size
     if (fileData.file.truncated || buffer.length > MAX_SYLLABUS_FILE_SIZE) {
       throw new SyllabusIngestionError(
@@ -94,6 +163,7 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
         byte_size: buffer.length,
         media_type: mediaType,
         sha256,
+        course_format: courseFormat,
       },
     });
 
@@ -117,6 +187,7 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
           sections_count: normalized.schedule_or_topics.length,
           objectives_count: normalized.learning_objectives.length,
         },
+        course_format: courseFormat,
         created_at: runRecord.createdAt,
       });
     } catch (err: unknown) {
@@ -289,4 +360,3 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
     reply.send(run);
   });
 };
-
