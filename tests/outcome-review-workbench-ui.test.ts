@@ -9,8 +9,8 @@ describe("UX/UI Ticket 01 Outcome Review Workbench", () => {
     expect(built).toBe(js);
 
     expect(template).toContain('id="outcome-review-workbench"');
-    expect(template).toContain('.local-agentpoc-course-builder-page #page.drawers .main-inner');
-    expect(template).toContain('max-width: 1600px');
+    expect(template).toContain('#step-view-review {');
+    expect(template).toContain('width: min(1600px, calc(100vw - 6rem))');
     expect(template).toContain('flex: 0 0 22%');
     expect(template).toContain('flex: 0 0 53%');
     expect(template).toContain('flex: 0 0 25%');

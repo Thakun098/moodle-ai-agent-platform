@@ -483,6 +483,9 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     draft_text: $text.val()
                 }).then(function() {
                     return loadOutcomeReviews();
+                }).then(function(result) {
+                    focusOutcomeReviewSelection();
+                    return result;
                 }).catch(function(err) {
                     $save.prop('disabled', false).text('Save review');
                     showError('Failed to save Outcome review: ' + err.message, err.details);
@@ -491,10 +494,28 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             $actions.append($save);
 
             if (selected.item_type === 'CLO' && selected.status === 'REVIEWED') {
-                var $approve = $('<button type="button" class="btn btn-success mr-2 mb-2" id="outcome-review-approve"></button>').text('Approve CLO');
+                var persistedReviewedText = String(selected.draft_text || selected.authoritative_text || selected.source_text || '').trim();
+                var $approve = $('<button type="button" class="btn btn-success mr-2 mb-2" id="outcome-review-approve" aria-describedby="outcome-review-approve-hint"></button>').text('Approve CLO');
+                var $approveHint = $('<span class="small text-muted mr-2 mb-2 d-none" id="outcome-review-approve-hint"></span>')
+                    .text('Save review changes before approving this CLO.');
+                function approvalHasUnsavedChanges() {
+                    return String($text.val() || '').trim() !== persistedReviewedText || $status.val() !== 'REVIEWED';
+                }
+                function updateApprovalAvailability() {
+                    var hasUnsavedChanges = approvalHasUnsavedChanges();
+                    $approve.prop('disabled', hasUnsavedChanges);
+                    $approveHint.toggleClass('d-none', !hasUnsavedChanges);
+                }
+                $text.on('input', updateApprovalAvailability);
+                $status.on('change', updateApprovalAvailability);
+                updateApprovalAvailability();
                 $approve.on('click', function() {
+                    if (approvalHasUnsavedChanges()) {
+                        updateApprovalAvailability();
+                        return;
+                    }
                     $approve.prop('disabled', true).text('Approving...');
-                    var text = String(selected.draft_text || selected.authoritative_text || selected.source_text || '').trim();
+                    var text = persistedReviewedText;
                     var proposal = (state.outcomeProposals || []).find(function(item) { return item.source_outcome_id === selected.item_id; });
                     var payload = {run_id: state.runId, source_outcome_id: selected.item_id};
                     if (!selected.draft_text || text === String(selected.source_text || '').trim()) {
@@ -506,12 +527,15 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     callBff('approve_learning_outcome', payload).then(function(result) {
                         applyOutcomeApproval(result, selected.item_id);
                         return loadOutcomeReviews();
+                    }).then(function(result) {
+                        focusOutcomeReviewSelection();
+                        return result;
                     }).catch(function(err) {
                         $approve.prop('disabled', false).text('Approve CLO');
                         showError('Failed to approve CLO: ' + err.message, err.details);
                     });
                 });
-                $actions.append($approve);
+                $actions.append($approve).append($approveHint);
             }
         } else {
             $workspace.append($('<div class="alert alert-success py-2 mb-3"></div>').text('This CLO is approved. Editing approved authority is handled by the safe approved-outcome flow.'));

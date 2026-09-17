@@ -233,6 +233,18 @@ function harness() {
 }
 
 describe("UX/UI Ticket 01 Outcome Review Workbench interaction semantics", () => {
+  it("restores keyboard focus to the selected review surface after explicit Save read-back", async () => {
+    const { dom, calls } = harness();
+    await flushPromises(); await flushPromises(); await flushPromises();
+
+    dom.query("#outcome-review-text").val("Saved teacher wording");
+    dom.query("#outcome-review-save").trigger("focus").trigger("click");
+    await flushPromises(); await flushPromises();
+
+    expect(calls.some((call) => call.action === "save_outcome_review")).toBe(true);
+    expect(dom.focused?.id).toBe("outcome-review-text");
+  });
+
   it("keeps unsaved LO edits local, exposes no LO approval, and moves focus through Next", async () => {
     const { dom, calls } = harness();
     await flushPromises(); await flushPromises(); await flushPromises();
@@ -265,5 +277,23 @@ describe("UX/UI Ticket 01 Outcome Review Workbench interaction semantics", () =>
     expect([...dom.all].filter((element) => element.tag === "button" && /bulk|approve all|approve selected/i.test(element.allText()))).toHaveLength(0);
     expect(dom.byText("Reviewed").length).toBeGreaterThan(0);
     expect(dom.byText("CLO Approved").length).toBe(0);
+  });
+
+  it("blocks CLO approval while visible review wording or decision has unsaved changes", async () => {
+    const { dom } = harness();
+    await flushPromises(); await flushPromises(); await flushPromises();
+    dom.query("#outcome-review-next").trigger("click");
+
+    expect(dom.byId.get("outcome-review-approve")?.props.get("disabled")).not.toBe(true);
+
+    dom.query("#outcome-review-text").val("UNSAVED reviewed wording").trigger("input");
+    expect(dom.byId.get("outcome-review-approve")?.props.get("disabled")).toBe(true);
+
+    dom.query("#outcome-review-text").val("Use loops carefully").trigger("input");
+    expect(dom.byId.get("outcome-review-approve")?.props.get("disabled")).not.toBe(true);
+
+    dom.query("#outcome-review-status").val("NEEDS_REVISION").trigger("change");
+    expect(dom.byId.get("outcome-review-approve")?.props.get("disabled")).toBe(true);
+    expect(dom.byText("Save review changes before approving this CLO.").length).toBeGreaterThan(0);
   });
 });

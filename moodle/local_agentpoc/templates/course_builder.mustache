@@ -545,14 +545,11 @@
     background: #28a745;
 }
 
-.local-agentpoc-course-builder-page #page.drawers .main-inner,
-.local-agentpoc-course-builder-page #page .main-inner {
-    width: calc(100% - 2rem);
-    max-width: 1600px;
-}
-.local-agentpoc-course-builder-page .ai-course-builder-container {
-    width: 100%;
-    max-width: none;
+#step-view-review {
+    width: min(1600px, calc(100vw - 6rem));
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
 }
 #step-view-review > .row > .col-lg-8,
 #step-view-review > .row > .col-lg-4 {
@@ -614,9 +611,10 @@
     border-top: 1px solid #e9ecef;
 }
 @media (max-width: 991.98px) {
-    .local-agentpoc-course-builder-page #page.drawers .main-inner,
-    .local-agentpoc-course-builder-page #page .main-inner {
+    #step-view-review {
         width: 100%;
+        left: auto;
+        transform: none;
     }
     .outcome-review-workbench > .row {
         flex-wrap: wrap;
