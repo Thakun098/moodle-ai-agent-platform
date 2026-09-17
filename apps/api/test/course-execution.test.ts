@@ -394,6 +394,10 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
       mappingRepo: mockMappingRepo,
       toolCallRepo: mockToolCallRepo,
       idempotencyRepo: mockIdempotencyRepo,
+      candidateRepo: { list: vi.fn(async () => []) } as any,
+      activityIntentRepo: {} as any,
+      competencyReviewRepo: { review: vi.fn(async () => ({ revision: 0, mappings: [] })) } as any,
+      competencySnapshotRepo: { get: vi.fn(async () => ({ runId, planId, revision: 1, mappingReviewRevision: 0, capturedAt: "2026-09-16T00:00:00.000Z", competencies: [], mappings: [] })) } as any,
       mcpClientManager,
     });
 

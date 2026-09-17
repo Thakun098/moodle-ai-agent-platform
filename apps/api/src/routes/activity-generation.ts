@@ -16,6 +16,7 @@ import {
 } from "@moodle-agent-poc/materials";
 import {
   activityDefaultPolicy,
+  buildActivityDesignContext,
   createEmptyActivityShell,
   generateActivity,
   resolveActivityGrounding,
@@ -26,6 +27,8 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
 import { createConfiguredModelClient } from "../config/model-client-factory.js";
+import { serializeActivityIntent } from "../serializers/activity-intent-response.js";
+import { beginInstructionalDesignMutation } from "../services/instructional-design-run-lifecycle-service.js";
 
 export interface ActivityGenerationRoutesOptions {
   config: AppConfig;
@@ -63,29 +66,6 @@ function toMaterialSnapshot(record: MaterialSnapshotRecord): MaterialSnapshot {
     estimatedTokens: record.estimatedTokens,
     createdByMoodleUserId: record.createdByMoodleUserId,
     createdAt: record.createdAt,
-  };
-}
-
-function serialize(record: ActivityIntentRecord, includeContent = true) {
-  return {
-    id: record.id,
-    run_id: record.runId,
-    structure_revision: record.structureRevision,
-    section_ref: record.sectionRef,
-    activity_ref: record.activityRef,
-    activity_type: record.activityType,
-    status: record.status,
-    attempt_count: record.attemptCount,
-    max_attempts: record.maxAttempts,
-    options: record.optionsJson,
-    grounding_mode: record.groundingMode ?? null,
-    material_snapshot_id: record.materialSnapshotId ?? null,
-    review_required: record.reviewRequired,
-    shell_confirmed_at: record.shellConfirmedAt ?? null,
-    ...(includeContent ? { activity: record.contentJson ?? null } : {}),
-    generation_instruction: record.generationInstruction ?? null,
-    error: record.error ?? null,
-    updated_at: record.updatedAt,
   };
 }
 
@@ -171,7 +151,7 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
       reply.status(404).send({ error: { code: "ACTIVITY_INTENT_NOT_FOUND", message: `Activity Intent ${activityRef} not found.`, details: null, request_id: request.id } });
       return;
     }
-    reply.send(serialize(intent));
+    reply.send(serializeActivityIntent(intent));
   });
 
   fastify.post<{ Params: { runId: string; sectionRef: string; activityRef: string } }>("/api/runs/:runId/sections/:sectionRef/activities/:activityRef/generate", async (request, reply) => {
@@ -196,10 +176,20 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
       return;
     }
     const repo = getIntentRepo();
-    const selected = await repo.getByRef(runId, sealed.revision, activityRef);
+    let selected = await repo.getByRef(runId, sealed.revision, activityRef);
     if (!selected || selected.sectionRef !== sectionRef || selected.status === "removed") {
       reply.status(404).send({ error: { code: "ACTIVITY_INTENT_NOT_FOUND", message: `Activity Intent ${activityRef} not found.`, details: null, request_id: request.id } });
       return;
+    }
+    await beginInstructionalDesignMutation(getRunRepo(), runId);
+    const coreContext = typeof (getRunRepo() as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
+      ? await (getRunRepo() as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<any> }).getCoreCourseDesignContext(runId)
+      : null;
+    if (coreContext && typeof (repo as { markStaleForContext?: unknown }).markStaleForContext === "function") {
+      await repo.markStaleForContext(runId, sealed.revision, coreContext.revision);
+      if (typeof (repo as { updateContextRevision?: unknown }).updateContextRevision === "function") {
+        selected = await repo.updateContextRevision(selected.id, coreContext.revision, coreContext.learner_context.revision) ?? selected;
+      }
     }
     let generationInstruction: string | undefined;
     try {
@@ -215,13 +205,50 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
       summary: String(sectionRecord.summary ?? sectionRecord.title ?? sectionRef),
       source_refs: Array.isArray(sectionRecord.source_refs) ? sectionRecord.source_refs as SectionStructureDraft["source_refs"] : [],
       activityIntents: [],
+      ...(Array.isArray(sectionRecord.aligned_objective_ids) ? { aligned_objective_ids: sectionRecord.aligned_objective_ids.filter((id): id is string => typeof id === "string") } : {}),
+      ...(Array.isArray(sectionRecord.aligned_outcome_ids) ? { aligned_outcome_ids: sectionRecord.aligned_outcome_ids.filter((id): id is string => typeof id === "string") } : {}),
     };
+
+    if (generationInstruction && typeof (repo as { updateGenerationInstruction?: unknown }).updateGenerationInstruction === "function") {
+      selected = await repo.updateGenerationInstruction(selected.id, generationInstruction, coreContext?.revision ?? null) ?? selected;
+    }
+    const effectiveGenerationInstruction = generationInstruction ?? selected.generationInstruction ?? undefined;
 
     const context = await resolveContext(runId, sealed.revision, section, run.normalizedSyllabus as NormalizedSyllabus);
     if (context.mode === "INSUFFICIENT_EVIDENCE") {
       await repo.markInsufficient(selected.id);
       const current = await repo.get(selected.id);
-      reply.send({ ...(current ? serialize(current) : serialize(selected)), warning: "Insufficient syllabus evidence. Upload Material, remove this Activity, or explicitly create an Empty Activity Shell." });
+      reply.send({ ...(current ? serializeActivityIntent(current) : serializeActivityIntent(selected)), warning: "Insufficient syllabus evidence. Upload Material, remove this Activity, or explicitly create an Empty Activity Shell." });
+      return;
+    }
+
+    let activityDesignContext;
+    try {
+      if (coreContext && typeof selected.purpose === "string" && Array.isArray(selected.selectedObjectiveIdsJson) && Array.isArray(selected.selectedOutcomeIdsJson)) {
+        activityDesignContext = buildActivityDesignContext({
+          coreContext,
+          structureRevision: sealed.revision,
+          section,
+          intent: {
+            id: selected.id,
+            ref: selected.activityRef,
+            type: selected.activityType,
+            title: titleFor(selected, section.title),
+            purpose: selected.purpose,
+            intent_revision: selected.intentRevision,
+            selected_objective_ids: selected.selectedObjectiveIdsJson,
+            selected_outcome_ids: selected.selectedOutcomeIdsJson,
+            learner_context_revision: selected.learnerContextRevision ?? coreContext.learner_context.revision,
+            learner_context_acknowledged: selected.learnerContextAcknowledged,
+            options: selected.optionsJson,
+            generation_instruction: selected.generationInstruction,
+            ...(selected.alignmentOverrideJson ? { alignment_override: selected.alignmentOverrideJson as { acknowledged: true; reason: string } } : {}),
+          },
+          grounding: context,
+        });
+      }
+    } catch (error) {
+      reply.status(422).send({ error: { code: (error as { code?: string }).code ?? "ACTIVITY_INTENT_INVALID", message: error instanceof Error ? error.message : String(error), details: (error as { details?: unknown }).details ?? null, request_id: request.id } });
       return;
     }
 
@@ -229,7 +256,15 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
     if (!started) {
       const current = await repo.get(selected.id);
       const code = current?.status === "retry_exhausted" ? "ACTIVITY_RETRY_EXHAUSTED" : "ACTIVITY_STATE_INVALID";
-      reply.status(409).send({ error: { code, message: `Activity ${activityRef} cannot start generation from state ${current?.status ?? selected.status}.`, details: current ? serialize(current, false) : null, request_id: request.id } });
+      reply.status(409).send({ error: { code, message: `Activity ${activityRef} cannot start generation from state ${current?.status ?? selected.status}.`, details: current ? serializeActivityIntent(current, false) : null, request_id: request.id } });
+      return;
+    }
+
+    if (activityDesignContext && activityDesignContext.activity_intent.intent_revision !== started.intentRevision) {
+      if (typeof (repo as { markStale?: unknown }).markStale === "function") {
+        await (repo as { markStale: (id: string, error: string) => Promise<boolean> }).markStale(started.id, "Activity Intent changed before generation started. Regenerate from the current revision.");
+      }
+      reply.status(409).send({ error: { code: "ACTIVITY_GENERATION_STALE", message: "Activity Intent changed before generation started; the generated result was not published.", details: null, request_id: request.id } });
       return;
     }
 
@@ -250,29 +285,67 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
         generationContext: context,
         constraints: constraintsFor(started, section.position),
         syllabus: run.normalizedSyllabus as NormalizedSyllabus,
-        ...(generationInstruction ? { generationInstruction } : {}),
+        ...(effectiveGenerationInstruction ? { generationInstruction: effectiveGenerationInstruction } : {}),
+        ...(activityDesignContext ? { designContext: activityDesignContext, generationMetadata: { provider: options.config.modelProvider, model: options.config.modelName } } : {}),
         timeoutMs: options.config.agentModelTimeoutMs,
       });
       if (result.status === "blocked") {
         await repo.failAttempt(started.id, false, result.message);
         const current = await repo.get(started.id);
-        reply.send(current ? serialize(current) : { status: "failed", error: result.message });
+        reply.send(current ? serializeActivityIntent(current) : { status: "failed", error: result.message });
         return;
       }
-      await repo.complete(started.id, {
+      const currentBeforeComplete = await repo.get(started.id);
+      const currentCoreContext = coreContext && typeof (getRunRepo() as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
+        ? await (getRunRepo() as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<any> }).getCoreCourseDesignContext(runId)
+        : coreContext;
+      const latestGrounding = activityDesignContext
+        ? await resolveContext(runId, sealed.revision, section, run.normalizedSyllabus as NormalizedSyllabus)
+        : context;
+      const generationIsStale = !currentBeforeComplete
+        || currentBeforeComplete.status !== "creating"
+        || currentBeforeComplete.intentRevision !== started.intentRevision
+        || (activityDesignContext !== undefined && (
+          !currentCoreContext
+          || currentCoreContext.revision !== activityDesignContext.core_context_revision
+          || currentBeforeComplete.contextRevision !== activityDesignContext.core_context_revision
+          || currentBeforeComplete.learnerContextRevision !== activityDesignContext.learner_context.revision
+          || latestGrounding.mode !== context.mode
+          || latestGrounding.materialSnapshotId !== context.materialSnapshotId
+          || latestGrounding.text !== context.text
+        ));
+      if (generationIsStale) {
+        if (currentBeforeComplete?.status === "creating" && typeof (repo as { markStale?: unknown }).markStale === "function") {
+          await (repo as { markStale: (id: string, error: string) => Promise<boolean> }).markStale(started.id, "Activity generation dependencies changed while the model was running. Regenerate from the current Intent.");
+        }
+        const current = await repo.get(started.id);
+        reply.status(409).send({ error: { code: "ACTIVITY_GENERATION_STALE", message: "Activity generation became stale while it was running; the generated result was not published.", details: current ? serializeActivityIntent(current, false) : null, request_id: request.id } });
+        return;
+      }
+      const completed = await repo.complete(started.id, {
         contentJson: result.activity as unknown as Record<string, unknown>,
         groundingMode: context.mode,
         reviewRequired: context.reviewRequired,
         ...(context.materialSnapshotId ? { materialSnapshotId: context.materialSnapshotId } : {}),
-        ...(generationInstruction ? { generationInstruction } : {}),
+        ...(effectiveGenerationInstruction !== undefined ? { generationInstruction: effectiveGenerationInstruction } : {}),
+        ...(result.qualityReview ? { qualityReviewJson: result.qualityReview as unknown as Record<string, unknown> } : {}),
+        ...(result.generationMetadata ? { generationMetadataJson: result.generationMetadata as unknown as Record<string, unknown> } : {}),
+      }, {
+        intentRevision: started.intentRevision,
+        ...(activityDesignContext ? { contextRevision: activityDesignContext.core_context_revision, learnerContextRevision: activityDesignContext.learner_context.revision } : {}),
       });
+      if (!completed) {
+        const current = await repo.get(started.id);
+        reply.status(409).send({ error: { code: "ACTIVITY_GENERATION_STALE", message: "Activity generation was superseded before completion; the generated result was not published.", details: current ? serializeActivityIntent(current, false) : null, request_id: request.id } });
+        return;
+      }
       const current = await repo.get(started.id);
-      reply.send(current ? serialize(current) : { status: "generated", activity: result.activity });
+      reply.send(current ? serializeActivityIntent(current) : { status: "generated", activity: result.activity });
     } catch (error) {
       const timedOut = isTimeout(error);
       await repo.failAttempt(started.id, timedOut, error instanceof Error ? error.message : String(error));
       const current = await repo.get(started.id);
-      reply.send(current ? serialize(current) : { status: timedOut ? "timed_out" : "failed", error: error instanceof Error ? error.message : String(error) });
+      reply.send(current ? serializeActivityIntent(current) : { status: timedOut ? "timed_out" : "failed", error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -289,6 +362,7 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
       reply.status(404).send({ error: { code: "ACTIVITY_INTENT_NOT_FOUND", message: `Activity Intent ${activityRef} not found.`, details: null, request_id: request.id } });
       return;
     }
+    await beginInstructionalDesignMutation(getRunRepo(), runId);
     try {
       const shell = createEmptyActivityShell({
         ref: intent.activityRef,
@@ -302,7 +376,7 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
         return;
       }
       const current = await getIntentRepo().get(intent.id);
-      reply.send({ ...(current ? serialize(current) : { status: "shell", activity: shell }), warning: "Empty Activity Shell — content pending teacher completion." });
+      reply.send({ ...(current ? serializeActivityIntent(current) : { status: "shell", activity: shell }), warning: "Empty Activity Shell — content pending teacher completion." });
     } catch (error) {
       reply.status(409).send({ error: { code: "EMPTY_SHELL_NOT_ALLOWED", message: error instanceof Error ? error.message : String(error), details: null, request_id: request.id } });
     }

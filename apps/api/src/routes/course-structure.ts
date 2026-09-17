@@ -6,9 +6,16 @@ import {
   type CourseStructureRevisionRecord,
   type ModelClient,
 } from "@moodle-agent-poc/agent-runtime";
-import type { NormalizedSyllabus } from "@moodle-agent-poc/contracts";
+import type { CoreCourseDesignContext, NormalizedSyllabus } from "@moodle-agent-poc/contracts";
 import {
   CourseStructurePlanner,
+  alignStructureSections,
+  assertAuthorizedAlignment,
+  assertOutcomeCoverage,
+  assertRequiredOutcomeApprovals,
+  unapprovedSourceOutcomeIds,
+  deriveOutcomeCoverage,
+  buildLearningOutcomeProposals,
   createCourseStructureRevision,
   createCourseStructureRevisionFromContent,
   PlanningError,
@@ -19,6 +26,7 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
 import { createConfiguredModelClient } from "../config/model-client-factory.js";
+import { beginInstructionalDesignMutation } from "../services/instructional-design-run-lifecycle-service.js";
 
 export interface CourseStructureRoutesOptions {
   config: AppConfig;
@@ -100,11 +108,15 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
       reply.status(422).send({ error: { code: "UNPROCESSABLE_ENTITY", message: `Run ${runId} does not contain a normalized syllabus for structure planning.`, details: null, request_id: request.id } });
       return;
     }
+    const coreContext = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
+      ? await (runRepo as typeof runRepo & { getCoreCourseDesignContext: (id: string) => Promise<unknown> }).getCoreCourseDesignContext(runId)
+      : null;
     if (await structureRepo.getLatestRevision(runId)) {
       reply.status(409).send({ error: { code: "CONFLICT", message: `A course structure revision already exists for run ${runId}. Create an edited revision instead.`, details: null, request_id: request.id } });
       return;
     }
 
+    await beginInstructionalDesignMutation(runRepo, runId);
     await runRepo.updateStatus(runId, "planning");
     try {
       const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
@@ -115,24 +127,39 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
         ...(structureInstruction.originalInstruction ? { originalInstruction: structureInstruction.originalInstruction } : {}),
         warnings: structureInstruction.warnings,
       };
-      const draft = await getPlanner().plan(
-        run.normalizedSyllabus as NormalizedSyllabus,
-        teacherConstraints,
-        options.config.modelName,
-        options.config.agentModelTimeoutMs,
-        "json",
-      );
-      validateCourseStructureCoverage(run.normalizedSyllabus as NormalizedSyllabus, draft.content.sections);
+      const planner = getPlanner();
+      const draft = coreContext
+        ? await planner.plan(
+          run.normalizedSyllabus as NormalizedSyllabus,
+          teacherConstraints,
+          options.config.modelName,
+          options.config.agentModelTimeoutMs,
+          "json",
+          coreContext as import("@moodle-agent-poc/contracts").CoreCourseDesignContext,
+        )
+        : await planner.plan(
+          run.normalizedSyllabus as NormalizedSyllabus,
+          teacherConstraints,
+          options.config.modelName,
+          options.config.agentModelTimeoutMs,
+          "json",
+        );
+      const alignedSections = coreContext
+        ? alignStructureSections(coreContext as import("@moodle-agent-poc/contracts").CoreCourseDesignContext, draft.content.sections as any)
+        : draft.content.sections.map((section) => ({ ...section, aligned_objective_ids: [], aligned_outcome_ids: [], alignment_status: "CURRENT" as const }));
+      if (coreContext) assertAuthorizedAlignment(coreContext as import("@moodle-agent-poc/contracts").CoreCourseDesignContext, alignedSections);
+      const structureDraft = { ...draft, content: { ...draft.content, sections: alignedSections as any } };
+      validateCourseStructureCoverage(run.normalizedSyllabus as NormalizedSyllabus, structureDraft.content.sections);
       const revision = createCourseStructureRevision({
         id: randomUUID(),
         runId,
         revision: 1,
         draft: {
-          ...draft,
+          ...structureDraft,
           warnings: [...draft.warnings, ...teacherConstraints.warnings],
           content: {
-            ...draft.content,
-            sections: draft.content.sections.map((section) => ({ ...section, activityIntents: [] })),
+            ...structureDraft.content,
+            sections: structureDraft.content.sections.map((section: any) => ({ ...section, activityIntents: [] })),
           },
         },
         syllabus: run.normalizedSyllabus as NormalizedSyllabus,
@@ -146,11 +173,17 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
         summary: revision.summary,
         content: revision.content as unknown as Record<string, unknown>,
         validationStatus: revision.validationStatus,
-        teacherConstraintsJson: revision.teacherConstraints as unknown as Record<string, unknown>,
+        teacherConstraintsJson: { ...(revision.teacherConstraints as unknown as Record<string, unknown>), ...(coreContext ? { alignment_context_revision: (coreContext as { revision: number }).revision } : {}) },
         ...(revision.validationErrors ? { validationErrors: revision.validationErrors } : {}),
         createdAt: revision.createdAt,
       });
-      reply.status(201).send({ run_id: runId, status: "planning", structure_revision: serializeRevision(record) });
+      reply.status(201).send({
+        run_id: runId,
+        status: "planning",
+        structure_revision: serializeRevision(record),
+        core_context_revision: coreContext && typeof (coreContext as { revision?: unknown }).revision === "number" ? (coreContext as { revision: number }).revision : null,
+        outcome_proposals: coreContext ? buildLearningOutcomeProposals(coreContext as import("@moodle-agent-poc/contracts").CoreCourseDesignContext) : [],
+      });
     } catch (error) {
       await runRepo.failRun(runId, error instanceof Error ? error.message : String(error));
       throw error;
@@ -189,10 +222,8 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
       return;
     }
     const edited = editedStructureBody(request.body);
-    if (latest.sealedAt !== null) {
-      await structureRepo.unsealRevisions(runId);
-    }
-    const teacherConstraints = latest.teacherConstraintsJson as unknown as import("@moodle-agent-poc/planning").CoursePlanningConstraints;
+    const latestConstraints = latest.teacherConstraintsJson as Record<string, unknown>;
+    let revisionTeacherConstraints = latest.teacherConstraintsJson as unknown as import("@moodle-agent-poc/planning").CoursePlanningConstraints;
     const provisionalRevision = createCourseStructureRevisionFromContent({
       id: randomUUID(),
       runId,
@@ -201,16 +232,46 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
       summary: edited.summary || latest.summary,
       content: edited.content,
       syllabus: run.normalizedSyllabus as NormalizedSyllabus,
-      teacherConstraints,
+      teacherConstraints: revisionTeacherConstraints,
     });
-    const resolvedSections = provisionalRevision.content.sections.map((section) => ({
+    let alignmentCoverage: ReturnType<typeof deriveOutcomeCoverage> | undefined;
+    let resolvedSections: any[] = provisionalRevision.content.sections.map((section) => ({
       ref: section.ref,
       position: section.position,
       title: section.title,
       summary: section.summary,
       source_refs: section.source_refs,
       activityIntents: [],
+      aligned_objective_ids: (section as any).aligned_objective_ids ?? [],
+      aligned_outcome_ids: (section as any).aligned_outcome_ids ?? [],
+      alignment_status: (section as any).alignment_status ?? "CURRENT",
     }));
+    const currentContext = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
+      ? await (runRepo as typeof runRepo & { getCoreCourseDesignContext: (id: string) => Promise<CoreCourseDesignContext | null> }).getCoreCourseDesignContext(runId)
+      : null;
+    if (currentContext) {
+      const candidateSections = resolvedSections.map((section) => ({
+        ...section,
+        activity_intents: [],
+      }));
+      assertAuthorizedAlignment(currentContext, candidateSections as any);
+      const alignedSections = alignStructureSections(currentContext, candidateSections as any, { preserveExplicitScheduleMappings: false });
+      resolvedSections = alignedSections.map((section) => ({
+        ...section,
+        activityIntents: [],
+      }));
+      const nextConstraints: Record<string, unknown> = {
+        ...latestConstraints,
+        alignment_context_revision: currentContext.revision,
+        alignment_state: "CURRENT",
+        stale_from_context_revision: null,
+      };
+      revisionTeacherConstraints = nextConstraints as unknown as import("@moodle-agent-poc/planning").CoursePlanningConstraints;
+      if (unapprovedSourceOutcomeIds(currentContext).length === 0) {
+        const coverageOverrides = Array.isArray(nextConstraints.coverage_overrides) ? nextConstraints.coverage_overrides : [];
+        alignmentCoverage = deriveOutcomeCoverage(currentContext, alignedSections, coverageOverrides as any);
+      }
+    }
     const revision = createCourseStructureRevisionFromContent({
       id: provisionalRevision.id,
       runId: provisionalRevision.runId,
@@ -226,11 +287,15 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
           summary: section.summary,
           source_refs: section.source_refs,
           activity_intents: section.activityIntents,
+          aligned_objective_ids: section.aligned_objective_ids ?? [],
+          aligned_outcome_ids: section.aligned_outcome_ids ?? [],
+          alignment_status: section.alignment_status ?? "CURRENT",
         })),
       },
       syllabus: run.normalizedSyllabus as NormalizedSyllabus,
-      teacherConstraints,
+      teacherConstraints: revisionTeacherConstraints,
     });
+    await beginInstructionalDesignMutation(runRepo, runId);
     const record = await structureRepo.saveRevision({
       id: revision.id,
       runId: revision.runId,
@@ -239,10 +304,10 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
       summary: revision.summary,
       content: revision.content as unknown as Record<string, unknown>,
       validationStatus: revision.validationStatus,
-      teacherConstraintsJson: revision.teacherConstraints as unknown as Record<string, unknown>,
+      teacherConstraintsJson: revisionTeacherConstraints as unknown as Record<string, unknown>,
       createdAt: revision.createdAt,
     });
-    reply.status(201).send({ run_id: runId, status: run.status, structure_revision: serializeRevision(record) });
+    reply.status(201).send({ run_id: runId, status: run.status, structure_revision: serializeRevision(record), ...(alignmentCoverage ? { coverage: alignmentCoverage } : {}) });
   });
 
   fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/course-structure/seal", async (request, reply) => {
@@ -269,7 +334,22 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
     const targetContent = target.contentJson;
     const targetSections = Array.isArray(targetContent.sections) ? targetContent.sections : [];
     validateCourseStructureCoverage(run.normalizedSyllabus as NormalizedSyllabus, targetSections as import("@moodle-agent-poc/planning").CourseStructureCoverageSection[]);
+    const currentContext = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
+      ? await (runRepo as typeof runRepo & { getCoreCourseDesignContext: (id: string) => Promise<unknown> }).getCoreCourseDesignContext(runId)
+      : null;
+    if (currentContext) {
+      const constraints = target.teacherConstraintsJson as Record<string, unknown>;
+      const coverageOverrides = Array.isArray(constraints.coverage_overrides) ? constraints.coverage_overrides : [];
+      const alignmentRevision = constraints.alignment_context_revision;
+      if (constraints.alignment_state === "STALE_ALIGNMENT" || (alignmentRevision !== undefined && Number(alignmentRevision) !== (currentContext as { revision: number }).revision)) {
+        throw new PlanningError("STRUCTURE_INVALID", "Structure alignment is stale against the current Core Course Design Context.", { alignment_context_revision: alignmentRevision, current_context_revision: (currentContext as { revision: number }).revision });
+      }
+      assertRequiredOutcomeApprovals(currentContext as import("@moodle-agent-poc/contracts").CoreCourseDesignContext);
+      const coverage = deriveOutcomeCoverage(currentContext as import("@moodle-agent-poc/contracts").CoreCourseDesignContext, targetSections as any, coverageOverrides as any);
+      assertOutcomeCoverage(coverage);
+    }
     const moodleUserId = body.moodle_user_id === undefined ? undefined : parseRevision(body.moodle_user_id);
+    await beginInstructionalDesignMutation(runRepo, runId);
     const sealed = await structureRepo.sealRevision({ runId, revision: target.revision, ...(moodleUserId !== undefined ? { moodleUserId } : {}) });
     if (run.status === "pending") await runRepo.updateStatus(runId, "planning");
     reply.send({ run_id: runId, status: "planning", structure_revision: serializeRevision(sealed) });

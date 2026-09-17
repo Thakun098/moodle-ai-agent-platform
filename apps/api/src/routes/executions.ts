@@ -1,4 +1,8 @@
 import {
+  ActivityIntentRepository,
+  CompetencyCandidateRepository,
+  CompetencyExecutionSnapshotRepository,
+  CompetencyMappingReviewRepository,
   ExecutionMappingRepository,
   IdempotencyRepository,
   McpClientManager,
@@ -30,6 +34,8 @@ import {
 import { PlanningError, assertExecutionTargetCompatible } from "@moodle-agent-poc/planning";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
+import { assertCompetencyExecutionSnapshotCurrent } from "../services/competency-execution-snapshot-service.js";
+import { claimApprovedExecution } from "../services/instructional-design-run-lifecycle-service.js";
 
 export interface ExecutionsRoutesOptions {
   config: AppConfig;
@@ -39,6 +45,10 @@ export interface ExecutionsRoutesOptions {
   toolCallRepo?: ToolCallRepository;
   idempotencyRepo?: IdempotencyRepository;
   mcpClientManager?: McpClientManager;
+  candidateRepo?: CompetencyCandidateRepository;
+  activityIntentRepo?: ActivityIntentRepository;
+  competencyReviewRepo?: CompetencyMappingReviewRepository;
+  competencySnapshotRepo?: CompetencyExecutionSnapshotRepository;
 }
 
 function createConfiguredMcpManager(config: AppConfig): McpClientManager {
@@ -126,6 +136,27 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
 
     assertExecutionTargetCompatible(planRevision.rawEnvelope, execRequest);
 
+    let competencySnapshot;
+    if (planRevision.planType === "course" && planRevision.operation === "create") {
+      const db = (!options.candidateRepo || !options.activityIntentRepo || !options.competencyReviewRepo || !options.competencySnapshotRepo) ? getDatabase() : undefined;
+      const snapshotRepo = options.competencySnapshotRepo ?? new CompetencyExecutionSnapshotRepository(db!);
+      competencySnapshot = await snapshotRepo.get(runId, execRequest.plan_id, execRequest.revision);
+      if (!competencySnapshot) {
+        reply.status(409).send({ error: { code: "COMPETENCY_EXECUTION_SNAPSHOT_REQUIRED", message: "This approved Course revision has no Competency execution snapshot. Re-approve before Execute.", details: null, request_id: request.id } });
+        return;
+      }
+      try {
+        await assertCompetencyExecutionSnapshotCurrent(competencySnapshot, {
+          candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(db!),
+          activityIntentRepo: options.activityIntentRepo ?? new ActivityIntentRepository(db!),
+          reviewRepo: options.competencyReviewRepo ?? new CompetencyMappingReviewRepository(db!),
+        });
+      } catch (error) {
+        reply.status(409).send({ error: { code: (error as { code?: string }).code ?? "COMPETENCY_EXECUTION_SNAPSHOT_STALE", message: error instanceof Error ? error.message : String(error), details: null, request_id: request.id } });
+        return;
+      }
+    }
+
     if (planRevision.operation === "update" && !planRevision.executionContext) {
       reply.status(409).send({ error: { code: "EXECUTION_CONTEXT_REQUIRED", message: "This update revision has no pinned Moodle identity. Replan before execution.", details: null, request_id: request.id } });
       return;
@@ -150,7 +181,24 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
       if (planRevision.planType === "course" && planRevision.operation === "create") {
         const configuredFormat = (run.syllabusMetadata as { course_format?: unknown } | null | undefined)?.course_format;
         const courseFormat = typeof configuredFormat === "string" && configuredFormat.trim() ? configuredFormat.trim() : "topics";
-        const result = await executeCoursePlan({ runId, planEnvelope: planRevision.rawEnvelope as unknown as CoursePlanEnvelope, target: execRequest.target as CourseCreateTarget, mcpClientManager: manager, repositories, options: { ...executionOptions, moodleBaseUrl: options.config.moodleBaseUrl, courseFormat } });
+        const result = await executeCoursePlan({
+          runId,
+          planEnvelope: planRevision.rawEnvelope as unknown as CoursePlanEnvelope,
+          target: execRequest.target as CourseCreateTarget,
+          mcpClientManager: manager,
+          repositories,
+          options: { ...executionOptions, moodleBaseUrl: options.config.moodleBaseUrl, courseFormat },
+          competencySnapshot,
+          competencyFrameworkId: options.config.moodleCompetencyFrameworkId,
+          beforeMutation: async () => {
+            await assertCompetencyExecutionSnapshotCurrent(competencySnapshot!, {
+              candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase()),
+              activityIntentRepo: options.activityIntentRepo ?? new ActivityIntentRepository(getDatabase()),
+              reviewRepo: options.competencyReviewRepo ?? new CompetencyMappingReviewRepository(getDatabase()),
+            });
+            await claimApprovedExecution(getRunRepo(), { runId, planId: execRequest.plan_id, revision: execRequest.revision });
+          },
+        });
         reply.send({ run_id: runId, plan_id: execRequest.plan_id, revision: execRequest.revision, status: result.status, course_id: result.courseId, course_shortname: result.courseShortname, course_url: result.courseUrl, created_entities: result.createdEntities, mappings: result.mappings });
         return;
       }

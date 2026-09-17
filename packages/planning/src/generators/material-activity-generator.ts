@@ -2,6 +2,15 @@ import type { ModelClient } from "@moodle-agent-poc/agent-runtime";
 import type { ActivityPlan, AssignmentPlan, NormalizedSyllabus, QuestionPlan, QuizPlan, SectionPlan } from "@moodle-agent-poc/contracts";
 import type { MaterialContext } from "@moodle-agent-poc/materials";
 import type { ActivityGenerationContext } from "../grounding/activity-grounding-resolver.js";
+import {
+  buildActivityGenerationMetadata,
+  formatActivityDesignPrompt,
+  validateActivityDesignOutput,
+  type ActivityDesignContext,
+  type ActivityGenerationMetadata,
+  type ActivityGenerationMetadataInput,
+  type ActivityQualityReview,
+} from "../activity/activity-design.js";
 import { PlanningError } from "../errors/planning-errors.js";
 import type { CoursePlanningConstraints } from "../instructions/planning-constraints.js";
 import { ModelRequestScheduler } from "../scheduling/model-request-scheduler.js";
@@ -9,7 +18,7 @@ import type { ActivityIntent, SectionStructureDraft } from "../types.js";
 import { validateActivityShapeConstraints, validateSectionActivityProvenance, type ActivityRuleScopeMap } from "../validators/teacher-constraint-validator.js";
 
 export type ActivityGenerationResult =
-  | { status: "generated"; activity: ActivityPlan }
+  | { status: "generated"; activity: ActivityPlan; qualityReview?: ActivityQualityReview; generationMetadata?: ActivityGenerationMetadata }
   | { status: "blocked"; reason: "INSUFFICIENT_MATERIAL" | "INSUFFICIENT_EVIDENCE"; message: string };
 
 const sourceReferenceSchema = {
@@ -21,6 +30,31 @@ const sourceReferenceSchema = {
     text: { type: "string", minLength: 1 },
   },
   required: ["source"],
+  additionalProperties: false,
+};
+
+const qualityReviewSchema = {
+  type: "object",
+  properties: {
+    outcome_alignment: { enum: ["PASS", "WARN"] },
+    learner_level_fit: { enum: ["PASS", "WARN"] },
+    scope_compliance: { enum: ["PASS", "WARN"] },
+    purpose_fit: { enum: ["PASS", "WARN"] },
+    warnings: { type: "array", items: { type: "string", minLength: 1 } },
+  },
+  required: ["outcome_alignment", "learner_level_fit", "scope_compliance", "purpose_fit", "warnings"],
+  additionalProperties: false,
+};
+
+const scopeExceptionsSchema = {
+  type: "object",
+  properties: {
+    new_concepts: { type: "array", items: { type: "string", minLength: 1 } },
+    new_prerequisites: { type: "array", items: { type: "string", minLength: 1 } },
+    new_tools_or_frameworks: { type: "array", items: { type: "string", minLength: 1 } },
+    new_technical_requirements: { type: "array", items: { type: "string", minLength: 1 } },
+  },
+  required: ["new_concepts", "new_prerequisites", "new_tools_or_frameworks", "new_technical_requirements"],
   additionalProperties: false,
 };
 
@@ -88,7 +122,7 @@ function constrainedQuizQuestionSchema(constraints: CoursePlanningConstraints): 
   return selected;
 }
 
-function generatedActivitySchema(type: ActivityIntent["type"], constraints: CoursePlanningConstraints): Record<string, unknown> {
+function generatedActivitySchema(type: ActivityIntent["type"], constraints: CoursePlanningConstraints, designContext?: ActivityDesignContext): Record<string, unknown> {
   const activity = structuredClone(activitySchema(type)) as Record<string, any>;
   if (type === "quiz") {
     const rule = constraints.activityRules.find((candidate) => candidate.activityType === "quiz");
@@ -97,6 +131,14 @@ function generatedActivitySchema(type: ActivityIntent["type"], constraints: Cour
       activity.properties.questions.minItems = rule.questionsPerActivity;
       activity.properties.questions.maxItems = rule.questionsPerActivity;
     }
+  }
+  if (designContext) {
+    if (type === "assignment") activity.required = activity.required.filter((field: string) => field !== "learning_objectives");
+    activity.properties.aligned_objective_ids = { type: "array", items: { type: "string", minLength: 1 } };
+    activity.properties.aligned_outcome_ids = { type: "array", items: { type: "string", minLength: 1 } };
+    activity.properties.quality_review = qualityReviewSchema;
+    activity.properties.scope_exceptions = scopeExceptionsSchema;
+    activity.required.push("aligned_objective_ids", "aligned_outcome_ids", "quality_review", "scope_exceptions");
   }
   return activity;
 }
@@ -256,7 +298,7 @@ function normalizeQuizActivity(activity: QuizPlan, intent: ActivityIntent, secti
   return { ref: intent.ref ?? `quiz-${String(section.position).padStart(2, "0")}`, type: "quiz", title: intent.title, description: typeof activity.description === "string" && activity.description.trim() ? activity.description : `${intent.title} generated from authorized Learning Material.`, source_refs: activitySourceRefs.length ? activitySourceRefs : [...sourceRefs], questions };
 }
 
-function normalizeActivity(parsed: any, intent: ActivityIntent, section: SectionStructureDraft, context: { sourceRefs: MaterialContext["sourceRefs"] }, activityOrdinal: number, generationInstruction?: string): ActivityPlan {
+function normalizeActivity(parsed: any, intent: ActivityIntent, section: SectionStructureDraft, context: { sourceRefs: MaterialContext["sourceRefs"] }, activityOrdinal: number, generationInstruction?: string, designContext?: ActivityDesignContext): ActivityPlan {
   const activity = parsed.status === "generated" ? parsed.activity : parsed;
   if (!activity || activity.type !== intent.type) {
     throw new PlanningError("PLAN_SCHEMA_INVALID", `Generated activity type does not match intent for section "${section.ref}".`);
@@ -269,7 +311,12 @@ function normalizeActivity(parsed: any, intent: ActivityIntent, section: Section
     const teacherInstruction = generationInstruction?.trim();
     const description = rawDescription ?? teacherInstruction ?? rawInstructions?.[0];
     const instructions = rawInstructions ?? (teacherInstruction ? [teacherInstruction] : rawDescription ? [rawDescription] : undefined);
-    const learningObjectives = rawLearningObjectives ?? (teacherInstruction ? [teacherInstruction] : rawDescription ? [rawDescription] : rawInstructions ? [rawInstructions[0]] : undefined);
+    const authorizedLearningObjectives = designContext
+      ? [...new Set([...designContext.selected_outcomes.map((outcome) => outcome.text), ...designContext.selected_objectives.map((objective) => objective.text)])]
+      : [];
+    const learningObjectives = designContext
+      ? (authorizedLearningObjectives.length > 0 ? authorizedLearningObjectives as [string, ...string[]] : undefined)
+      : rawLearningObjectives ?? (teacherInstruction ? [teacherInstruction] : rawDescription ? [rawDescription] : rawInstructions ? [rawInstructions[0]] : undefined);
     if (!description || !instructions || !learningObjectives) {
       throw new PlanningError("MODEL_RESPONSE_INVALID", `Generated Assignment "${intent.title}" is missing required contract fields.`, { available_fields: Object.keys(assignment) });
     }
@@ -300,9 +347,12 @@ export async function generateActivity(params: {
   syllabus?: NormalizedSyllabus;
   ruleScopes?: ActivityRuleScopeMap;
   generationInstruction?: string;
+  designContext?: ActivityDesignContext;
+  generationMetadata?: ActivityGenerationMetadataInput;
 }): Promise<ActivityGenerationResult> {
   const { section, intent } = params;
   const usesDeterministicGrounding = params.generationContext !== undefined;
+  const usesDomain2Schema = usesDeterministicGrounding || params.designContext !== undefined;
   const context: ActivityGenerationContext | undefined = params.generationContext ?? (params.materialContext ? {
     mode: "MATERIAL_GROUNDED",
     sectionRef: params.materialContext.sectionRef,
@@ -318,6 +368,15 @@ export async function generateActivity(params: {
   if (context.sectionRef !== section.ref) {
     throw new PlanningError("PLAN_DOMAIN_INVALID", `Activity grounding section "${context.sectionRef}" does not match "${section.ref}".`);
   }
+  if (params.designContext && (
+    params.designContext.section.ref !== section.ref ||
+    params.designContext.activity_intent.type !== intent.type ||
+    params.designContext.activity_intent.ref !== intent.ref ||
+    params.designContext.grounding.mode !== context.mode ||
+    params.designContext.grounding.text !== context.text
+  )) {
+    throw new PlanningError("PLAN_DOMAIN_INVALID", "Activity Design Context does not match the current Activity generation inputs.");
+  }
   if (!context.text.trim() || context.sourceRefs.length === 0) {
     return { status: "blocked", reason: "INSUFFICIENT_EVIDENCE", message: `No sufficient authorized evidence is available for section "${section.ref}".` };
   }
@@ -326,19 +385,21 @@ export async function generateActivity(params: {
     : context.mode === "SYLLABUS_GROUNDED"
       ? "The supplied syllabus evidence is the factual/content authority. Do not introduce facts absent from that evidence."
       : "The syllabus defines the allowed topic/learning scope. You may use general knowledge only to elaborate inside that scope. Do not introduce a new topic, objective, or assessment scope outside the supplied syllabus evidence. The result will require explicit teacher review.";
-  const responseInstruction = usesDeterministicGrounding
+  const responseInstruction = usesDomain2Schema
     ? `Return exactly ONE Activity JSON object matching the requested Activity type and constraints. Never return a JSON array and do not wrap the Activity in status/activity. Evidence sufficiency has already been resolved deterministically before this model call.`
     : `Return exactly one JSON object, never a JSON array. For a successful result use {\"status\":\"generated\",\"activity\":{...}}. For unsupported content use {\"status\":\"blocked\",\"reason\":\"INSUFFICIENT_EVIDENCE\",\"message\":\"...\"}.`;
+  const designPrompt = params.designContext ? formatActivityDesignPrompt(params.designContext) : undefined;
   const response = await (params.scheduler ?? new ModelRequestScheduler()).chat(params.modelClient, {
     ...(params.model ? { model: params.model } : {}),
     messages: [
       { role: "system", content: `${responseInstruction} ${authorityInstruction} Teacher Instruction controls activity form and constraints. An Additional generation instruction may shape the task, question focus, examples, or presentation inside the authorized Activity scope; it cannot create, delete, or change ActivityIntent type/count, override deterministic constraints, or introduce content outside the authorized Material/Syllabus scope. For Quiz output, satisfy the deterministic question count/type/choice constraints exactly. For multiple-choice questions, identify exactly one correct choice using correct_choice_refs, correct_choice, correct_answer, answer, or an explicit *_index field. For Assignment output, always provide non-empty description, instructions, learning_objectives, grade, and source_refs.` },
       { role: "user", content: `Section:\n${JSON.stringify({ ref: section.ref, title: section.title, summary: section.summary })}\nActivity intent:\n${JSON.stringify(intent)}\nTeacher constraints:\n${JSON.stringify(params.constraints)}\nGrounding mode:\n${context.mode}\nAdditional Activity Prompt (optional, scope-bounded content guidance):\n${params.generationInstruction?.trim() || "None"}\nAuthorized Activity context:\n${context.text}\nAuthorized scope/source references:\n${JSON.stringify(context.sourceRefs)}` },
+      ...(designPrompt ? [{ role: "user" as const, content: designPrompt }] : []),
     ],
     // ADR-0002 resolves insufficient evidence before the model call, so the
     // new flow can use a direct Activity schema. Legacy MaterialContext callers
     // retain JSON-object mode and the tagged generated/blocked wrapper.
-    format: usesDeterministicGrounding ? generatedActivitySchema(intent.type, params.constraints) : "json",
+    format: usesDomain2Schema ? generatedActivitySchema(intent.type, params.constraints, params.designContext) : "json",
     ...(params.timeoutMs ? { options: { timeoutMs: params.timeoutMs } } : {}),
   });
   let parsed: any;
@@ -354,8 +415,9 @@ export async function generateActivity(params: {
     }
     return { status: "blocked", reason: parsed.reason, message: parsed.message };
   }
+  const designOutput = params.designContext ? validateActivityDesignOutput(parsed, params.designContext) : undefined;
   const activityOrdinal = section.activityIntents.filter((candidate) => candidate.type === intent.type).indexOf(intent) + 1;
-  const activity = normalizeActivity(parsed, intent, section, context, activityOrdinal, params.generationInstruction);
+  const activity = normalizeActivity(parsed, intent, section, context, activityOrdinal, params.generationInstruction, params.designContext);
   const sectionPlan: SectionPlan = { ref: section.ref, position: section.position, title: section.title, summary: section.summary, source_refs: section.source_refs, activities: [activity] };
   const violations = [
     ...validateActivityShapeConstraints(sectionPlan, activity, params.constraints, params.syllabus, params.ruleScopes),
@@ -364,5 +426,10 @@ export async function generateActivity(params: {
   if (violations.length > 0) {
     throw new PlanningError("TEACHER_CONSTRAINT_VIOLATION", `Generated activity failed deterministic validation: ${JSON.stringify(violations)}`, violations);
   }
-  return { status: "generated", activity };
+  return {
+    status: "generated",
+    activity,
+    ...(designOutput ? { qualityReview: designOutput.qualityReview } : {}),
+    ...(params.designContext ? { generationMetadata: buildActivityGenerationMetadata(params.designContext, params.generationMetadata) } : {}),
+  };
 }

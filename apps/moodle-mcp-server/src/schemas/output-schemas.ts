@@ -271,3 +271,20 @@ export const McpErrorEnvelopeSchema = z
     details: z.unknown().optional(),
   })
   .strict();
+
+// Ticket 24 — Moodle-native Competency tool outputs.
+export const CompetencyFrameworkDataSchema = z.object({ framework_id: z.number(), shortname: z.string(), idnumber: z.string(), visible: z.boolean(), can_manage: z.boolean() }).strict();
+export const ListCompetencyFrameworksDataSchema = z.object({ frameworks: z.array(CompetencyFrameworkDataSchema) }).strict();
+export const CreatedCompetencyDataSchema = z.object({ competency_id: z.number(), framework_id: z.number(), idnumber: z.string(), shortname: z.string(), created: z.boolean() }).strict();
+export const CourseCompetencyLinkDataSchema = z.object({ course_id: z.number(), competency_id: z.number(), linked: z.boolean() }).strict();
+export const ActivityCompetencyLinkDataSchema = z.object({ link_id: z.number(), activity_id: z.number(), competency_id: z.number(), rule_outcome: z.number() }).strict();
+export const CourseCompetencyReadbackDataSchema = z.object({
+  course_id: z.number(),
+  course_competencies: z.array(z.object({ course_link_id: z.number(), competency_id: z.number(), framework_id: z.number(), idnumber: z.string(), shortname: z.string() }).strict()),
+  activity_links: z.array(ActivityCompetencyLinkDataSchema),
+}).strict();
+export const ListCompetencyFrameworksOutputSchema = createSuccessEnvelopeSchema(ListCompetencyFrameworksDataSchema);
+export const CreateCompetencyOutputSchema = createSuccessEnvelopeSchema(CreatedCompetencyDataSchema);
+export const AddCompetencyToCourseOutputSchema = createSuccessEnvelopeSchema(CourseCompetencyLinkDataSchema);
+export const AddCompetencyToActivityOutputSchema = createSuccessEnvelopeSchema(ActivityCompetencyLinkDataSchema);
+export const GetCourseCompetenciesOutputSchema = createSuccessEnvelopeSchema(CourseCompetencyReadbackDataSchema);

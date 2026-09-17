@@ -42,6 +42,24 @@ try {
     $response = ['success' => true];
 
     switch ($action) {
+        case 'get_competency_mappings':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_competency_mappings($runid);
+            break;
+
+        case 'decide_competency_mapping':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->decide_competency_mapping($runid, [
+                'activity_id' => required_param('activity_id', PARAM_ALPHANUMEXT),
+                'competency_id' => required_param('competency_id', PARAM_ALPHANUMEXT),
+                'kind' => required_param('kind', PARAM_ALPHA),
+                'decision' => required_param('decision', PARAM_ALPHA),
+                'confirmed' => (bool)required_param('confirmed', PARAM_BOOL),
+                'expected_revision' => required_param('expected_revision', PARAM_INT),
+                'teacher_id' => (int)$USER->id,
+            ]);
+            break;
+
         case 'upload_and_create_run':
             if (empty($_FILES['syllabus_file'])) {
                 throw new \moodle_exception('errormissingfile', 'local_agentpoc');
@@ -103,6 +121,70 @@ try {
             $response['data'] = $client->generate_course_structure($runid, $teacherinstruction !== '' ? $teacherinstruction : null);
             break;
 
+        case 'get_core_context':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_core_context($runid);
+            break;
+
+
+        case 'get_instructional_design':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_instructional_design($runid);
+            break;
+
+        case 'approve_learning_outcome':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $sourceoutcomeid = required_param('source_outcome_id', PARAM_ALPHANUMEXT);
+            $teachertext = optional_param('teacher_text', '', PARAM_TEXT);
+            $recommendedtext = optional_param('recommended_text', '', PARAM_TEXT);
+            $usesourceasis = optional_param('use_source_as_is', 0, PARAM_BOOL);
+            $response['data'] = $client->approve_learning_outcome($runid, [
+                'source_outcome_id' => $sourceoutcomeid,
+                'use_source_as_is' => (bool)$usesourceasis,
+                'teacher_text' => $teachertext,
+                'recommended_text' => $recommendedtext,
+                'teacher_id' => (int)$USER->id,
+            ]);
+            break;
+
+        case 'get_competency_candidates':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_competency_candidates($runid);
+            break;
+
+        case 'derive_competency_candidates':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->derive_competency_candidates($runid);
+            break;
+
+        case 'decide_competency_candidate':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $candidateid = required_param('candidate_id', PARAM_ALPHANUMEXT);
+            $decisionjson = optional_param('decision', '{}', PARAM_RAW);
+            $decision = json_decode($decisionjson, true);
+            if (!is_array($decision)) {
+                throw new \moodle_exception('invalidparameter', 'debug', '', 'Invalid Competency Candidate decision JSON');
+            }
+            $decision['teacher_id'] = (int)$USER->id;
+            $response['data'] = $client->decide_competency_candidate($runid, $candidateid, $decision);
+            break;
+        case 'set_coverage_override':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $outcomeid = required_param('outcome_id', PARAM_ALPHANUMEXT);
+            $reason = required_param('reason', PARAM_TEXT);
+            $response['data'] = $client->set_coverage_override($runid, [
+                'outcome_id' => $outcomeid,
+                'acknowledged' => true,
+                'reason' => $reason,
+                'teacher_id' => (int)$USER->id,
+            ]);
+            break;
+
+        case 'rebase_structure_alignment':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->rebase_structure_alignment($runid);
+            break;
+
         case 'get_structure':
             $runid = required_param('run_id', PARAM_ALPHANUMEXT);
             $response['data'] = $client->get_course_structure($runid);
@@ -120,7 +202,30 @@ try {
             if (!is_array($quizoptions) || !is_array($assignmentoptions)) {
                 throw new \moodle_exception('invalidparameter', 'debug', '', 'Invalid Activity options JSON');
             }
-            $response['data'] = $client->set_activity_intents($runid, $sectionref, (bool)$quiz, (bool)$assignment, $quizoptions, $assignmentoptions);
+            $semantic = [];
+            foreach (['quiz_purpose', 'assignment_purpose', 'quiz_selected_objective_ids', 'assignment_selected_objective_ids', 'quiz_selected_outcome_ids', 'assignment_selected_outcome_ids', 'quiz_learner_context_revision', 'assignment_learner_context_revision', 'quiz_generation_instruction', 'assignment_generation_instruction'] as $semantickey) {
+                $rawvalue = optional_param($semantickey, null, PARAM_RAW);
+                if ($rawvalue !== null && $rawvalue !== '') {
+                    if (str_ends_with($semantickey, '_ids')) {
+                        $decoded = json_decode((string)$rawvalue, true);
+                        $semantic[$semantickey] = is_array($decoded) ? $decoded : [];
+                    } else {
+                        $semantic[$semantickey] = $rawvalue;
+                    }
+                }
+            }
+            foreach (['quiz_learner_context_acknowledged', 'assignment_learner_context_acknowledged'] as $ackkey) {
+                $ackvalue = optional_param($ackkey, null, PARAM_BOOL);
+                if ($ackvalue !== null) $semantic[$ackkey] = (bool)$ackvalue;
+            }
+            foreach (['quiz_alignment_override', 'assignment_alignment_override'] as $overridekey) {
+                $rawoverride = optional_param($overridekey, '', PARAM_RAW);
+                if ($rawoverride !== '') {
+                    $decodedoverride = json_decode($rawoverride, true);
+                    if (is_array($decodedoverride)) $semantic[$overridekey] = $decodedoverride;
+                }
+            }
+            $response['data'] = $client->set_activity_intents($runid, $sectionref, (bool)$quiz, (bool)$assignment, $quizoptions, $assignmentoptions, $semantic);
             break;
 
         case 'get_activity_intents':
@@ -134,6 +239,26 @@ try {
             $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
             $publish = required_param('publish', PARAM_BOOL);
             $response['data'] = $client->set_resource_publication($runid, $sectionref, (bool)$publish);
+            break;
+
+        case 'get_activity_revisions':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
+            $activityref = required_param('activity_ref', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_activity_revisions($runid, $sectionref, $activityref);
+            break;
+
+        case 'save_activity_edit':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
+            $activityref = required_param('activity_ref', PARAM_ALPHANUMEXT);
+            $activityjson = required_param('activity', PARAM_RAW);
+            $activity = json_decode($activityjson, true);
+            if (!is_array($activity)) {
+                throw new \moodle_exception('invalidparameter', 'debug', '', 'Invalid Activity edit JSON');
+            }
+            $expectedrevision = optional_param('expected_activity_revision', null, PARAM_INT);
+            $response['data'] = $client->save_activity_edit($runid, $sectionref, $activityref, $activity, $expectedrevision, (int)$USER->id);
             break;
 
         case 'generate_activity':

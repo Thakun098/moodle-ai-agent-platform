@@ -1,4 +1,5 @@
 import {
+  CompetencyExecutionSnapshotRepository,
   ExecutionMappingRepository,
   McpClientManager,
   PlanRepository,
@@ -18,6 +19,7 @@ export interface VerificationRoutesOptions {
   mappingRepo?: ExecutionMappingRepository;
   verificationRepo?: VerificationRepository;
   mcpClientManager?: McpClientManager;
+  competencySnapshotRepo?: CompetencyExecutionSnapshotRepository;
 }
 
 function createConfiguredMcpManager(config: AppConfig): McpClientManager {
@@ -25,6 +27,20 @@ function createConfiguredMcpManager(config: AppConfig): McpClientManager {
   if (config.moodleBaseUrl) env.MOODLE_BASE_URL = config.moodleBaseUrl;
   if (config.moodleToken) env.MOODLE_TOKEN = config.moodleToken;
   return new McpClientManager({ serverParams: { command: config.mcpServerCommand ?? "node", args: [...(config.mcpServerArgs ?? ["apps/moodle-mcp-server/dist/index.js"])], env } });
+}
+
+async function assertVerificationAuthority(runRepo: RunRepository, run: any, input: { runId: string; planId: string; revision: number }): Promise<void> {
+  const extended = runRepo as RunRepository & { assertApprovedVerification?: (value: typeof input) => Promise<unknown> };
+  if (typeof extended.assertApprovedVerification === "function") {
+    await extended.assertApprovedVerification(input);
+    return;
+  }
+  if (run?.approvedPlanId !== input.planId || run?.approvedRevision !== input.revision) {
+    throw Object.assign(new Error("Verification target is not the current approved execution authority."), { code: "VERIFICATION_AUTHORITY_STALE", statusCode: 409 });
+  }
+  if (run?.status !== "awaiting_verification") {
+    throw Object.assign(new Error(`Verification requires awaiting_verification; current run status is ${String(run?.status)}.`), { code: "VERIFICATION_STATE_INVALID", statusCode: 409 });
+  }
 }
 
 export const verificationRoutes: FastifyPluginAsync<VerificationRoutesOptions> = async (fastify, options) => {
@@ -64,10 +80,18 @@ export const verificationRoutes: FastifyPluginAsync<VerificationRoutesOptions> =
       return;
     }
 
+    await assertVerificationAuthority(repos.runRepo, run, { runId, planId: body.plan_id, revision: body.revision! });
+
     const manager = options.mcpClientManager ?? createConfiguredMcpManager(options.config);
     const owns = options.mcpClientManager === undefined;
     try {
       if (owns) await manager.connect();
+      const competencySnapshotRepo = options.competencySnapshotRepo ?? new CompetencyExecutionSnapshotRepository(getDatabase());
+      const competencySnapshot = await competencySnapshotRepo.get(runId, body.plan_id, body.revision!);
+      if (!competencySnapshot) {
+        reply.status(409).send({ error: { code: "COMPETENCY_EXECUTION_SNAPSHOT_REQUIRED", message: "Verification requires the exact approved Competency execution snapshot for this CoursePlan revision.", details: null, request_id: request.id } });
+        return;
+      }
       const result = await verifyCoursePlan({
         runId,
         planEnvelope: plan.rawEnvelope as unknown as CoursePlanEnvelope,
@@ -75,6 +99,8 @@ export const verificationRoutes: FastifyPluginAsync<VerificationRoutesOptions> =
         repositories: { mappingRepo: repos.mappingRepo, verificationRepo: repos.verificationRepo, runRepo: repos.runRepo },
         courseFormat: ((run.syllabusMetadata as { course_format?: unknown } | null | undefined)?.course_format as string | undefined),
         categoryId: plan.executionContext && "category_id" in plan.executionContext.target ? plan.executionContext.target.category_id : undefined,
+        competencySnapshot,
+        competencyFrameworkId: options.config.moodleCompetencyFrameworkId,
       });
       reply.status(result.passed ? 200 : 409).send(result);
     } finally {

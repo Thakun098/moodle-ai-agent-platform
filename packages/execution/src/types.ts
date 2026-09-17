@@ -1,4 +1,5 @@
 import type {
+  CompetencyExecutionSnapshot,
   McpClientManager,
   SafeToolExecutionOptions,
   SafeToolRepositories,
@@ -35,6 +36,10 @@ export interface CourseExecutionConfig {
   mcpClientManager: McpClientManager;
   repositories: SafeToolRepositories;
   options?: CourseExecutorOptions | undefined;
+  competencySnapshot?: CompetencyExecutionSnapshot | undefined;
+  competencyFrameworkId?: number | undefined;
+  /** Atomic approval/execution claim invoked after read-only preflight and before the first Moodle mutation. */
+  beforeMutation?: (() => Promise<void>) | undefined;
 }
 
 export interface CreatedEntitiesCount {
@@ -45,6 +50,8 @@ export interface CreatedEntitiesCount {
   questions: number;
   slots: number;
   resources?: number;
+  competencies?: number;
+  competencyLinks?: number;
 }
 
 export interface ExecutionMappingItem {
@@ -63,6 +70,7 @@ export interface CourseExecutionResult {
   courseUrl?: string | undefined;
   createdEntities: CreatedEntitiesCount;
   mappings: ExecutionMappingItem[];
+  competencyReadback?: Record<string, unknown> | undefined;
   error?: string | undefined;
 }
 

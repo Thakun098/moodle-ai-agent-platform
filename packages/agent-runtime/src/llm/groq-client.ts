@@ -57,6 +57,26 @@ function stripNullFields(value: unknown): unknown {
   return out;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | undefined {
+  try { return asRecord(JSON.parse(value)); } catch { return undefined; }
+}
+
+function recoverStrictStructuredOutput(error: unknown, format: ModelChatParams["format"]): string | undefined {
+  if (!(error instanceof ModelClientError) || error.code !== "MODEL_RESPONSE_INVALID" || !format || typeof format !== "object") return undefined;
+  const details = asRecord(error.details);
+  const providerError = asRecord(details?.providerError);
+  if (providerError?.code !== "json_validate_failed" || typeof providerError.failed_generation !== "string") return undefined;
+  let candidate: unknown;
+  try { candidate = JSON.parse(providerError.failed_generation); } catch { return undefined; }
+  if (asRecord(candidate)) return JSON.stringify(candidate);
+  if (Array.isArray(candidate) && candidate.length === 1 && asRecord(candidate[0])) return JSON.stringify(candidate);
+  return undefined;
+}
+
 export class GroqModelClient implements ModelClient {
   public readonly baseUrl: string;
   public readonly defaultModel: string;
@@ -99,7 +119,18 @@ export class GroqModelClient implements ModelClient {
     }
 
     const started = Date.now();
-    const response = await this.request("/chat/completions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }, timeoutMs, model);
+    let response: Response;
+    try {
+      response = await this.request("/chat/completions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }, timeoutMs, model);
+    } catch (error) {
+      const recoveredContent = this.strictStructuredOutputs
+        ? recoverStrictStructuredOutput(error, params.format)
+        : undefined;
+      if (recoveredContent === undefined) throw error;
+      const parsed = JSON.parse(recoveredContent);
+      const content = JSON.stringify(stripNullFields(parsed));
+      return { message: { role: "assistant", content }, toolCalls: [], rawText: content, totalDurationMs: Date.now() - started };
+    }
     const body = await response.json() as any;
     const rawMessage = body?.choices?.[0]?.message;
     if (!rawMessage) throw new ModelClientError("MODEL_RESPONSE_INVALID", "Groq returned no completion message.", body);
@@ -138,7 +169,13 @@ export class GroqModelClient implements ModelClient {
           throw new ModelClientError("MODEL_RATE_LIMITED", `Groq rate limit reached for model ${model}.`, { retryAfterMs });
         }
         const code = response.status === 404 ? "MODEL_NOT_FOUND" : "MODEL_RESPONSE_INVALID";
-        throw new ModelClientError(code, `Groq API returned HTTP ${response.status} for model ${model}: ${text.slice(0, 1000)}`);
+        const providerBody = parseJsonRecord(text);
+        const providerError = asRecord(providerBody?.error);
+        throw new ModelClientError(
+          code,
+          `Groq API returned HTTP ${response.status} for model ${model}: ${text.slice(0, 1000)}`,
+          providerError ? { rawText: text, providerError } : undefined,
+        );
       }
       return response;
     } catch (err: unknown) {

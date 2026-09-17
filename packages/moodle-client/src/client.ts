@@ -11,6 +11,7 @@ import {
   parseCreatedCourse,
   parseCreatedQuestion,
   parseCreatedResource,
+  parseCompetencyFrameworks, parseCreatedCompetency, parseCourseCompetencyLink, parseActivityCompetencyLink, parseCourseCompetencyReadback,
   parseCreatedQuiz,
   parseCreatedSection,
   parseQuizDetails,
@@ -27,6 +28,7 @@ import {
   serializeCreateQuizParams,
   serializeCreateQuizQuestionParams,
   serializeCreateResourceParams,
+  serializeCreateCompetencyParams, serializeAddCompetencyToCourseParams, serializeAddCompetencyToActivityParams,
   serializeCreateSectionParams,
   serializeUpdateAssignmentParams,
   serializeUpdateQuizParams,
@@ -39,6 +41,7 @@ import type {
   CreateQuizParams,
   CreateQuizQuestionParams,
   CreateResourceParams,
+  CreateCompetencyParams, AddCompetencyToCourseParams, AddCompetencyToActivityParams, MoodleCompetencyFramework, MoodleCreatedCompetency, MoodleCourseCompetencyLink, MoodleActivityCompetencyLink, MoodleCourseCompetencyReadback,
   CreateSectionParams,
   MoodleAddedQuestionSlot,
   MoodleAssignmentDetails,
@@ -99,6 +102,12 @@ export class MoodleClient {
     const raw = await this.http.post('local_agentpoc_create_section', form);
     return parseCreatedSection(raw);
   }
+
+  async listCompetencyFrameworks(): Promise<MoodleCompetencyFramework[]> { const raw = await this.http.post('local_agentpoc_list_competency_frameworks'); return parseCompetencyFrameworks(raw); }
+  async createCompetency(params: CreateCompetencyParams): Promise<MoodleCreatedCompetency> { const raw = await this.http.post('local_agentpoc_create_competency', serializeCreateCompetencyParams(params)); return parseCreatedCompetency(raw); }
+  async addCompetencyToCourse(params: AddCompetencyToCourseParams): Promise<MoodleCourseCompetencyLink> { const raw = await this.http.post('local_agentpoc_add_competency_to_course', serializeAddCompetencyToCourseParams(params)); return parseCourseCompetencyLink(raw); }
+  async addCompetencyToActivity(params: AddCompetencyToActivityParams): Promise<MoodleActivityCompetencyLink> { const raw = await this.http.post('local_agentpoc_add_competency_to_activity', serializeAddCompetencyToActivityParams(params)); return parseActivityCompetencyLink(raw); }
+  async getCourseCompetencies(courseId: number): Promise<MoodleCourseCompetencyReadback> { const form = new URLSearchParams(); appendDefined(form, 'course_id', courseId); const raw = await this.http.post('local_agentpoc_get_course_competencies', form); return parseCourseCompetencyReadback(raw); }
 
   async createResource(params: CreateResourceParams): Promise<MoodleCreatedResource> {
     const form = serializeCreateResourceParams(params);

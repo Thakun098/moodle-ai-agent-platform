@@ -18,6 +18,9 @@ export interface CourseStructureSection {
   summary: string;
   source_refs: SourceReference[];
   activity_intents: CourseStructureActivityIntent[];
+  aligned_objective_ids: string[];
+  aligned_outcome_ids: string[];
+  alignment_status: "CURRENT" | "STALE_ALIGNMENT";
 }
 
 export interface CourseStructureContent {
@@ -146,6 +149,14 @@ export function parseCourseStructureContent(value: unknown): CourseStructureCont
     positions.add(position as number);
 
     const activityIntents = item.activity_intents ?? item.activityIntents;
+    const parseAlignmentIds = (value: unknown, path: string): string[] => {
+      if (value === undefined || value === null) return [];
+      if (!Array.isArray(value) || value.some((id) => typeof id !== "string" || id.trim() === "")) {
+        throw new PlanningError("STRUCTURE_INVALID", path + " must be an array of non-empty strings.");
+      }
+      return [...new Set(value as string[])];
+    };
+    const alignmentStatus = item.alignment_status === "STALE_ALIGNMENT" ? "STALE_ALIGNMENT" : "CURRENT";
     return {
       ref,
       position: position as number,
@@ -153,6 +164,9 @@ export function parseCourseStructureContent(value: unknown): CourseStructureCont
       summary: nonBlank(item.summary, `content.sections[${index}].summary`),
       source_refs: parseSourceReferences(item.source_refs, `content.sections[${index}].source_refs`),
       activity_intents: parseActivityIntents(activityIntents, `content.sections[${index}].activity_intents`),
+      aligned_objective_ids: parseAlignmentIds(item.aligned_objective_ids, `content.sections[${index}].aligned_objective_ids`),
+      aligned_outcome_ids: parseAlignmentIds(item.aligned_outcome_ids, `content.sections[${index}].aligned_outcome_ids`),
+      alignment_status: alignmentStatus as "CURRENT" | "STALE_ALIGNMENT",
     };
   });
 
@@ -176,6 +190,8 @@ function contentFromDraft(draft: CourseStructureDraft): CourseStructureContent {
       summary: section.summary,
       source_refs: section.source_refs,
       activity_intents: section.activityIntents,
+      aligned_objective_ids: (section as unknown as { aligned_objective_ids?: string[] }).aligned_objective_ids ?? [],
+      aligned_outcome_ids: (section as unknown as { aligned_outcome_ids?: string[] }).aligned_outcome_ids ?? [],
     })),
   });
 }

@@ -5,6 +5,9 @@ import type {
   CreateQuizParams,
   CreateQuizQuestionParams,
   CreateResourceParams,
+  CreateCompetencyParams,
+  AddCompetencyToCourseParams,
+  AddCompetencyToActivityParams,
   CreateSectionParams,
   EssayQuestionOptions,
   MultichoiceQuestionOptions,
@@ -218,3 +221,9 @@ export function serializeAddQuestionToQuizParams(params: AddQuestionToQuizParams
   appendDefined(form, 'maxmark', params.maxMark);
   return form;
 }
+
+export function serializeCreateCompetencyParams(params: CreateCompetencyParams): URLSearchParams {
+  const form = new URLSearchParams(); appendDefined(form, 'framework_id', params.frameworkId); appendDefined(form, 'idnumber', params.idnumber); appendDefined(form, 'shortname', params.shortname); appendDefined(form, 'description', params.description); return form;
+}
+export function serializeAddCompetencyToCourseParams(params: AddCompetencyToCourseParams): URLSearchParams { const form = new URLSearchParams(); appendDefined(form, 'course_id', params.courseId); appendDefined(form, 'competency_id', params.competencyId); return form; }
+export function serializeAddCompetencyToActivityParams(params: AddCompetencyToActivityParams): URLSearchParams { const form = new URLSearchParams(); appendDefined(form, 'activity_id', params.activityId); appendDefined(form, 'competency_id', params.competencyId); appendDefined(form, 'rule_outcome', params.ruleOutcome); return form; }

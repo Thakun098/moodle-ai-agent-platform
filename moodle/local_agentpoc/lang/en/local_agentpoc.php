@@ -158,3 +158,6 @@ $string['errorrisksnapshotrequired'] = 'ต้องระบุรหัสส�
 $string['errorriskcompetencynotfound'] = 'ไม่พบสมรรถนะที่ร้องขอ';
 $string['errorriskplatformunavailable'] = 'ระบบวิเคราะห์ความเสี่ยงไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่อีกครั้ง';
 $string['errortryagain'] = 'ลองอีกครั้ง';
+
+$string['instructionaldesignservicekey'] = 'Instructional Design service key';
+$string['instructionaldesignservicekey_desc'] = 'Dedicated server-side key used by Moodle BFF to read and approve instructional-design context.';

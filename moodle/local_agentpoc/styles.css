@@ -365,8 +365,9 @@
 
 .agentpoc-risk-page .agentpoc-risk-legend-item strong {
     color: #1f2b45;
-    margin-left: auto;
+    margin-left: 0;
     font-size: 0.84rem;
+    font-weight: 800;
 }
 
 .agentpoc-risk-page .agentpoc-risk-dot {

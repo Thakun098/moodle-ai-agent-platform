@@ -31,7 +31,8 @@ function loadModule() {
         define: (dependencies, factory) => { module = factory(fake$, {}); },
         JSON,
         fetch: () => Promise.reject(new Error("fetch must not run in static UI tests")),
-        window: {confirm: () => true, location: {reload() {}}},
+        URL,
+        window: {confirm: () => true, location: {href: "http://localhost/course/create.php", reload() {}}},
         alert: () => {},
         console
     });
@@ -66,6 +67,18 @@ assert.match(lang, /Generate Course Structure/, "Step 1 CTA generates Course Str
 assert.match(lang, /These notes shape Course Structure only/, "Step 1 hint excludes implicit activities");
 assert.doesNotMatch(source, /No planned activities/, "Step 2 no longer renders planned-activity messaging");
 assert.doesNotMatch(source, /Planned Quiz|Planned Assignment/, "Step 2 has no implicit planned activities");
+assert.match(source, /Approve source as-is/, "every unapproved source Outcome has an as-is approval action");
+assert.match(source, /use_source_as_is:\s*true/, "source as-is approval is sent explicitly through the BFF");
+assert.match(source, /unapprovedSourceOutcomes/, "Structure Continue is gated by pending source Outcome approval");
+assert.match(source, /REVIEW REQUIRED · no Outcome mapping/, "missing model Outcome mappings are surfaced for Teacher review");
+assert.match(template, /input-edit-section-objectives/, "Section editor exposes authorized Objective mappings");
+assert.match(template, /input-edit-section-outcomes/, "Section editor exposes authorized Outcome mappings");
+assert.match(source, /set_coverage_override/, "Teacher review exposes explicit external coverage only through the governed BFF action");
+assert.match(source, /Derive Competency Candidates/, "Teacher can derive proposal-only Competency Candidates");
+assert.match(source, /Approve Candidate/, "Teacher can approve a Competency Candidate");
+assert.match(source, /UNALIGNED/, "unaligned Candidate state is visible for Teacher review");
+assert.match(ajax, /case 'derive_competency_candidates'/, "Moodle BFF exposes Candidate derivation");
+assert.match(client, /function decide_competency_candidate/, "Moodle BFF forwards Candidate decisions");
 
 // Step 3 approved per-week combined Activity UI.
 assert.match(source, /activity-week-card/, "Activity Structure renders one card per week");
@@ -81,6 +94,14 @@ assert.match(source, /choices_per_question/, "Quiz advanced settings include cho
 assert.match(source, /assignmentOptions/, "Assignment advanced settings are supported");
 assert.match(source, /grade/, "Assignment grade default can be configured");
 assert.match(source, /set_activity_intents/, "Activity UI persists explicit selection");
+assert.match(source, /PRACTICE.*FORMATIVE.*SUMMATIVE/s, "Activity Intent exposes one Purpose selection");
+assert.match(source, /selected_objective_ids/, "Activity Intent persists selected Objective IDs");
+assert.match(source, /selected_outcome_ids/, "Activity Intent persists selected Outcome IDs");
+assert.match(source, /Save Intent/, "generation instruction can be persisted before generation");
+assert.match(source, /intent_revision/, "Activity Intent revision is visible in the persisted UI state");
+assert.match(source, /activity-quiz-purpose-/, "Quiz Purpose control has a stable per-section selector");
+assert.match(source, /learner context is unspecified/, "unspecified learner context requires visible Teacher acknowledgment");
+assert.match(source, /Allow out-of-Section Outcome/, "out-of-Section Outcome selection is visibly override-gated");
 assert.match(source, /get_activity_intents/, "Activity UI reloads persisted Activity Intents");
 assert.match(source, /generate_activity/, "generation is per Activity");
 assert.match(source, /confirm_activity_shell/, "insufficient evidence can explicitly create an Empty Shell");
@@ -89,6 +110,9 @@ assert.match(source, /Retry exhausted/, "retry exhaustion is visible per Activit
 assert.match(source, /Stale - regenerate/, "Material replacement can surface a stale Activity");
 assert.match(source, /Generated Activity Preview/, "Teacher can review generated Activity content in Step 3");
 assert.match(source, /Teacher review required/, "AI-expanded Activity warning is visible before approval");
+assert.match(source, /quality_review/, "structured AI self-review is rendered for Teacher review");
+assert.match(source, /Outcome alignment/, "self-review PASS/WARN dimensions are visible");
+assert.match(source, /generation_metadata/, "generation lineage metadata is visible in Activity preview");
 
 // Ticket 01 — canonical QuizPlan review renderer.
 assert.match(source, /renderQuizActivityPreview\(intent\.activity, \$preview\)/, "Activity preview uses the shared Quiz renderer");

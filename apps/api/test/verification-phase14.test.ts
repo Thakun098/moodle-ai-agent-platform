@@ -19,7 +19,7 @@ function fixture() {
   };
   const stored: any[] = [];
   const runRepo = {
-    getRun: vi.fn(async () => ({ runId, status: "awaiting_verification" })),
+    getRun: vi.fn(async () => ({ runId, status: "awaiting_verification", approvedPlanId: planId, approvedRevision: 1 })),
     completeRun: vi.fn(async () => ({})), failRun: vi.fn(async () => ({})),
   };
   const planRepo = { getPlanRevision: vi.fn(async () => ({ runId, planId, revision: 1, planType: "course", operation: "create", validationStatus: "valid", rawEnvelope: envelope, executionContext: { target: { category_id: 1 } } })) };
@@ -32,7 +32,8 @@ function fixture() {
     discoverTools: vi.fn(async () => []),
     callTool: vi.fn(async () => ({ status: "success", data: { course: { id: 10, fullname: "Course", visible: 0, category_id: 1 }, sections: [{ section_id: 20, section_num: 1, name: "S1", activities: [] }] } })),
   };
-  return { runId, planId, runRepo, planRepo, mappingRepo, verificationRepo, mcpClientManager };
+  const competencySnapshotRepo = { get: vi.fn(async () => ({ runId, planId, revision: 1, mappingReviewRevision: 0, capturedAt: "2026-09-16T00:00:00.000Z", competencies: [], mappings: [] })) };
+  return { runId, planId, runRepo, planRepo, mappingRepo, verificationRepo, mcpClientManager, competencySnapshotRepo };
 }
 
 describe("Phase 14 verification API", () => {

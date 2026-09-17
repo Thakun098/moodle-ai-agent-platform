@@ -53,7 +53,7 @@ export class CourseExecutor {
   constructor(private readonly config: CourseExecutionConfig) {}
 
   async execute(): Promise<CourseExecutionResult> {
-    const { runId, planEnvelope, target, mcpClientManager, repositories, options = {} } = this.config;
+    const { runId, planEnvelope, target, mcpClientManager, repositories, options = {}, competencySnapshot, competencyFrameworkId } = this.config;
     const planId = planEnvelope.plan_id;
     const revision = planEnvelope.revision;
     const moodleBaseUrl = options.moodleBaseUrl || "http://localhost:8000";
@@ -76,7 +76,23 @@ export class CourseExecutor {
     const sortedSections = validateAndSortSections(content.sections);
     await mcpClientManager.discoverTools();
 
-    if (repositories.runRepo) await repositories.runRepo.updateStatus(runId, "executing");
+    if (competencySnapshot && competencySnapshot.competencies.length > 0) {
+      if (!Number.isSafeInteger(competencyFrameworkId) || Number(competencyFrameworkId) <= 0) {
+        throw new CourseExecutionError("COMPETENCY_FRAMEWORK_REQUIRED", "An explicitly configured Moodle Competency Framework is required before native Competency materialization.");
+      }
+      const frameworkResult = await mcpClientManager.callTool("moodle_list_competency_frameworks", {});
+      if (frameworkResult.status === "error") {
+        throw new CourseExecutionError(frameworkResult.code || "COMPETENCY_FRAMEWORK_READ_FAILED", frameworkResult.message);
+      }
+      const frameworks = ((frameworkResult.data as { frameworks?: unknown[] } | undefined)?.frameworks ?? []) as Array<Record<string, unknown>>;
+      const selected = frameworks.find((framework) => Number(framework.framework_id) === competencyFrameworkId);
+      if (!selected || selected.visible !== true || selected.can_manage !== true) {
+        throw new CourseExecutionError("COMPETENCY_FRAMEWORK_UNAVAILABLE", `Configured Moodle Competency Framework ${competencyFrameworkId} is unavailable, hidden, or not manageable.`);
+      }
+    }
+
+    if (this.config.beforeMutation) await this.config.beforeMutation();
+    else if (repositories.runRepo) await repositories.runRepo.updateStatus(runId, "executing");
 
     const createdEntities: CreatedEntitiesCount = {
       courses: 0,
@@ -85,6 +101,7 @@ export class CourseExecutor {
       quizzes: 0,
       questions: 0,
       slots: 0,
+      ...(competencySnapshot && competencySnapshot.competencies.length > 0 ? { competencies: 0, competencyLinks: 0 } : {}),
     };
 
     const runTimeoutMs = options.runTimeoutMs ?? 300_000;
@@ -249,6 +266,48 @@ export class CourseExecutor {
         }
       }
 
+      let competencyReadback: Record<string, unknown> | undefined;
+      if (competencySnapshot && competencySnapshot.competencies.length > 0) {
+        for (const competency of competencySnapshot.competencies) {
+          safeContext.stepNumber = stepNumber++;
+          const createResult = await executeRuntimeToolCall(safeContext, {
+            toolCallId: crypto.randomUUID(),
+            toolName: "moodle_create_competency",
+            arguments: { framework_id: competencyFrameworkId!, idnumber: competency.idnumber, shortname: competency.name, description: competency.description },
+            context: { targetType: "competency", localRef: `competency:${competency.candidateId}` },
+          });
+          if (createResult.status === "error") throw new CourseExecutionError(createResult.code || "COMPETENCY_CREATION_FAILED", createResult.message);
+          const competencyId = Number((createResult.data as { competency_id: number }).competency_id);
+          createdEntities.competencies = (createdEntities.competencies ?? 0) + 1;
+          safeContext.stepNumber = stepNumber++;
+          const courseLink = await executeRuntimeToolCall(safeContext, {
+            toolCallId: crypto.randomUUID(), toolName: "moodle_add_competency_to_course",
+            arguments: { course_id: courseId, competency_id: competencyId },
+            context: { localRef: `course-competency:${competency.candidateId}` },
+          });
+          if (courseLink.status === "error") throw new CourseExecutionError(courseLink.code || "COURSE_COMPETENCY_LINK_FAILED", courseLink.message);
+        }
+
+        for (const mapping of competencySnapshot.mappings) {
+          const activityId = repositories.mappingRepo ? await repositories.mappingRepo.findMoodleIdByLocalRef(runId, planId, revision, mapping.activityRef) : null;
+          const competencyId = repositories.mappingRepo ? await repositories.mappingRepo.findMoodleIdByLocalRef(runId, planId, revision, `competency:${mapping.competencyId}`) : null;
+          if (!activityId || !competencyId) {
+            throw new CourseExecutionError("COMPETENCY_MAPPING_IDENTITY_MISSING", `Missing Moodle identity for confirmed mapping ${mapping.activityRef} -> ${mapping.competencyId}.`);
+          }
+          safeContext.stepNumber = stepNumber++;
+          const link = await executeRuntimeToolCall(safeContext, {
+            toolCallId: crypto.randomUUID(), toolName: "moodle_add_competency_to_activity",
+            arguments: { activity_id: activityId, competency_id: competencyId, rule_outcome: mapping.evidence === "CONFIRMED" ? "evidence" : "none" },
+            context: { localRef: `activity-competency:${mapping.activityRef}:${crypto.createHash("sha256").update(mapping.competencyId).digest("hex").slice(0, 12)}` },
+          });
+          if (link.status === "error") throw new CourseExecutionError(link.code || "ACTIVITY_COMPETENCY_LINK_FAILED", link.message);
+          createdEntities.competencyLinks = (createdEntities.competencyLinks ?? 0) + 1;
+        }
+        const readback = await mcpClientManager.callTool("moodle_get_course_competencies", { course_id: courseId });
+        if (readback.status === "error") throw new CourseExecutionError(readback.code || "COMPETENCY_READBACK_FAILED", readback.message);
+        competencyReadback = readback.data as Record<string, unknown>;
+      }
+
       const courseUrl = formatCourseUrl(moodleBaseUrl, courseId);
       const mappings: ExecutionMappingItem[] = [];
       if (repositories.mappingRepo) {
@@ -267,6 +326,7 @@ export class CourseExecutor {
         courseUrl,
         createdEntities,
         mappings,
+        ...(competencyReadback ? { competencyReadback } : {}),
       };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);

@@ -1,7 +1,11 @@
 import multipart from "@fastify/multipart";
 import type {
   ActivityIntentRepository,
+  ActivityRevisionRepository,
   CourseStructureRevisionRepository,
+  CompetencyCandidateRepository,
+  CompetencyExecutionSnapshotRepository,
+  CompetencyMappingReviewRepository,
   ExecutionMappingRepository,
   IdempotencyRepository,
   McpClientManager,
@@ -26,6 +30,7 @@ import { registerErrorHandler } from "./plugins/error-handler.js";
 import { assignmentRoutes } from "./routes/assignments.js";
 import { activityIntentRoutes } from "./routes/activity-intents.js";
 import { activityGenerationRoutes } from "./routes/activity-generation.js";
+import { activityEditRoutes } from "./routes/activity-edits.js";
 import { categoriesRoutes } from "./routes/categories.js";
 import { executionsRoutes } from "./routes/executions.js";
 import { healthRoutes } from "./routes/health.js";
@@ -33,6 +38,8 @@ import { plansRoutes } from "./routes/plans.js";
 import { quizRoutes } from "./routes/quizzes.js";
 import { runsRoutes } from "./routes/runs.js";
 import { courseStructureRoutes } from "./routes/course-structure.js";
+import { instructionalDesignRoutes } from "./routes/instructional-design.js";
+import { competencyMappingRoutes } from "./routes/competency-mappings.js";
 import { materialSnapshotRoutes } from "./routes/material-snapshots.js";
 import { riskDashboardRoutes, type RiskDashboardRepository } from "./routes/risk-dashboard.js";
 import { riskInsightRoutes, type RiskInsightUseCase } from "./routes/risk-insights.js";
@@ -55,6 +62,10 @@ export interface BuildAppOptions {
   readonly snapshotRepo?: import("@moodle-agent-poc/agent-runtime").MaterialSnapshotRepository | undefined;
   readonly draftRepo?: SectionActivityDraftRepository | undefined;
   readonly activityIntentRepo?: ActivityIntentRepository | undefined;
+  readonly activityRevisionRepo?: ActivityRevisionRepository | undefined;
+  readonly candidateRepo?: CompetencyCandidateRepository | undefined;
+  readonly competencyReviewRepo?: CompetencyMappingReviewRepository | undefined;
+  readonly competencySnapshotRepo?: CompetencyExecutionSnapshotRepository | undefined;
   readonly mcpClientManager?: McpClientManager | undefined;
   readonly mappingRepo?: ExecutionMappingRepository | undefined;
   readonly toolCallRepo?: ToolCallRepository | undefined;
@@ -67,7 +78,7 @@ export interface BuildAppOptions {
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const {
     config, fastifyOptions, runRepo, planRepo, modelClient, coursePlanner, assignmentPlanner, quizPlanner,
-    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, draftRepo, activityIntentRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo, riskDashboardRepo, riskInsightService,
+    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, draftRepo, activityIntentRepo, activityRevisionRepo, candidateRepo, competencyReviewRepo, competencySnapshotRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo, riskDashboardRepo, riskInsightService,
   } = options;
 
   const defaultLoggerOptions = {
@@ -87,18 +98,21 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(multipart, { limits: { fileSize: 30 * 1024 * 1024, files: 10 } });
 
   app.register(healthRoutes);
-  app.register(runsRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(competencyMappingRoutes, { config, ...(competencyReviewRepo ? { reviewRepo: competencyReviewRepo } : {}) });
+  app.register(runsRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(competencyReviewRepo ? { competencyReviewRepo } : {}), ...(competencySnapshotRepo ? { competencySnapshotRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(courseStructureRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(structurePlanner ? { structurePlanner } : {}) });
+  app.register(instructionalDesignRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(modelClient ? { modelClient } : {}) });
   app.register(materialSnapshotRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
   app.register(activityIntentRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
   app.register(activityGenerationRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(modelClient ? { modelClient } : {}) });
-  app.register(sectionGenerationRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(draftRepo ? { draftRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(modelClient ? { modelClient } : {}) });
+  app.register(activityEditRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(activityRevisionRepo ? { activityRevisionRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}) });
+  app.register(sectionGenerationRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(draftRepo ? { draftRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(competencySnapshotRepo ? { competencySnapshotRepo } : {}), ...(modelClient ? { modelClient } : {}) });
   app.register(plansRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(modelClient ? { modelClient } : {}), ...(coursePlanner ? { coursePlanner } : {}), ...(planRevisionHelper ? { planRevisionHelper } : {}) });
   app.register(assignmentRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(modelClient ? { modelClient } : {}), ...(assignmentPlanner ? { assignmentPlanner } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(quizRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(modelClient ? { modelClient } : {}), ...(quizPlanner ? { quizPlanner } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(categoriesRoutes, { config, ...(mcpClientManager ? { mcpClientManager } : {}) });
-  app.register(executionsRoutes, { config, ...(planRepo ? { planRepo } : {}), ...(runRepo ? { runRepo } : {}), ...(mappingRepo ? { mappingRepo } : {}), ...(toolCallRepo ? { toolCallRepo } : {}), ...(idempotencyRepo ? { idempotencyRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
-  app.register(verificationRoutes, { config, ...(planRepo ? { planRepo } : {}), ...(runRepo ? { runRepo } : {}), ...(mappingRepo ? { mappingRepo } : {}), ...(verificationRepo ? { verificationRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(executionsRoutes, { config, ...(planRepo ? { planRepo } : {}), ...(runRepo ? { runRepo } : {}), ...(mappingRepo ? { mappingRepo } : {}), ...(toolCallRepo ? { toolCallRepo } : {}), ...(idempotencyRepo ? { idempotencyRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(competencyReviewRepo ? { competencyReviewRepo } : {}), ...(competencySnapshotRepo ? { competencySnapshotRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
+  app.register(verificationRoutes, { config, ...(planRepo ? { planRepo } : {}), ...(runRepo ? { runRepo } : {}), ...(mappingRepo ? { mappingRepo } : {}), ...(verificationRepo ? { verificationRepo } : {}), ...(competencySnapshotRepo ? { competencySnapshotRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(riskRefreshRoutes, { config, ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(riskDashboardRoutes, { config, ...(riskDashboardRepo ? { riskDashboardRepo } : {}) });
   app.register(riskInsightRoutes, { config, ...(modelClient ? { modelClient } : {}), ...(riskInsightService ? { riskInsightService } : {}) });

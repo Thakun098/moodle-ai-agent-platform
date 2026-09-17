@@ -67,6 +67,16 @@ export interface CreateSectionParams {
   summary?: string;
 }
 
+export interface CreateCompetencyParams {
+  frameworkId: number;
+  idnumber: string;
+  shortname: string;
+  description: string;
+}
+
+export interface AddCompetencyToCourseParams { courseId: number; competencyId: number; }
+export interface AddCompetencyToActivityParams { activityId: number; competencyId: number; ruleOutcome: 'none' | 'evidence'; }
+
 export interface CreateResourceParams {
   courseId: number;
   sectionId: number;
@@ -224,6 +234,16 @@ export interface MoodleCreatedSection {
   sectionNum: number;
   name: string;
   summary: string;
+}
+
+export interface MoodleCompetencyFramework { frameworkId: number; shortname: string; idnumber: string; visible: boolean; canManage: boolean; }
+export interface MoodleCreatedCompetency { competencyId: number; frameworkId: number; idnumber: string; shortname: string; created: boolean; }
+export interface MoodleCourseCompetencyLink { courseId: number; competencyId: number; linked: boolean; }
+export interface MoodleActivityCompetencyLink { linkId: number; activityId: number; competencyId: number; ruleOutcome: number; }
+export interface MoodleCourseCompetencyReadback {
+  courseId: number;
+  courseCompetencies: Array<{ courseLinkId: number; competencyId: number; frameworkId: number; idnumber: string; shortname: string }>;
+  activityLinks: Array<{ linkId: number; activityId: number; competencyId: number; ruleOutcome: number }>;
 }
 
 export interface MoodleCreatedResource {

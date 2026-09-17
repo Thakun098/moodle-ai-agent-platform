@@ -63,7 +63,8 @@ function isPayload(value: unknown): value is RiskSnapshotPayloadV01 {
   return !!x && x.schema_version === 'risk-snapshot.v0.1' && typeof x.course_id === 'number' && Array.isArray(x.student_results);
 }
 
-export const RISK_INSIGHT_GOVERNANCE_POLICY_VERSION = 'risk-insight-governance.v0.3';
+export const RISK_INSIGHT_GOVERNANCE_POLICY_VERSION = 'risk-insight-governance.v0.5';
+const MODEL_UNAVAILABLE_RETRY_COOLDOWN_MS = 30_000;
 
 function stableInsightId(scope: 'COURSE' | 'STUDENT', courseId: number, snapshotId: string, studentId?: number | null): string {
   return createHash('sha256').update(`${scope}|${courseId}|${snapshotId}|${studentId ?? 'course'}`).digest('hex').slice(0, 48);
@@ -76,6 +77,18 @@ export class RiskInsightService {
     private readonly cache: RiskInsightCache,
     private readonly now: () => Date = () => new Date()
   ) {}
+
+  private shouldRegenerateCached(row: RiskInsightCacheRecord): boolean {
+    if (row.status === 'STALE') return false;
+    const payload = row.payload as any;
+    if (payload?.governance_policy_version !== RISK_INSIGHT_GOVERNANCE_POLICY_VERSION) return true;
+    const errors = Array.isArray(payload?.validation_errors) ? payload.validation_errors : [];
+    const retryableFallbacks = new Set(['MODEL_UNAVAILABLE', 'MODEL_PROVIDER_UNAVAILABLE', 'MODEL_RATE_LIMITED', 'MODEL_RESPONSE_INVALID', 'INVALID_OUTPUT_AFTER_REPAIR', 'INVALID_JSON_AFTER_REPAIR']);
+    if (row.status !== 'FALLBACK' || !errors.some((code: unknown) => typeof code === 'string' && retryableFallbacks.has(code))) return false;
+    const generatedAt = Date.parse(row.generatedAt);
+    if (!Number.isFinite(generatedAt)) return true;
+    return this.now().getTime() - generatedAt >= MODEL_UNAVAILABLE_RETRY_COOLDOWN_MS;
+  }
 
   private fromCache(row: RiskInsightCacheRecord, allowedActions?: GovernedAction[]): RiskInsightResult {
     const currentPolicy = (row.payload as any).governance_policy_version === RISK_INSIGHT_GOVERNANCE_POLICY_VERSION;
@@ -130,7 +143,7 @@ export class RiskInsightService {
     if (!result) throw new Error('STUDENT_NOT_IN_SNAPSHOT');
     const normalized = snapshot.payload.normalized_students.find((s) => s.student_id === studentId);
     if (!normalized) throw new Error('STUDENT_NORMALIZED_EVIDENCE_NOT_FOUND');
-    if (cached) {
+    if (cached && !this.shouldRegenerateCached(cached)) {
       const allowedActions = result.evaluation_status === 'COMPLETE' && (result.overall_risk === 'MEDIUM' || result.overall_risk === 'HIGH')
         ? buildStudentActions(result, normalized)
         : [];
@@ -152,7 +165,7 @@ export class RiskInsightService {
     const cached = forceGenerate ? null : await this.cache.getForSnapshot(courseId, 'COURSE', snapshotId, null);
     const snapshot = await this.snapshots.getSnapshot(snapshotId);
     if (!snapshot || snapshot.courseId !== courseId || !isPayload(snapshot.payload)) throw new Error('RISK_SNAPSHOT_NOT_FOUND');
-    if (cached) return this.fromCache(cached, buildCourseActions(snapshot.payload.course_aggregate));
+    if (cached && !this.shouldRegenerateCached(cached)) return this.fromCache(cached, buildCourseActions(snapshot.payload.course_aggregate));
     const coverage = snapshot.payload.course_aggregate.evaluation_coverage;
     if (courseInsightEligibility(coverage) === 'BLOCKED') return this.persist('COURSE', courseId, snapshotId, snapshot.riskModelVersion, deterministicBlockedCourseInsight(coverage));
     const context = buildCourseInsightContext(snapshot.payload, snapshotId);

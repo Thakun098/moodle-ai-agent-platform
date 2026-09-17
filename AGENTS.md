@@ -28,9 +28,35 @@ Before starting any task, read:
 3. `Implementation.md`
 4. `PLANNING_CONTRACT.md`
 5. `task.md`
-6. Latest relevant entries in `soc.md`
+6. `C:\moodle-prac\ai-platform-coordination\source-of-truth\README.md`
+7. Only the latest **relevant** daily SOC sections from `C:\moodle-prac\ai-platform-coordination\source-of-truth\soc\YYYY-MM-DD.md`
+8. For audit/re-audit work or remediation of an audit finding, only the latest **relevant** daily Audit sections from `C:\moodle-prac\ai-platform-coordination\source-of-truth\audit\YYYY-MM-DD.md`
 
-Do not silently override frozen decisions. If a task would require changing one, record the proposed change in `soc.md` and stop before implementing the architecture change.
+Do not silently override frozen decisions. If a task would require changing one, record the proposed change in today's daily SOC file and stop before implementing the architecture change.
+
+### SOC Retrieval Policy
+
+Never read the historical SOC in full by default.
+
+1. Start from the current Ticket, ADR, task, feature, or code symbol.
+2. Search `ai-platform-coordination/source-of-truth/soc/` first.
+3. Read only the matching daily file/section plus bounded surrounding context.
+4. Expand to adjacent dates only when the matching entry references another dependency.
+5. Full historical SOC reads are reserved for explicitly requested holistic historical audits.
+
+Prefer: `Ticket → ADR → Topic/Symbol → Date`. Graphify may be used first to locate relevant code/dependency surfaces; then use those symbols/topics to scope the SOC search.
+
+### Audit Retrieval Policy
+
+Never read the historical Audit log in full by default.
+
+1. Start from the current Ticket, audit finding ID, remediation, feature, or code symbol.
+2. Search `ai-platform-coordination/source-of-truth/audit/` first.
+3. Read only the matching daily file/section plus bounded surrounding context.
+4. Expand to adjacent dates only when the audit entry references another dependency or earlier finding.
+5. Full historical Audit reads are reserved for explicitly requested holistic historical audits.
+
+Prefer: `Ticket → Finding ID → Topic/Symbol → Date`. Root `ai-platform-coordination/audit.md` is a pointer only; new audit evidence must be appended to the current daily Audit file.
 
 ---
 
@@ -218,7 +244,7 @@ The first POC should use an explicit TypeScript Agent loop so tool selection, to
 ├─ Implementation.md
 ├─ PLANNING_CONTRACT.md
 ├─ task.md
-├─ soc.md
+├─ soc.md  # pointer only; canonical daily SOC lives in ai-platform-coordination/source-of-truth/soc/
 ├─ apps/
 │  ├─ api/
 │  └─ moodle-mcp-server/
@@ -385,10 +411,10 @@ Every task must:
 2. Implement only the task scope.
 3. Run relevant tests.
 4. Mark `[x]` in `task.md` only when done.
-5. Append a completion record to `soc.md`.
+5. Append a completion record to `C:\moodle-prac\ai-platform-coordination\source-of-truth\soc\YYYY-MM-DD.md` for the current date.
 6. Record files changed, tests, decisions, limitations, and next work.
 
-A task is not complete until both `task.md` and `soc.md` are updated.
+A task is not complete until both `task.md` and the current daily SOC file are updated.
 
 ---
 

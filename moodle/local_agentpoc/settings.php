@@ -52,6 +52,14 @@ if ($hassiteconfig) {
         ''
     ));
 
+
+    $settings->add(new admin_setting_configpasswordunmask(
+        'local_agentpoc/instructionaldesignservicekey',
+        get_string('instructionaldesignservicekey', 'local_agentpoc'),
+        get_string('instructionaldesignservicekey_desc', 'local_agentpoc'),
+        ''
+    ));
+
     $settings->add(new admin_setting_configcheckbox(
         'local_agentpoc/riskaitesttools',
         get_string('riskaitesttools', 'local_agentpoc'),

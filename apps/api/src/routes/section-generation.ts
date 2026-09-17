@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   getDatabase,
   ActivityIntentRepository,
+  CompetencyExecutionSnapshotRepository,
   CourseStructureRevisionRepository,
   MaterialSnapshotRepository,
   PlanRepository,
@@ -33,6 +34,7 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
 import { createConfiguredModelClient } from "../config/model-client-factory.js";
+import { assertInstructionalDesignMutationState, beginInstructionalDesignMutation } from "../services/instructional-design-run-lifecycle-service.js";
 
 function resourceTitleFromFilename(filename: string): string {
   const lastDot = filename.lastIndexOf(".");
@@ -66,6 +68,7 @@ export interface SectionGenerationRoutesOptions {
   draftRepo?: SectionActivityDraftRepository | undefined;
   activityIntentRepo?: ActivityIntentRepository | undefined;
   planRepo?: PlanRepository | undefined;
+  competencySnapshotRepo?: CompetencyExecutionSnapshotRepository | undefined;
   modelClient?: import("@moodle-agent-poc/agent-runtime").ModelClient | undefined;
 }
 
@@ -192,6 +195,14 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
     if (!structureRecord) throw new PlanningError("STRUCTURE_NOT_SEALED", `Run ${runId} has no sealed Course Structure.`);
     const structure = toStructure(structureRecord);
     const section = toSection(structure, sectionRef);
+    const coreContext = typeof (getRunRepo() as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
+      ? await (getRunRepo() as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<unknown> }).getCoreCourseDesignContext(runId)
+      : null;
+    if (coreContext && section.activityIntents.length > 0) {
+      reply.status(409).send({ error: { code: "ACTIVITY_INTENT_REQUIRED", message: "Instructional Design Activity generation must use one persisted Teacher-authorized Activity Intent at a time.", details: { section_ref: sectionRef }, request_id: request.id } });
+      return;
+    }
+
     if (section.activityIntents.length === 0) {
       reply.send({ run_id: runId, section_ref: sectionRef, state: "NO_ACTIVITY_REQUIRED", activities: [] });
       return;
@@ -202,6 +213,7 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
       return;
     }
     const snapshot = toMaterialSnapshot(snapshotRecord);
+    await beginInstructionalDesignMutation(getRunRepo(), runId);
     const draftRepo = getDraftRepo();
     await draftRepo.markStaleForSnapshot(runId, sectionRef, snapshot.id);
     const contextProvider = new BoundedMaterialContextProvider({ getSnapshot: async (snapshotId) => {
@@ -249,6 +261,7 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
       reply.status(404).send({ error: { code: "NOT_FOUND", message: `Run ${runId} not found`, details: null, request_id: request.id } });
       return;
     }
+    await beginInstructionalDesignMutation(getRunRepo(), runId);
     const updated = await getRunRepo().setResourcePublication(runId, sectionRef, publish);
     reply.send({ run_id: runId, section_ref: sectionRef, publish, resource_publication: updated.syllabusMetadata?.resource_publication ?? {} });
   });
@@ -263,12 +276,17 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
       reply.status(404).send({ error: { code: "NOT_FOUND", message: `Run ${runId} not found`, details: null, request_id: request.id } });
       return;
     }
+    assertInstructionalDesignMutationState(run);
     const structureRecord = await structureRepo.getSealedRevision(runId);
     if (!structureRecord) throw new PlanningError("STRUCTURE_NOT_SEALED", `Run ${runId} has no sealed Course Structure.`);
     const existingInitialPlan = (await planRepo.listRunPlans(runId)).find((record) => record.planType === "course" && record.operation === "create");
     const latestPlanRevision = existingInitialPlan ? await planRepo.getLatestRevision(existingInitialPlan.planId) : null;
     const targetPlanId = latestPlanRevision?.planId ?? randomUUID();
     const targetPlanRevision = (latestPlanRevision?.revision ?? 0) + 1;
+    const competencySnapshotRepo = options.competencySnapshotRepo ?? new CompetencyExecutionSnapshotRepository(getDatabase());
+    const latestAuthoritySnapshot = latestPlanRevision
+      ? await competencySnapshotRepo.get(runId, latestPlanRevision.planId, latestPlanRevision.revision)
+      : null;
     const structure = toStructure(structureRecord);
     const persistedIntents = (await getIntentRepo().list(runId, structure.revision)).filter((record) => record.status !== "removed");
     const useOptionalActivityPath = persistedIntents.length > 0 || structure.content.sections.every((section) => section.activity_intents.length === 0);
@@ -362,12 +380,14 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
       const candidateSignature = canonicalJsonSignature({ title: plan.title, summary: plan.summary, warnings: plan.warnings, assumptions: plan.assumptions, content: plan.content, reviewRequirements });
       const latestEnvelope = latestPlanRevision.rawEnvelope as AnyPlanEnvelope;
       const latestSignature = canonicalJsonSignature({ title: latestEnvelope.title, summary: latestEnvelope.summary, warnings: latestEnvelope.warnings, assumptions: latestEnvelope.assumptions, content: latestEnvelope.content, reviewRequirements: latestPlanRevision.reviewRequirements ?? [] });
-      if (candidateSignature === latestSignature) {
-        await runRepo.updateStatus(runId, "preview");
+      const currentApprovalMatchesLatest = run.approvedPlanId === latestPlanRevision.planId && run.approvedRevision === latestPlanRevision.revision;
+      if (candidateSignature === latestSignature && (!latestAuthoritySnapshot || currentApprovalMatchesLatest)) {
+        if (run.status !== "preview") await runRepo.updateStatus(runId, "preview");
         reply.send({ run_id: runId, status: "preview", plan: latestPlanRevision, reused: true });
         return;
       }
     }
+    await beginInstructionalDesignMutation(runRepo, runId);
     const saved = await planRepo.savePlanRevision({ id: randomUUID(), planId: plan.plan_id, runId, planType: "course", operation: "create", revision: plan.revision, title: plan.title, summary: plan.summary, content: plan.content as unknown as Record<string, unknown>, rawEnvelope: plan as unknown as AnyPlanEnvelope, validationStatus: "valid", reviewRequirements });
     await runRepo.updateStatus(runId, "preview");
     reply.status(201).send({ run_id: runId, status: "preview", plan: saved });

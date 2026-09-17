@@ -23,6 +23,8 @@
         <div class="stepper-item step-item-4"><div class="step-counter">4</div><div class="step-name">Approve</div></div>
     </div>
 
+    <section id="core-course-design-context" class="card card-body mb-4 d-none" aria-label="Course design context"></section>
+
     <!-- Error Banner Container -->
     <div id="builder-error-alert" class="alert alert-danger d-none my-3" role="alert">
         <div class="d-flex align-items-center">
@@ -81,6 +83,7 @@
                         {{#str}} choosefile, local_agentpoc {{/str}}
                     </button>
                     <input type="file" id="syllabus-file-input" class="d-none" accept=".txt,.md,.markdown,.docx,.pdf">
+                    <div class="small text-muted mt-2"><i class="fa fa-info-circle mr-1"></i>Supported: PDF, DOCX, TXT, MD · Maximum file size <strong>10 MB</strong>.</div>
                     <div id="selected-file-info" class="mt-2 d-none">
                         <span class="badge badge-success p-2">
                             <i class="fa fa-file-text-o mr-1"></i> <span id="selected-file-name"></span>
@@ -146,6 +149,7 @@
                         <div id="preview-sections-container">
                             <!-- Injected by JavaScript -->
                         </div>
+                        <div id="instructional-design-review" class="border rounded bg-light p-3 mt-3 d-none" aria-label="Instructional Design alignment review"></div>
 
                         <div class="mt-3">
                             <button type="button" class="btn btn-outline-primary btn-sm" id="btn-add-section">
@@ -462,6 +466,16 @@
                     <div class="form-group">
                         <label for="input-edit-section-summary" class="font-weight-bold">Section Summary</label>
                         <textarea class="form-control" id="input-edit-section-summary" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="input-edit-section-objectives" class="font-weight-bold">Aligned Learning Objectives</label>
+                        <select class="custom-select" id="input-edit-section-objectives" multiple size="5"></select>
+                        <small class="form-text text-muted">Choose only Objectives authorized by the current Core Course Design Context.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="input-edit-section-outcomes" class="font-weight-bold">Aligned Learning Outcomes</label>
+                        <select class="custom-select" id="input-edit-section-outcomes" multiple size="5"></select>
+                        <small class="form-text text-muted">Saving creates a new Structure revision and revalidates coverage.</small>
                     </div>
                 </div>
                 <div class="modal-footer">

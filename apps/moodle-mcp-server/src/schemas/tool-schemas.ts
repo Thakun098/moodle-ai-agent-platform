@@ -313,3 +313,15 @@ export const AddQuestionToQuizInputSchema = z
   })
   .strict();
 export type AddQuestionToQuizInput = z.infer<typeof AddQuestionToQuizInputSchema>;
+
+// Ticket 24 — Moodle-native Competency tools.
+export const ListCompetencyFrameworksInputSchema = z.object({}).strict();
+export const CreateCompetencyInputSchema = z.object({
+  framework_id: z.number().int().positive(),
+  idnumber: z.string().trim().min(1),
+  shortname: z.string().trim().min(1),
+  description: z.string(),
+}).strict();
+export const AddCompetencyToCourseInputSchema = z.object({ course_id: z.number().int().positive(), competency_id: z.number().int().positive() }).strict();
+export const AddCompetencyToActivityInputSchema = z.object({ activity_id: z.number().int().positive(), competency_id: z.number().int().positive(), rule_outcome: z.enum(['none', 'evidence']) }).strict();
+export const GetCourseCompetenciesInputSchema = z.object({ course_id: z.number().int().positive() }).strict();

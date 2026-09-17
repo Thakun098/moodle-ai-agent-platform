@@ -21,6 +21,9 @@ export const MUTATING_TOOLS = new Set([
   "moodle_update_quiz_question",
   "moodle_add_question_to_quiz",
   "moodle_create_resource",
+  "moodle_create_competency",
+  "moodle_add_competency_to_course",
+  "moodle_add_competency_to_activity",
 ]);
 
 export function isMutatingTool(toolName: string): boolean {
@@ -34,6 +37,7 @@ export const MATERIALIZING_TOOLS: Record<string, string> = {
   quiz: "moodle_create_quiz",
   question: "moodle_create_quiz_question",
   resource: "moodle_create_resource",
+  competency: "moodle_create_competency",
 };
 
 export function isMaterializingTool(targetType: string, toolName: string): boolean {
@@ -42,7 +46,7 @@ export function isMaterializingTool(targetType: string, toolName: string): boole
 
 export interface ToolExecutionContext {
   localRef?: string | undefined;
-  targetType?: ("course" | "section" | "assignment" | "quiz" | "question" | "resource") | undefined;
+  targetType?: ("course" | "section" | "assignment" | "quiz" | "question" | "resource" | "competency") | undefined;
 }
 
 export interface ToolContextResolutionInput {

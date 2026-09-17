@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { extname } from "node:path";
-import { getDatabase, McpClientManager, PlanRepository, RunRepository } from "@moodle-agent-poc/agent-runtime";
+import { ActivityIntentRepository, CompetencyCandidateRepository, CompetencyExecutionSnapshotRepository, CompetencyMappingReviewRepository, getDatabase, McpClientManager, PlanRepository, RunRepository } from "@moodle-agent-poc/agent-runtime";
 import { listCourseFormats } from "@moodle-agent-poc/execution";
 import {
+  deriveCoreCourseDesignContext,
   detectMediaType,
   ingestSyllabus,
   MAX_SYLLABUS_FILE_SIZE,
@@ -10,6 +11,7 @@ import {
 } from "@moodle-agent-poc/syllabus";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
+import { captureCompetencyExecutionSnapshot } from "../services/competency-execution-snapshot-service.js";
 
 const SUPPORTED_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".docx", ".pdf"]);
 
@@ -18,6 +20,10 @@ export interface RunsRoutesOptions {
   runRepo?: RunRepository | undefined;
   planRepo?: PlanRepository | undefined;
   mcpClientManager?: McpClientManager | undefined;
+  candidateRepo?: CompetencyCandidateRepository | undefined;
+  activityIntentRepo?: ActivityIntentRepository | undefined;
+  competencyReviewRepo?: CompetencyMappingReviewRepository | undefined;
+  competencySnapshotRepo?: CompetencyExecutionSnapshotRepository | undefined;
 }
 
 function createConfiguredMcpManager(config: AppConfig): McpClientManager {
@@ -43,6 +49,10 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
     runRepo: injectedRepo,
     planRepo: injectedPlanRepo,
     mcpClientManager: injectedMcp,
+    candidateRepo: injectedCandidateRepo,
+    activityIntentRepo: injectedActivityIntentRepo,
+    competencyReviewRepo: injectedCompetencyReviewRepo,
+    competencySnapshotRepo: injectedCompetencySnapshotRepo,
   } = options;
 
   // Lazy resolution so booting Fastify without DATABASE_URL does not fail for /health
@@ -176,7 +186,8 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
       });
 
       // Update run with normalized syllabus
-      await runRepo.setNormalizedSyllabus(runId, normalized);
+      const coreContext = deriveCoreCourseDesignContext(normalized, runId);
+      await runRepo.initializeCoreCourseDesignContext(runId, normalized, coreContext);
 
       reply.status(201).send({
         run_id: runId,
@@ -187,6 +198,7 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
           sections_count: normalized.schedule_or_topics.length,
           objectives_count: normalized.learning_objectives.length,
         },
+        core_course_design_context: coreContext,
         course_format: courseFormat,
         created_at: runRecord.createdAt,
       });
@@ -323,6 +335,19 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
       return;
     }
 
+    const db = (!injectedCandidateRepo || !injectedActivityIntentRepo || !injectedCompetencyReviewRepo || !injectedCompetencySnapshotRepo) ? getDatabase() : undefined;
+    await captureCompetencyExecutionSnapshot({
+      runId,
+      planId: plan_id,
+      revision: revNum,
+      dependencies: {
+        candidateRepo: injectedCandidateRepo ?? new CompetencyCandidateRepository(db!),
+        activityIntentRepo: injectedActivityIntentRepo ?? new ActivityIntentRepository(db!),
+        reviewRepo: injectedCompetencyReviewRepo ?? new CompetencyMappingReviewRepository(db!),
+        snapshotRepo: injectedCompetencySnapshotRepo ?? new CompetencyExecutionSnapshotRepository(db!),
+      },
+    });
+
     const updatedRun = await runRepo.approvePlan({
       runId,
       planId: plan_id,
@@ -338,6 +363,12 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
       approved_at: updatedRun.approvedAt,
       approved_by_moodle_user_id: updatedRun.approvedByMoodleUserId ?? null,
     });
+  });
+
+  fastify.get<{ Params: { runId: string } }>("/api/runs/:runId/core-context", async (request, reply) => {
+    const context = await getRunRepo().getCoreCourseDesignContext(request.params.runId);
+    if (!context) return reply.status(404).send({ error: { code: "CORE_CONTEXT_NOT_FOUND", message: "No persisted Core Course Design Context for this run." } });
+    return { core_course_design_context: context };
   });
 
   // P4-D9: Keep GET /api/runs/:runId endpoint

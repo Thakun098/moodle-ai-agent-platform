@@ -44,7 +44,7 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
     it('discovers all canonical Moodle tools with input and output schemas', async () => {
       const response = await client.listTools();
       expect(response.tools).toBeDefined();
-      expect(response.tools.length).toBe(17);
+      expect(response.tools.length).toBe(22);
 
       const expectedToolNames = [
         'moodle_list_course_categories',
@@ -64,6 +64,11 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
         'moodle_create_quiz_question',
         'moodle_update_quiz_question',
         'moodle_add_question_to_quiz',
+        'moodle_list_competency_frameworks',
+        'moodle_create_competency',
+        'moodle_add_competency_to_course',
+        'moodle_add_competency_to_activity',
+        'moodle_get_course_competencies',
       ];
 
       const toolNames = response.tools.map((t) => t.name);

@@ -135,4 +135,76 @@ describe("GroqModelClient", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("recovers a single Activity object wrapped in failed_generation after Groq rejects the strict envelope", async () => {
+    const activity = {
+      type: "quiz",
+      title: "BFS check",
+      description: "Check BFS",
+      source_refs: [{ source: "lecture.md", section: "section-01" }],
+      questions: [],
+    };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        message: "Generated JSON does not match the expected schema.",
+        type: "invalid_request_error",
+        code: "json_validate_failed",
+        failed_generation: JSON.stringify([activity]),
+      },
+    }), { status: 400, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new GroqModelClient({ apiKey: "test-key" });
+    await expect(client.chat({
+      messages: [{ role: "user", content: "generate one quiz" }],
+      format: { type: "object", properties: { type: { const: "quiz" } }, required: ["type"] },
+    })).resolves.toMatchObject({ rawText: JSON.stringify([activity]) });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a parseable Activity object from failed_generation so local normalization remains authoritative", async () => {
+    const activity = {
+      type: "quiz",
+      title: "BFS check",
+      description: "Check BFS",
+      source_refs: [{ source: "lecture.md", section: "section-01" }],
+      questions: [{ choices: [{ ref: "a", text: "A" }, "B"] }],
+    };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        message: "Generated JSON does not match the expected schema.",
+        type: "invalid_request_error",
+        code: "json_validate_failed",
+        failed_generation: JSON.stringify(activity),
+      },
+    }), { status: 400, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new GroqModelClient({ apiKey: "test-key" });
+    await expect(client.chat({
+      messages: [{ role: "user", content: "generate one quiz" }],
+      format: { type: "object", properties: { type: { const: "quiz" } }, required: ["type"] },
+    })).resolves.toMatchObject({ rawText: JSON.stringify(activity) });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not recover malformed or multi-object failed_generation payloads", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: "json_validate_failed",
+        failed_generation: JSON.stringify([{ type: "quiz" }, { type: "quiz" }]),
+      },
+    }), { status: 400, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new GroqModelClient({ apiKey: "test-key" });
+    await expect(client.chat({
+      messages: [{ role: "user", content: "generate one quiz" }],
+      format: { type: "object", properties: { type: { const: "quiz" } }, required: ["type"] },
+    })).rejects.toMatchObject({ code: "MODEL_RESPONSE_INVALID" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

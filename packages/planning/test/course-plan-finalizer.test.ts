@@ -31,6 +31,26 @@ describe("final CoursePlan assembly", () => {
     })).toThrow(/not ready|stale/i);
   });
 
+  it("rejects malformed persisted generated content with a typed planning error instead of a TypeError", () => {
+    const malformed = { ref: "assignment-01", type: "assignment" } as ActivityPlan;
+    expect(() => assembleFinalCoursePlan({
+      planId: "00000000-0000-4000-8000-000000000001",
+      structure: { ...structure, sealedAt: "2026-09-04T01:00:00.000Z", sealedByMoodleUserId: 42 },
+      selectedActivitiesBySection: new Map([["section-01", [{
+        activityRef: "assignment-01", status: "generated", activity: malformed, groundingMode: "SYLLABUS_SCOPED_AI",
+        reviewRequired: true, authorizedSources: [{ source: "syllabus.md", section: "Week 1" }], currentSourceValid: true,
+      }]]]),
+    })).toThrowError(PlanningError);
+    expect(() => assembleFinalCoursePlan({
+      planId: "00000000-0000-4000-8000-000000000001",
+      structure: { ...structure, sealedAt: "2026-09-04T01:00:00.000Z", sealedByMoodleUserId: 42 },
+      selectedActivitiesBySection: new Map([["section-01", [{
+        activityRef: "assignment-01", status: "generated", activity: malformed, groundingMode: "SYLLABUS_SCOPED_AI",
+        reviewRequired: true, authorizedSources: [{ source: "syllabus.md", section: "Week 1" }], currentSourceValid: true,
+      }]]]),
+    })).toThrow(/must cite its authorized grounding scope/);
+  });
+
   it("includes deterministic File Resources in the finalized section without an AI activity", () => {
     const plan = assembleFinalCoursePlan({
       planId: "00000000-0000-4000-8000-000000000001",

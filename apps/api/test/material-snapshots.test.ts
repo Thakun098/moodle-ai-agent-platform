@@ -59,4 +59,22 @@ describe("MaterialSnapshot API", () => {
     expect(activityIntentRepo.markStaleForSection).not.toHaveBeenCalled();
     await app.close();
   });
+
+  it("blocks a changed MaterialSnapshot after execution authority is frozen", async () => {
+    const snapshotRepo = { getLatestSnapshot: vi.fn().mockResolvedValue(null), saveSnapshot: vi.fn() };
+    const activityIntentRepo = { markStaleForSection: vi.fn() };
+    const app = buildApp({
+      config,
+      runRepo: { getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "completed" }) } as any,
+      structureRevisionRepo: { getSealedRevision: vi.fn().mockResolvedValue({ revision: 1, contentJson: { sections: [{ ref: "section-01" }] } }) } as any,
+      snapshotRepo: snapshotRepo as any, activityIntentRepo: activityIntentRepo as any, fastifyOptions: { logger: false },
+    });
+    const upload = multipart([{ name: "week-1.txt", content: "Changed authority.", materialId: 10 }]);
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/material-snapshots", ...upload });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("INSTRUCTIONAL_DESIGN_MUTATION_LOCKED");
+    expect(snapshotRepo.saveSnapshot).not.toHaveBeenCalled();
+    expect(activityIntentRepo.markStaleForSection).not.toHaveBeenCalled();
+    await app.close();
+  });
 });

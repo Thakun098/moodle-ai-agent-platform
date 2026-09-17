@@ -37,6 +37,7 @@ function baseRepos(intents: any[]) {
     structureRepo: { getSealedRevision: vi.fn().mockResolvedValue(structure) },
     intentRepo: { list: vi.fn().mockResolvedValue(intents) },
     snapshotRepo: { getSnapshot: vi.fn().mockResolvedValue(null), getLatestSnapshot: vi.fn().mockResolvedValue(null) },
+    competencySnapshotRepo: { get: vi.fn().mockResolvedValue(null) },
     planRepo: {
       listRunPlans: vi.fn().mockImplementation(async () => [...saved].reverse()),
       getLatestRevision: vi.fn().mockImplementation(async (planId: string) => {
@@ -158,6 +159,37 @@ describe("Optional Activity Finalization — ADR-0002", () => {
     expect(finalized.statusCode).toBe(201);
     expect(repos.saved[0].rawEnvelope.content.sections[0].resources).toEqual([]);
     expect(repos.snapshotRepo.getLatestSnapshot).toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("creates a new CoursePlan revision after prior execution authority existed and approval was invalidated", async () => {
+    const repos = baseRepos([intent()]);
+    const app = buildApp({
+      config,
+      runRepo: repos.runRepo as any,
+      structureRevisionRepo: repos.structureRepo as any,
+      activityIntentRepo: repos.intentRepo as any,
+      snapshotRepo: repos.snapshotRepo as any,
+      planRepo: repos.planRepo as any,
+      competencySnapshotRepo: repos.competencySnapshotRepo as any,
+      fastifyOptions: { logger: false },
+    });
+
+    const first = await app.inject({ method: "POST", url: "/api/runs/run-1/plans/course/finalize" });
+    expect(first.statusCode).toBe(201);
+    expect(repos.saved[0].revision).toBe(1);
+
+    repos.competencySnapshotRepo.get.mockResolvedValue({
+      runId: "run-1", planId: repos.saved[0].planId, revision: 1, mappingReviewRevision: 1, capturedAt: "2026-09-16T00:00:00Z", competencies: [], mappings: [],
+    });
+    repos.runRepo.getRun.mockResolvedValue({ runId: "run-1", status: "preview", model: "test-model", normalizedSyllabus, approvedPlanId: null, approvedRevision: null });
+
+    const afterAuthorityChange = await app.inject({ method: "POST", url: "/api/runs/run-1/plans/course/finalize" });
+    expect(afterAuthorityChange.statusCode).toBe(201);
+    expect(repos.saved).toHaveLength(2);
+    expect(repos.saved[1].planId).toBe(repos.saved[0].planId);
+    expect(repos.saved[1].revision).toBe(2);
+    expect(afterAuthorityChange.json().reused).not.toBe(true);
     await app.close();
   });
 

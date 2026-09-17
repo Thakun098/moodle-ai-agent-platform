@@ -15,6 +15,7 @@ import {
 } from "@moodle-agent-poc/materials";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
+import { beginInstructionalDesignMutation } from "../services/instructional-design-run-lifecycle-service.js";
 
 export interface MaterialSnapshotRoutesOptions {
   config: AppConfig;
@@ -182,6 +183,7 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
           return;
         }
       }
+      await beginInstructionalDesignMutation(getRunRepo(), runId);
       const record = await getSnapshotRepo().saveSnapshot({
         id: snapshot.id,
         runId: snapshot.runId,

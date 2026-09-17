@@ -1,5 +1,5 @@
 import type { ModelClient } from "@moodle-agent-poc/agent-runtime";
-import type { NormalizedSyllabus } from "@moodle-agent-poc/contracts";
+import type { CoreCourseDesignContext, NormalizedSyllabus } from "@moodle-agent-poc/contracts";
 import { buildCoursePlanningSchema, buildCourseStructureUserPrompt, COURSE_STRUCTURE_SYSTEM_PROMPT } from "../prompts/course-planning-prompt.js";
 import type { CoursePlanningConstraints } from "../instructions/planning-constraints.js";
 import type { CourseStructureDraft, SectionStructureDraft } from "../types.js";
@@ -8,6 +8,7 @@ import { buildSectionGrounding } from "../grounding/section-grounding.js";
 import { PlanningError } from "../errors/planning-errors.js";
 import { buildProvenanceAllowlist, validateSourceReferences } from "../domain/planning-domain-validator.js";
 import { courseStructureSectionCoversAnchor, inspectCourseStructureCoverage } from "../validators/course-structure-coverage-validator.js";
+import { formatCoreCourseDesignProjection } from "../structure/instructional-design-alignment.js";
 
 const nonBlank = { type: "string", minLength: 1, pattern: "\\S" };
 // Groq's structured-output validator rejects the provider-generated nullable
@@ -221,6 +222,8 @@ export function buildCourseStructureSchema(syllabus: NormalizedSyllabus): Record
   const sectionProperties = { ...section.properties };
   delete sectionProperties.activities;
   sectionProperties.source_refs = { type: "array", items: structureSourceReference };
+  sectionProperties.aligned_objective_ids = { type: "array", items: nonBlank };
+  sectionProperties.aligned_outcome_ids = { type: "array", items: nonBlank };
   sectionProperties.activity_intents = {
     type: "array",
     items: {
@@ -263,8 +266,8 @@ export function buildCourseStructureSchema(syllabus: NormalizedSyllabus): Record
 export class CourseStructurePlanner {
   constructor(private readonly modelClient: ModelClient, private readonly scheduler = new ModelRequestScheduler()) {}
 
-  async plan(syllabus: NormalizedSyllabus, _constraints: CoursePlanningConstraints, model?: string, timeoutMs?: number, outputMode: "schema" | "json" = "schema"): Promise<CourseStructureDraft> {
-    const userPrompt = buildCourseStructureUserPrompt(syllabus, _constraints.originalInstruction);
+  async plan(syllabus: NormalizedSyllabus, _constraints: CoursePlanningConstraints, model?: string, timeoutMs?: number, outputMode: "schema" | "json" = "schema", coreContext?: CoreCourseDesignContext): Promise<CourseStructureDraft> {
+    const userPrompt = [buildCourseStructureUserPrompt(syllabus, _constraints.originalInstruction), coreContext ? formatCoreCourseDesignProjection(coreContext) : ""].filter(Boolean).join("\n\n");
     const response = await this.scheduler.chat(this.modelClient, {
       ...(model ? { model } : {}),
       messages: [
@@ -291,6 +294,8 @@ export class CourseStructurePlanner {
       summary: section.summary,
       source_refs: normalizeModelSourceRefs(section.source_refs, syllabus.metadata.filename),
       activityIntents: [],
+      ...(Array.isArray(section.aligned_objective_ids) ? { aligned_objective_ids: section.aligned_objective_ids } : {}),
+      ...(Array.isArray(section.aligned_outcome_ids) ? { aligned_outcome_ids: section.aligned_outcome_ids } : {}),
     }));
     const reconciled = reconcileStructureSectionsToSyllabus(syllabus, modelSections);
     const sections = reconciled.sections.map((section) => applyDeterministicStructureGrounding(syllabus, section));

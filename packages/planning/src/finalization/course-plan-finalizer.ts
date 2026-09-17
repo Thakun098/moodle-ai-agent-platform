@@ -61,7 +61,10 @@ export interface AssembleFinalCoursePlanParams {
 }
 
 function assertGeneratedProvenance(activity: ActivityPlan, sectionRef: string): void {
-  if (activity.source_refs.length === 0 || (activity.type === "quiz" && activity.questions.some((question) => question.source_refs.length === 0))) {
+  const activitySourcesValid = Array.isArray(activity.source_refs) && activity.source_refs.length > 0;
+  const quizQuestionSourcesValid = activity.type !== "quiz"
+    || (Array.isArray(activity.questions) && activity.questions.every((question) => Array.isArray(question.source_refs) && question.source_refs.length > 0));
+  if (!activitySourcesValid || !quizQuestionSourcesValid) {
     throw new PlanningError("PLAN_DOMAIN_INVALID", `Generated Activity content in section "${sectionRef}" must cite its authorized grounding scope.`);
   }
 }

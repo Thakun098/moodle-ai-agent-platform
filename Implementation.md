@@ -660,7 +660,7 @@ Use repeated runs with frozen parameters for quality comparison.
 - [ ] Technical metrics are captured.
 - [ ] AI quality is evaluated separately.
 - [ ] `task.md` reflects completed work.
-- [ ] `soc.md` contains completion records.
+- [ ] daily SOC files in `ai-platform-coordination/source-of-truth/soc/` contain completion records.
 
 ---
 

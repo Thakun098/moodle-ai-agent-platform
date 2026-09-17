@@ -228,6 +228,26 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
     }
   });
 
+  it.each([
+    ["rich", "# Course\nLearner level: Undergraduate\nPrerequisites: Algebra\n## Learning Objectives\n- Develop skills\n## Learning Outcomes\n- Write a loop\nWeek 1: Loops", "PROVIDED_BY_SYLLABUS", 1],
+    ["incomplete", "# Course\nWeek 1: Loops", "UNSPECIFIED", 0],
+  ])("persists and reloads %s Core Context from PostgreSQL", async (_name, text, status, count) => {
+    const upload = createMultipartPayload("context.md", String(text), "text/markdown");
+    const post = await app.inject({ method: "POST", url: "/api/runs", headers: upload.headers, payload: upload.body });
+    expect(post.statusCode).toBe(201);
+    const result = post.json();
+    const persisted = await runRepo.getCoreCourseDesignContext(result.run_id);
+    expect(persisted).toEqual(result.core_course_design_context);
+    expect(persisted?.learner_context.status).toBe(status);
+    expect(persisted?.source_learning_outcomes).toHaveLength(Number(count));
+    const reload = await app.inject({ method: "GET", url: "/api/runs/" + result.run_id + "/core-context" });
+    expect(reload.statusCode).toBe(200);
+    expect(reload.json().core_course_design_context).toEqual(persisted);
+    const run = await runRepo.getRun(result.run_id);
+    await Promise.all([1, 2].map(() => runRepo.initializeCoreCourseDesignContext(result.run_id, run!.normalizedSyllabus!, persisted!)));
+    expect(await runRepo.getCoreCourseDesignContext(result.run_id)).toEqual(persisted);
+  });
+
   it("successfully ingests a valid markdown syllabus and persists SHA-256 (R5, T0407)", async () => {
     const mdContent = `# CS101: Introduction to Computer Science\n\n## Description\nCourse overview.\n\n## Learning Objectives\n- Understand algorithms.\n\n## Schedule\n### Week 1: Basics\n- Topic 1\n### Week 2: Intermediate\n- Topic 2`;
     const expectedSha256 = createHash("sha256").update(Buffer.from(mdContent, "utf8")).digest("hex");

@@ -190,3 +190,37 @@ $functions['local_agentpoc_get_course_risk_evidence'] = [
     'capabilities'=> 'local/agentpoc:view, moodle/course:view',
 ];
 $services['Moodle Agent POC Service']['functions'][] = 'local_agentpoc_get_course_risk_evidence';
+
+
+// Ticket 24 — Moodle-native Competency materialization and readback.
+$ticket24functions = [
+    'local_agentpoc_list_competency_frameworks' => [
+        'classname' => 'local_agentpoc\\external\\list_competency_frameworks', 'methodname' => 'execute',
+        'description' => 'List visible Moodle Competency Frameworks available to the caller', 'type' => 'read', 'ajax' => true,
+        'capabilities' => 'local/agentpoc:view, moodle/competency:competencyview',
+    ],
+    'local_agentpoc_create_competency' => [
+        'classname' => 'local_agentpoc\\external\\create_competency', 'methodname' => 'execute',
+        'description' => 'Create or reconcile an approved Competency in an explicitly selected framework', 'type' => 'write', 'ajax' => true,
+        'capabilities' => 'local/agentpoc:manage, moodle/competency:competencymanage',
+    ],
+    'local_agentpoc_add_competency_to_course' => [
+        'classname' => 'local_agentpoc\\external\\add_competency_to_course', 'methodname' => 'execute',
+        'description' => 'Attach a native Competency to a Course', 'type' => 'write', 'ajax' => true,
+        'capabilities' => 'local/agentpoc:manage, moodle/competency:coursecompetencymanage',
+    ],
+    'local_agentpoc_add_competency_to_activity' => [
+        'classname' => 'local_agentpoc\\external\\add_competency_to_activity', 'methodname' => 'execute',
+        'description' => 'Attach a Course Competency to an Activity with explicit none/evidence rule outcome', 'type' => 'write', 'ajax' => true,
+        'capabilities' => 'local/agentpoc:manage, moodle/competency:coursecompetencymanage',
+    ],
+    'local_agentpoc_get_course_competencies' => [
+        'classname' => 'local_agentpoc\\external\\get_course_competencies', 'methodname' => 'execute',
+        'description' => 'Read Moodle-native Course Competencies and Activity links', 'type' => 'read', 'ajax' => true,
+        'capabilities' => 'local/agentpoc:view, moodle/competency:coursecompetencyview',
+    ],
+];
+foreach ($ticket24functions as $name => $definition) {
+    $functions[$name] = $definition;
+    $services['Moodle Agent POC Service']['functions'][] = $name;
+}

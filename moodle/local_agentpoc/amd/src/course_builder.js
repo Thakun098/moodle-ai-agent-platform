@@ -5,8 +5,20 @@
  * @copyright  2026 Moodle Agent POC Team
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelpers) {
+define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_context_view'], function($, contractHelpers, coreContextView) {
     'use strict';
+
+    var MAX_SYLLABUS_FILE_BYTES = 10 * 1024 * 1024;
+    var MAX_MATERIAL_FILE_BYTES = 30 * 1024 * 1024;
+
+    function fileSizeValidationError(file, maxBytes, label) {
+        if (!file || typeof file.size !== 'number' || file.size <= maxBytes) {
+            return null;
+        }
+        var maxMb = Math.round(maxBytes / (1024 * 1024));
+        var actualMb = (file.size / (1024 * 1024)).toFixed(1);
+        return label + ' file "' + file.name + '" is ' + actualMb + ' MB. Maximum allowed size is ' + maxMb + ' MB.';
+    }
 
     var state = {
         sesskey: '',
@@ -30,8 +42,18 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         sectionMaterials: {},
         activityIntents: {},
         requiresAiReview: false,
-        activityLoadingCount: 0
+        activityLoadingCount: 0,
+        outcomeProposals: [],
+        outcomeCoverage: [],
+        competencyCandidates: [],
+        coreContextRevision: null,
+        coreContext: null
     };
+
+    function showCoreContext(context) {
+        state.coreContext = context || null;
+        $('#core-course-design-context').html(coreContextView.render(context)).toggleClass('d-none', !context);
+    }
 
     function showError(message, details) {
         $('#builder-error-message').text(message || 'An unexpected error occurred.');
@@ -166,6 +188,9 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                         summary: sec.summary,
                         source_refs: sec.source_refs || [],
                         activity_intents: sec.activity_intents || [],
+                        aligned_objective_ids: sec.aligned_objective_ids || [],
+                        aligned_outcome_ids: sec.aligned_outcome_ids || [],
+                        alignment_status: sec.alignment_status || "CURRENT",
                         activities: []
                     };
                 })
@@ -259,6 +284,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         }).then(function(result) {
             state.structureRevision = result.structure_revision.revision;
             state.currentStructure = result.structure_revision;
+            state.outcomeCoverage = result.coverage || [];
             state.sectionMaterials = {};
             $('#material-generation-stage').remove();
             $('#btn-review-continue').prop('disabled', false).text('Confirm structure');
@@ -336,8 +362,325 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         $container.append($notes);
     }
 
+
+    function approvedSourceOutcomeIds() {
+        var approved = state.coreContext && Array.isArray(state.coreContext.approved_learning_outcomes)
+            ? state.coreContext.approved_learning_outcomes
+            : [];
+        var ids = {};
+        approved.forEach(function(outcome) {
+            (outcome.source_outcome_ids || []).forEach(function(sourceId) { ids[sourceId] = true; });
+        });
+        return ids;
+    }
+
+    function unapprovedSourceOutcomes() {
+        var sources = state.coreContext && Array.isArray(state.coreContext.source_learning_outcomes)
+            ? state.coreContext.source_learning_outcomes
+            : [];
+        var approvedIds = approvedSourceOutcomeIds();
+        return sources.filter(function(outcome) { return !approvedIds[outcome.source_outcome_id]; });
+    }
+
+    function currentAlignmentIsStale() {
+        if (!state.currentStructure) return false;
+        var constraints = state.currentStructure.teacher_constraints || state.currentStructure.teacherConstraintsJson;
+        if (constraints && constraints.alignment_state === 'STALE_ALIGNMENT') return true;
+        var sections = state.currentStructure.content && Array.isArray(state.currentStructure.content.sections)
+            ? state.currentStructure.content.sections
+            : [];
+        return sections.some(function(section) { return section.alignment_status === 'STALE_ALIGNMENT'; });
+    }
+
+    function updateStructureContinueState() {
+        var $button = $('#btn-review-continue');
+        if (unapprovedSourceOutcomes().length > 0) {
+            $button.prop('disabled', true).text('Approve Outcomes to continue');
+            return;
+        }
+        if (currentAlignmentIsStale()) {
+            $button.prop('disabled', true).text('Revalidate alignment to continue');
+            return;
+        }
+        if ((state.outcomeCoverage || []).some(function(item) { return item.state === 'UNCOVERED'; })) {
+            $button.prop('disabled', true).text('Repair Outcome coverage to continue');
+            return;
+        }
+        $button.prop('disabled', false).text('Confirm structure');
+    }
+
+    function markCurrentAlignmentStale() {
+        if (!state.currentStructure) return;
+        if (!state.currentStructure.teacher_constraints) state.currentStructure.teacher_constraints = {};
+        state.currentStructure.teacher_constraints.alignment_state = 'STALE_ALIGNMENT';
+        if (state.currentStructure.content && Array.isArray(state.currentStructure.content.sections)) {
+            state.currentStructure.content.sections.forEach(function(section) { section.alignment_status = 'STALE_ALIGNMENT'; });
+        }
+    }
+
+    function applyOutcomeApproval(result, sourceOutcomeId) {
+        state.coreContextRevision = result.core_context.revision;
+        state.outcomeCoverage = [];
+        showCoreContext(result.core_context);
+        state.outcomeProposals = (state.outcomeProposals || []).filter(function(item) {
+            return item.source_outcome_id !== sourceOutcomeId;
+        });
+        markCurrentAlignmentStale();
+        renderAlignmentReview(state.currentStructure);
+    }
+
+    function semanticDisplayLabel(kind, textValue, id) {
+        var clean = typeof textValue === 'string' ? textValue.trim() : '';
+        if (!clean) return kind + ' · ' + String(id || 'unmapped').slice(0, 12);
+        var explicit = clean.match(/^((?:CLO|PLO|LO|CO)\s*\d+(?:\.\d+)*)\s*[:\-–—]?\s*(.*)$/i);
+        if (explicit) {
+            var code = explicit[1].replace(/\s+/g, '').toUpperCase();
+            return code + (explicit[2] ? ' · ' + explicit[2] : '');
+        }
+        if (kind === 'LO') {
+            var numbered = clean.match(/^(\d+(?:\.\d+)+)\s*[:\-–—]?\s*(.*)$/);
+            if (numbered) return 'LO ' + numbered[1] + (numbered[2] ? ' · ' + numbered[2] : '');
+        }
+        return kind + ' · ' + clean;
+    }
+
+    function objectiveDisplayLabel(objectiveId) {
+        var objectives = state.coreContext && Array.isArray(state.coreContext.learning_objectives)
+            ? state.coreContext.learning_objectives
+            : [];
+        var match = objectives.find(function(objective) { return objective.objective_id === objectiveId; });
+        return semanticDisplayLabel('LO', match && match.source_text, objectiveId);
+    }
+
+    function outcomeDisplayLabel(outcomeId) {
+        var approved = state.coreContext && Array.isArray(state.coreContext.approved_learning_outcomes)
+            ? state.coreContext.approved_learning_outcomes
+            : [];
+        var match = approved.find(function(outcome) { return outcome.outcome_id === outcomeId; });
+        return semanticDisplayLabel('CLO', match && match.text, outcomeId);
+    }
+
+    function approvedOutcomeLabel(outcomeId) {
+        return outcomeDisplayLabel(outcomeId);
+    }
+
+    function renderExternalCoverageControls($root) {
+        var uncovered = (state.outcomeCoverage || []).filter(function(item) { return item.state === 'UNCOVERED'; });
+        if (!uncovered.length) return;
+        var $panel = $('<div class="alert alert-secondary mt-3 mb-0"></div>');
+        $panel.append($('<div class="font-weight-bold mb-1"></div>').text('External coverage confirmation'));
+        $panel.append($('<div class="small mb-2"></div>').text('Use only when this Outcome is intentionally covered outside this Moodle course. Repair Section mappings for internal coverage.'));
+        uncovered.forEach(function(item) {
+            var $row = $('<div class="border rounded bg-white p-2 mb-2"></div>');
+            $row.append($('<div class="small font-weight-bold mb-1"></div>').text(approvedOutcomeLabel(item.outcome_id)));
+            var $reason = $('<input type="text" class="form-control form-control-sm mb-2" placeholder="Describe the external evidence">');
+            var $confirm = $('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text('Confirm external coverage');
+            $confirm.on('click', function() {
+                var reason = $reason.val().trim();
+                if (!reason) {
+                    showError('Describe the external coverage evidence before confirming.');
+                    return;
+                }
+                $confirm.prop('disabled', true).text('Saving...');
+                callBff('set_coverage_override', {run_id: state.runId, outcome_id: item.outcome_id, reason: reason}).then(function(result) {
+                    state.outcomeCoverage = result.coverage || [];
+                    renderAlignmentReview(state.currentStructure);
+                }).catch(function(err) {
+                    $confirm.prop('disabled', false).text('Confirm external coverage');
+                    showError('Failed to confirm external coverage: ' + err.message, err.details);
+                });
+            });
+            $row.append($reason).append($confirm);
+            $panel.append($row);
+        });
+        $root.append($panel);
+    }
+
+    function populateAlignmentSelect(selector, items, idField, textField, selectedIds) {
+        var selected = selectedIds || [];
+        var $select = $(selector).empty();
+        (items || []).forEach(function(item) {
+            var id = item[idField];
+            if (!id) return;
+            var label = item[textField] || id;
+            $select.append($('<option></option>').val(id).text(label).attr('title', id).prop('selected', selected.indexOf(id) !== -1));
+        });
+    }
+    function renderCompetencyCandidates($root) {
+        if (!state.coreContext || !Array.isArray(state.coreContext.approved_learning_outcomes) || !state.coreContext.approved_learning_outcomes.length) return;
+        $root.append($('<div class="font-weight-bold mt-3 mb-2"></div>').text('Competency Candidates · Teacher review required'));
+        if (!(state.competencyCandidates || []).length) {
+            var $derive = $('<button type="button" class="btn btn-sm btn-outline-primary mb-2"></button>').text('Derive Competency Candidates');
+            $derive.on('click', function() {
+                $derive.prop('disabled', true).text('Deriving...');
+                callBff('derive_competency_candidates', {run_id: state.runId}).then(function(result) {
+                    state.competencyCandidates = result.candidates || [];
+                    renderAlignmentReview(state.currentStructure);
+                }).catch(function(err) {
+                    $derive.prop('disabled', false).text('Derive Competency Candidates');
+                    showError('Failed to derive Competency Candidates: ' + err.message, err.details);
+                });
+            });
+            $root.append($derive);
+            $root.append($('<div class="small text-muted"></div>').text('AI may propose candidates; Moodle Competencies are not created in this step.'));
+            return;
+        }
+        (state.competencyCandidates || []).forEach(function(candidate) {
+            var $card = $('<div class="border rounded p-2 mb-2 competency-candidate-card"></div>');
+            $card.append($('<div class="small text-muted mb-1"></div>').text(candidate.candidate_id + ' · ' + candidate.status));
+            var $name = $('<input type="text" class="form-control form-control-sm mb-1">').val(candidate.name || '');
+            var $description = $('<textarea class="form-control form-control-sm mb-1" rows="2"></textarea>').val(candidate.description || '');
+            $card.append($name).append($description);
+            $card.append($('<div class="small mb-2"></div>').text('Derived from approved Outcomes: ' + (((candidate.derived_from_outcome_ids || []).map(outcomeDisplayLabel)).join(' | ') || 'None')));
+            var $candidateOutcomes = $('<select class="form-control form-control-sm mb-2" multiple size="4"></select>');
+            (state.coreContext.approved_learning_outcomes || []).forEach(function(outcome) {
+                $candidateOutcomes.append($('<option></option>').val(outcome.outcome_id).text(outcomeDisplayLabel(outcome.outcome_id)).attr('title', outcome.outcome_id).prop('selected', (candidate.derived_from_outcome_ids || []).indexOf(outcome.outcome_id) !== -1));
+            });
+            $card.append($('<div class="small mb-2"></div>').text('Teacher may clear mappings to request UNALIGNED review.'));
+            function decide(action, override) {
+                var decision = {action: action, name: $name.val(), description: $description.val(), derived_from_outcome_ids: $candidateOutcomes.val() || []};
+                if (override) decision.teacher_override = override;
+                return callBff('decide_competency_candidate', {run_id: state.runId, candidate_id: candidate.candidate_id, decision: JSON.stringify(decision)}).then(function(result) {
+                    state.competencyCandidates = (state.competencyCandidates || []).map(function(item) { return item.candidate_id === candidate.candidate_id ? result.candidate : item; });
+                    renderAlignmentReview(state.currentStructure);
+                });
+            }
+            var $actions = $('<div class="d-flex flex-wrap"></div>');
+            var $edit = $('<button type="button" class="btn btn-sm btn-outline-secondary mr-2 mb-1"></button>').text('Save Candidate edit');
+            $edit.on('click', function() { $edit.prop('disabled', true).text('Saving...'); decide('edit').catch(function(err) { $edit.prop('disabled', false).text('Save Candidate edit'); showError('Failed to edit Candidate: ' + err.message, err.details); }); });
+            $actions.append($edit);
+            var $approve = $('<button type="button" class="btn btn-sm btn-primary mr-2 mb-1"></button>').text('Approve Candidate');
+            $approve.on('click', function() { $approve.prop('disabled', true).text('Saving...'); decide('approve').catch(function(err) { $approve.prop('disabled', false).text('Approve Candidate'); showError('Failed to approve Candidate: ' + err.message, err.details); }); });
+            $actions.append($approve);
+            var $reject = $('<button type="button" class="btn btn-sm btn-outline-danger mr-2 mb-1"></button>').text('Reject');
+            $reject.on('click', function() { $reject.prop('disabled', true); decide('reject').catch(function(err) { $reject.prop('disabled', false); showError('Failed to reject Candidate: ' + err.message, err.details); }); });
+            $actions.append($reject);
+            var $defer = $('<button type="button" class="btn btn-sm btn-outline-warning mb-1"></button>').text('Defer');
+            $defer.on('click', function() { $defer.prop('disabled', true); decide('defer').catch(function(err) { $defer.prop('disabled', false); showError('Failed to defer Candidate: ' + err.message, err.details); }); });
+            $actions.append($defer);
+            if (candidate.status === 'UNALIGNED') {
+                var $override = $('<label class="small d-block mt-2"></label>');
+                var $ack = $('<input type="checkbox" class="mr-1">');
+                var $reason = $('<input type="text" class="form-control form-control-sm mt-1" placeholder="Reason for approving an unaligned Candidate">');
+                $override.append($ack).append(' Teacher override required before approval');
+                $card.append($override).append($reason);
+                $approve.off('click').on('click', function() {
+                    if (!$ack.is(':checked') || !$reason.val().trim()) { showError('A Teacher override acknowledgment and reason are required.'); return; }
+                    $approve.prop('disabled', true).text('Saving...');
+                    decide('approve', {acknowledged: true, reason: $reason.val().trim()}).catch(function(err) { $approve.prop('disabled', false).text('Approve Candidate'); showError('Failed to approve Candidate: ' + err.message, err.details); });
+                });
+            }
+            $card.append($actions);
+            $root.append($card);
+        });
+    }
+    function renderAlignmentReview(structure) {
+        var $root = $('#instructional-design-review');
+        if (!$root.length) return;
+        $root.empty();
+        if (!state.stagedMode || !structure) {
+            $root.addClass('d-none');
+            return;
+        }
+        $root.removeClass('d-none');
+        var $heading = $('<div class="font-weight-bold mb-2"></div>').text('Instructional Designer review · DESIGN_STRUCTURE');
+        $root.append($heading);
+        $root.append($('<div class="small text-muted mb-3"></div>').text('Sections are aligned to authorized Objective/Outcome IDs. Activity creation remains a separate Teacher-authorized step.'));
+        var sections = structure.content && Array.isArray(structure.content.sections) ? structure.content.sections : [];
+        sections.forEach(function(section) {
+            var $card = $('<div class="border rounded p-2 mb-2"></div>');
+            $card.append($('<div class="font-weight-bold"></div>').text(section.title || section.ref));
+            $card.append($('<div class="small"></div>').text('LO / Objectives: ' + (((section.aligned_objective_ids || []).map(objectiveDisplayLabel)).join(' | ') || 'None')));
+            $card.append($('<div class="small"></div>').text('CLO / Outcomes: ' + (((section.aligned_outcome_ids || []).map(outcomeDisplayLabel)).join(' | ') || 'None')));
+            if (!(section.aligned_outcome_ids || []).length && state.coreContext && state.coreContext.source_learning_outcomes.length) {
+                $card.append($("<span class=\"badge badge-danger mt-1\"></span>").text("REVIEW REQUIRED · no Outcome mapping"));
+            }
+            if (section.alignment_status === 'STALE_ALIGNMENT') {
+                $card.append($('<span class="badge badge-warning mt-1"></span>').text('STALE_ALIGNMENT · Outcome approval changed'));
+            }
+            $root.append($card);
+        });
+        var isStale = sections.some(function(section) { return section.alignment_status === 'STALE_ALIGNMENT'; });
+        if (isStale) {
+            var $staleAlert = $('<div class="alert alert-warning d-flex justify-content-between align-items-center mb-3"></div>');
+            $staleAlert.append($('<span><i class="fa fa-exclamation-triangle mr-2"></i>Structure alignment is stale due to approved outcome changes.</span>'));
+            var $revalidateBtn = $('<button type="button" class="btn btn-sm btn-outline-dark" id="btn-revalidate-alignment">Revalidate Alignment</button>');
+            $revalidateBtn.on('click', function() {
+                $revalidateBtn.prop('disabled', true).text('Revalidating...');
+                callBff('rebase_structure_alignment', {run_id: state.runId}).then(function(rebaseResult) {
+                    state.currentStructure = rebaseResult.structure_revision;
+                    state.outcomeCoverage = rebaseResult.coverage || [];
+                    state.structureRevision = rebaseResult.structure_revision.revision;
+                    renderAlignmentReview(state.currentStructure);
+                }).catch(function(err) {
+                    var coverageDetails = err.details && err.details.error && err.details.error.details;
+                    if (coverageDetails && Array.isArray(coverageDetails.coverage)) state.outcomeCoverage = coverageDetails.coverage;
+                    $revalidateBtn.prop('disabled', false).text('Revalidate Alignment');
+                    renderAlignmentReview(state.currentStructure);
+                    showError('Failed to revalidate alignment: ' + err.message, err.details);
+                });
+            });
+            $staleAlert.append($revalidateBtn);
+            $root.append($staleAlert);
+        }
+        var proposals = state.outcomeProposals || [];
+        var proposalBySource = {};
+        proposals.forEach(function(proposal) { proposalBySource[proposal.source_outcome_id] = proposal; });
+        var pendingSources = unapprovedSourceOutcomes();
+        $root.append($('<div class="font-weight-bold mt-3 mb-2"></div>').text('Source Learning Outcomes · Teacher approval required'));
+        if (!pendingSources.length) {
+            $root.append($('<div class="small text-success"></div>').text('All source Learning Outcomes are Teacher-approved.'));
+        }
+        pendingSources.forEach(function(sourceOutcome) {
+            var proposal = proposalBySource[sourceOutcome.source_outcome_id];
+            var $card = $('<div class="border rounded p-2 mb-2 outcome-approval-card"></div>');
+            $card.append($('<div class="small text-muted mb-1"></div>').text(sourceOutcome.source_outcome_id + ' · ' + (sourceOutcome.measurable_status || 'UNKNOWN')));
+            $card.append($('<div class="mb-2"></div>').text(sourceOutcome.source_text || 'Untitled source Outcome'));
+
+            var $approveAsIs = $('<button type="button" class="btn btn-sm btn-outline-primary mr-2"></button>').text('Approve source as-is');
+            $approveAsIs.on('click', function() {
+                $approveAsIs.prop('disabled', true).text('Saving...');
+                callBff('approve_learning_outcome', {
+                    run_id: state.runId,
+                    source_outcome_id: sourceOutcome.source_outcome_id,
+                    use_source_as_is: true
+                }).then(function(result) {
+                    applyOutcomeApproval(result, sourceOutcome.source_outcome_id);
+                }).catch(function(err) {
+                    $approveAsIs.prop('disabled', false).text('Approve source as-is');
+                    showError('Failed to approve Learning Outcome: ' + err.message, err.details);
+                });
+            });
+            $card.append($approveAsIs);
+
+            if (proposal) {
+                $card.append($('<div class="small text-muted mt-2 mb-1"></div>').text('Measurable wording proposal'));
+                var $input = $('<input type="text" class="form-control form-control-sm mb-2">').val(proposal.recommended_text || '');
+                var $approveEdited = $('<button type="button" class="btn btn-sm btn-primary"></button>').text('Approve edited Outcome');
+                $approveEdited.on('click', function() {
+                    $approveEdited.prop('disabled', true).text('Saving...');
+                    callBff('approve_learning_outcome', {
+                        run_id: state.runId,
+                        source_outcome_id: sourceOutcome.source_outcome_id,
+                        recommended_text: proposal.recommended_text,
+                        teacher_text: $input.val()
+                    }).then(function(result) {
+                        applyOutcomeApproval(result, sourceOutcome.source_outcome_id);
+                    }).catch(function(err) {
+                        $approveEdited.prop('disabled', false).text('Approve edited Outcome');
+                        showError('Failed to approve Learning Outcome: ' + err.message, err.details);
+                    });
+                });
+                $card.append($input).append($approveEdited);
+            }
+            $root.append($card);
+        });
+        renderCompetencyCandidates($root);
+        renderExternalCoverageControls($root);
+        updateStructureContinueState();
+    }
+
     function applyPlanRevision(plan, preview) {
-        state.revision = plan.revision;
         state.currentEnvelope = plan.rawEnvelope;
         state.requiresAiReview = (plan.reviewRequirements || []).some(function(item) { return item && item.code === 'AI_EXPANDED_CONTENT'; });
         $('#ack-ai-expanded-content').prop('checked', false);
@@ -410,6 +753,8 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             $secCard.append($secBody);
             $container.append($secCard);
         });
+
+        renderAlignmentReview({content: {sections: sections}});
 
         // Warnings & Assumptions
         var $warnList = $('#preview-warnings-list');
@@ -484,6 +829,17 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         $('#input-edit-section-index').val(index);
         $('#input-edit-section-title').val(sec.title || '');
         $('#input-edit-section-summary').val(sec.summary || '');
+        var objectives = state.coreContext && Array.isArray(state.coreContext.learning_objectives) ? state.coreContext.learning_objectives : [];
+        var approvedOutcomes = state.coreContext && Array.isArray(state.coreContext.approved_learning_outcomes) ? state.coreContext.approved_learning_outcomes : [];
+        var sourceOutcomes = state.coreContext && Array.isArray(state.coreContext.source_learning_outcomes) ? state.coreContext.source_learning_outcomes : [];
+        populateAlignmentSelect('#input-edit-section-objectives', objectives, 'objective_id', 'source_text', sec.aligned_objective_ids || []);
+        populateAlignmentSelect(
+            '#input-edit-section-outcomes',
+            approvedOutcomes.length ? approvedOutcomes : sourceOutcomes,
+            approvedOutcomes.length ? 'outcome_id' : 'source_outcome_id',
+            approvedOutcomes.length ? 'text' : 'source_text',
+            sec.aligned_outcome_ids || []
+        );
         $('#modal-edit-section').modal('show');
     }
 
@@ -491,6 +847,8 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         var index = parseInt($('#input-edit-section-index').val(), 10);
         var newTitle = $('#input-edit-section-title').val().trim();
         var newSummary = $('#input-edit-section-summary').val().trim();
+        var newObjectiveIds = $('#input-edit-section-objectives').val() || [];
+        var newOutcomeIds = $('#input-edit-section-outcomes').val() || [];
 
         if (!newTitle) {
             alert('Section title cannot be empty.');
@@ -504,12 +862,17 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             return;
         }
         newEnvelope.content.sections[index].title = newTitle;
+        newEnvelope.content.sections[index].aligned_objective_ids = newObjectiveIds;
+        newEnvelope.content.sections[index].aligned_outcome_ids = newOutcomeIds;
         contractHelpers.setOptionalString(newEnvelope.content.sections[index], 'summary', newSummary);
 
         if (state.stagedMode) {
             var structure = JSON.parse(JSON.stringify(state.currentStructure));
             structure.content.sections[index].title = newTitle;
             structure.content.sections[index].summary = newSummary;
+            structure.content.sections[index].aligned_objective_ids = newObjectiveIds;
+            structure.content.sections[index].aligned_outcome_ids = newOutcomeIds;
+            structure.content.sections[index].alignment_status = 'CURRENT';
             saveStructureRevision(structure).catch(function(err) {
                 showError('Failed to save revised course structure section: ' + err.message, err.details);
             });
@@ -627,7 +990,57 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         });
     }
 
+    function refreshCompetencyMappings($container, editable) {
+        var runId = state.runId;
+        $container.empty().append($('<h5></h5>').text('Competency mappings and evidence'));
+        var $body = $('<div></div>');
+        $container.append($('<p class="small text-muted"></p>').text('Outcome alignment proposes a mapping. Confirm the mapping first, then separately decide whether this Activity may serve as Competency Evidence.'));
+        var $refresh = $('<button type="button" class="btn btn-sm btn-outline-secondary mb-2"></button>').text('Refresh mappings');
+        $refresh.on('click', function() { refreshCompetencyMappings($container, editable); });
+        $container.append($refresh).append($body);
+        return callBff('get_competency_mappings', {run_id: runId}).then(function(review) {
+            if (state.runId !== runId) return;
+            $body.empty();
+            if (!review.mappings.length) $body.append($('<p class="small"></p>').text('No mapping candidates yet. Generate an Activity and approve a Competency that shares its selected Outcome.'));
+            review.mappings.forEach(function(pair) {
+                var $row = $('<div class="border rounded p-2 mb-2 competency-mapping-pair"></div>');
+                $row.append($('<div class="font-weight-bold"></div>').text(pair.activityTitle + ' → ' + pair.competencyTitle));
+                $row.append($('<div class="small"></div>').text('Shared Outcomes: ' + pair.outcomes.map(function(o) { return o.text; }).join(' · ')));
+                $row.append($('<div class="small mb-2"></div>').text('Mapping: ' + pair.mapping + ' · Evidence eligibility: ' + pair.evidence));
+                if (pair.mapping === 'STALE') $row.append($('<p class="text-warning small"></p>').text('The Activity or Competency changed. Review and confirm the current mapping again; evidence requires a new decision.'));
+                if (editable && pair.available) {
+                    function action(label, kind, decision, disabled) {
+                        var $button = $('<button type="button" class="btn btn-sm btn-outline-primary mr-2 mb-1"></button>').text(label).prop('disabled', Boolean(disabled));
+                        $button.on('click', function() {
+                            $row.find('button').prop('disabled', true);
+                            callBff('decide_competency_mapping', {run_id: runId, activity_id: pair.activityId, competency_id: pair.competencyId,
+                                kind: kind, decision: decision, confirmed: 1, expected_revision: review.revision
+                            }).then(function() { refreshCompetencyMappings($container, editable); }).catch(function(err) {
+                                showError('Mapping decision was not saved: ' + err.message, err.details);
+                                refreshCompetencyMappings($container, editable);
+                            });
+                        });
+                        $row.append($button);
+                    }
+                    action('Confirm mapping', 'mapping', 'CONFIRMED', pair.mapping === 'CONFIRMED');
+                    action('Decline mapping', 'mapping', 'DECLINED', pair.mapping === 'DECLINED');
+                    action('Confirm evidence eligibility', 'evidence', 'CONFIRMED', pair.mapping !== 'CONFIRMED' || pair.evidence === 'CONFIRMED');
+                    action('Decline evidence eligibility', 'evidence', 'DECLINED', pair.mapping !== 'CONFIRMED' || pair.evidence === 'DECLINED');
+                }
+                $body.append($row);
+            });
+        }).catch(function(err) {
+            $body.empty().append($('<div class="alert alert-warning"></div>').text('Could not load mapping review: ' + err.message));
+        });
+    }
+
     function populateApproveView() {
+        var $mappingReview = $('#approve-competency-mapping-review');
+        if (!$mappingReview.length) {
+            $mappingReview = $('<div id="approve-competency-mapping-review" class="card card-body mb-3"></div>');
+            $('#approve-activity-overview').after($mappingReview);
+        }
+        refreshCompetencyMappings($mappingReview, false);
         var course = state.currentEnvelope ? state.currentEnvelope.content.course : {};
         $('#approve-summary-title').text(course.title || $('#preview-course-title').text());
 
@@ -668,6 +1081,26 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             }
             $row.append($activityLabels);
             $overview.append($row);
+            (state.activityIntents[sec.ref] || []).forEach(function(intent) {
+                if (intent.activity && intent.status === 'generated') {
+                    var provenance = intent.content_provenance || 'AI_GENERATED';
+                    var revisionText = Number(intent.activity_revision || 0) > 0 ? ' revision ' + intent.activity_revision : '';
+                    var lineageText = provenance === 'TEACHER_EDITED'
+                        ? 'Teacher Edited' + revisionText + ' · source AI revision ' + (intent.source_generation_revision || '?')
+                        : 'AI Generated' + revisionText;
+                    $overview.append($('<div class="small font-weight-bold ml-md-3 mb-1"></div>').text((intent.activity_type || 'Activity') + ' provenance: ' + lineageText));
+                }
+                if (!intent.quality_review) return;
+                var review = intent.quality_review;
+                var reviewLabel = provenance === 'TEACHER_EDITED'
+                    ? (intent.activity_type || 'Activity') + ' source AI self-review (before Teacher edit): Outcome '
+                    : (intent.activity_type || 'Activity') + ' AI self-review: Outcome ';
+                var reviewText = reviewLabel + (review.outcome_alignment || '—') + ', Learner fit ' + (review.learner_level_fit || '—') + ', Scope ' + (review.scope_compliance || '—') + ', Purpose ' + (review.purpose_fit || '—');
+                var $review = $('<div class="small text-muted ml-md-3 mb-1"></div>').text(reviewText);
+                if (intent.selected_outcome_ids && intent.selected_outcome_ids.length) $review.append($('<div></div>').text('Targets: ' + intent.selected_outcome_ids.map(outcomeDisplayLabel).join(' | ')));
+                if (review.warnings && review.warnings.length) $review.append($('<div class="text-warning"></div>').text('Warnings: ' + review.warnings.join(' · ')));
+                $overview.append($review);
+            });
         });
 
         $('#approve-summary-assignments').text(assignCount);
@@ -682,6 +1115,11 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
         }
         if (!state.courseFormat) {
             showError('Please select a Moodle Course Format before generating the course structure.');
+            return;
+        }
+        var syllabusSizeError = fileSizeValidationError(state.selectedFile, MAX_SYLLABUS_FILE_BYTES, 'Syllabus');
+        if (syllabusSizeError) {
+            showError(syllabusSizeError);
             return;
         }
 
@@ -702,6 +1140,10 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
 
         callBff('upload_and_create_run', formData, true).then(function(runData) {
             state.runId = runData.run_id;
+            var resumeUrl = new URL(window.location.href);
+            resumeUrl.searchParams.set("context_run_id", state.runId);
+            window.history.replaceState(null, "", resumeUrl.toString());
+            showCoreContext(runData.core_course_design_context);
             state.courseFormat = runData.course_format || state.courseFormat;
             $('#course-format-select').val(state.courseFormat).prop('disabled', true);
             state.stagedMode = true;
@@ -713,6 +1155,8 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             stopProgressPolling();
             state.structureRevision = structureResult.structure_revision.revision;
             state.currentStructure = structureResult.structure_revision;
+            state.outcomeProposals = structureResult.outcome_proposals || [];
+            state.coreContextRevision = structureResult.core_context_revision || null;
             state.currentEnvelope = structurePreviewEnvelope(state.currentStructure);
             renderPreview(state.currentEnvelope, state.currentEnvelope);
             $('#upload-progress-area').addClass('d-none');
@@ -805,6 +1249,9 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
     function renderActivityStructureStage() {
         var $container = $('#activity-structure-container');
         $container.empty();
+        var $mappingControls = $('<div class="card card-body mb-3" id="activity-competency-mappings"></div>');
+        $container.append($mappingControls);
+        refreshCompetencyMappings($mappingControls, true);
         state.activityIntents = {};
         var sections = (state.currentStructure && state.currentStructure.content && state.currentStructure.content.sections) || [];
         state.activityLoadingCount = sections.length;
@@ -838,7 +1285,8 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             $materialTop.append($('<div class="font-weight-bold"></div>').text('Learning Material (Optional)'));
             $materialTop.append($('<span class="badge badge-light border"></span>').text('Shared by Quiz + Assignment'));
             $material.append($materialTop);
-            $material.append($('<div class="small text-muted mb-2"></div>').text('Upload one file set for this week. If omitted, selected activities use the syllabus fallback policy.'));
+            $material.append($('<div class="small text-muted mb-1"></div>').text('Upload one file set for this week. If omitted, selected activities use the syllabus fallback policy.'));
+            $material.append($('<div class="small text-muted mb-2"></div>').html('<i class="fa fa-info-circle mr-1"></i>Supported: PDF, DOCX, PPTX, TXT, MD · Maximum file size <strong>30 MB</strong>.'));
             var $materialLabel = $('<div class="small mb-2"></div>');
             var $publishResource = $('<label class="custom-control custom-checkbox small mb-2 d-block"></label>');
             var $publishResourceInput = $('<input type="checkbox" class="custom-control-input" checked>');
@@ -867,6 +1315,122 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             var $quizType = $('<select class="form-control form-control-sm"><option value="multichoice">Multiple Choice</option><option value="truefalse">True / False</option><option value="shortanswer">Short Answer</option><option value="essay">Essay</option></select>');
             var $quizChoices = $('<input type="number" min="2" class="form-control form-control-sm" value="4">');
             var $assignmentGrade = $('<input type="number" min="1" class="form-control form-control-sm" value="100">');
+            var $quizPurpose = $('<select class="form-control form-control-sm"><option value="PRACTICE">PRACTICE · practice</option><option value="FORMATIVE">FORMATIVE · check learning</option><option value="SUMMATIVE">SUMMATIVE · final assessment</option></select>');
+            var $assignmentPurpose = $('<select class="form-control form-control-sm"><option value="PRACTICE">PRACTICE · practice</option><option value="FORMATIVE">FORMATIVE · check learning</option><option value="SUMMATIVE">SUMMATIVE · final assessment</option></select>');
+            $quizPurpose.attr('id', 'activity-quiz-purpose-' + section.ref);
+            $assignmentPurpose.attr('id', 'activity-assignment-purpose-' + section.ref);
+            var alignedObjectiveIds = Array.isArray(section.aligned_objective_ids) ? section.aligned_objective_ids : [];
+            var alignedOutcomeIds = Array.isArray(section.aligned_outcome_ids) ? section.aligned_outcome_ids : [];
+            var alignedOutcomeLookup = {};
+            alignedOutcomeIds.forEach(function(id) { alignedOutcomeLookup[id] = true; });
+            var objectiveOptions = alignedObjectiveIds.map(function(id) {
+                return {id: id, label: objectiveDisplayLabel(id), title: id};
+            });
+            var approvedOutcomeItems = state.coreContext && Array.isArray(state.coreContext.approved_learning_outcomes) ? state.coreContext.approved_learning_outcomes : [];
+            var outcomeOptions = approvedOutcomeItems.length
+                ? approvedOutcomeItems.slice().sort(function(a, b) {
+                    return Number(Boolean(alignedOutcomeLookup[b.outcome_id])) - Number(Boolean(alignedOutcomeLookup[a.outcome_id]));
+                }).map(function(item) {
+                    var outsideSection = !alignedOutcomeLookup[item.outcome_id];
+                    return {
+                        id: item.outcome_id,
+                        label: outcomeDisplayLabel(item.outcome_id) + (outsideSection ? ' · outside this Section (override required)' : ''),
+                        title: item.outcome_id,
+                        outsideSection: outsideSection
+                    };
+                })
+                : alignedOutcomeIds.map(function(id) { return {id: id, label: outcomeDisplayLabel(id), title: id, outsideSection: false}; });
+            var $quizObjectives = $('<select class="form-control form-control-sm" multiple size="4"></select>');
+            var $assignmentObjectives = $('<select class="form-control form-control-sm" multiple size="4"></select>');
+            var $quizOutcomes = $('<select class="form-control form-control-sm" multiple size="4"></select>');
+            var $assignmentOutcomes = $('<select class="form-control form-control-sm" multiple size="4"></select>');
+            $quizObjectives.attr('id', 'activity-quiz-objectives-' + section.ref);
+            $assignmentObjectives.attr('id', 'activity-assignment-objectives-' + section.ref);
+            $quizOutcomes.attr('id', 'activity-quiz-outcomes-' + section.ref);
+            $assignmentOutcomes.attr('id', 'activity-assignment-outcomes-' + section.ref);
+            var $quizAck = $('<input type="checkbox" class="mr-1">');
+            var $assignmentAck = $('<input type="checkbox" class="mr-1">');
+            var $quizOverrideAck = $('<input type="checkbox" class="mr-1">');
+            var $assignmentOverrideAck = $('<input type="checkbox" class="mr-1">');
+            var $quizOverrideReason = $('<input type="text" class="form-control form-control-sm mt-1" placeholder="Reason for targeting an out-of-Section Outcome">');
+            var $assignmentOverrideReason = $('<input type="text" class="form-control form-control-sm mt-1" placeholder="Reason for targeting an out-of-Section Outcome">');
+            var $quizPrompt = null;
+            var $assignmentPrompt = null;
+
+            function fillMultiSelect($select, items, selected) {
+                $select.empty();
+                (items || []).forEach(function(item) {
+                    var $option = $('<option></option>').val(item.id).text(item.label).prop('selected', (selected || []).indexOf(item.id) !== -1);
+                    if (item.title) $option.attr('title', item.title);
+                    if (item.outsideSection) $option.attr('data-outside-section', '1').prop('disabled', true);
+                    $select.append($option);
+                });
+            }
+
+            function setOutcomeOverrideAvailability($select, $overrideAck, $overrideReason) {
+                var overrideReady = $overrideAck.is(':checked') && $overrideReason.val().trim() !== '';
+                $select.find('option[data-outside-section="1"]').each(function() {
+                    var $option = $(this);
+                    $option.prop('disabled', !overrideReady);
+                    if (!overrideReady) $option.prop('selected', false);
+                });
+                return overrideReady;
+            }
+            fillMultiSelect($quizObjectives, objectiveOptions, alignedObjectiveIds.length ? [alignedObjectiveIds[0]] : []);
+            fillMultiSelect($assignmentObjectives, objectiveOptions, []);
+            fillMultiSelect($quizOutcomes, outcomeOptions, alignedOutcomeIds.length ? [alignedOutcomeIds[0]] : []);
+            fillMultiSelect($assignmentOutcomes, outcomeOptions, alignedOutcomeIds.length ? [alignedOutcomeIds[0]] : []);
+
+            function appendSemanticControls(type, intent, $panel) {
+                var isQuiz = type === 'quiz';
+                var $purpose = isQuiz ? $quizPurpose : $assignmentPurpose;
+                var $objectives = isQuiz ? $quizObjectives : $assignmentObjectives;
+                var $outcomes = isQuiz ? $quizOutcomes : $assignmentOutcomes;
+                var $ack = isQuiz ? $quizAck : $assignmentAck;
+                var $overrideAck = isQuiz ? $quizOverrideAck : $assignmentOverrideAck;
+                var $overrideReason = isQuiz ? $quizOverrideReason : $assignmentOverrideReason;
+                if (intent) {
+                    $purpose.val(intent.purpose || (isQuiz ? 'PRACTICE' : 'FORMATIVE'));
+                    $objectives.val(intent.selected_objective_ids || []);
+                    $ack.prop('checked', intent.learner_context_acknowledged === true);
+                    $overrideAck.prop('checked', Boolean(intent.alignment_override && intent.alignment_override.acknowledged));
+                    $overrideReason.val(intent.alignment_override && intent.alignment_override.reason || '');
+                    setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
+                    $outcomes.val(intent.selected_outcome_ids || []);
+                }
+                else {
+                    $purpose.val(isQuiz ? 'PRACTICE' : 'FORMATIVE');
+                    setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
+                }
+                var $alignment = $('<div class="border rounded bg-light p-2 mb-2"></div>');
+                $alignment.append($('<label class="small font-weight-bold mb-1"></label>').text('Purpose'));
+                $alignment.append($purpose);
+                $alignment.append($('<label class="small font-weight-bold mt-2 mb-1"></label>').text('Section-aligned LO / Objectives'));
+                $alignment.append($objectives);
+                $alignment.append($('<label class="small font-weight-bold mt-2 mb-1"></label>').text('Target CLO / Outcomes'));
+                $alignment.append($outcomes);
+                $alignment.append($('<div class="small text-muted mt-1"></div>').text('Only CLOs aligned to this Section are selectable by default. PRACTICE needs an LO or CLO; FORMATIVE/SUMMATIVE need a CLO.'));
+                $alignment.append($('<label class="small d-block mt-2 mb-0"></label>').append($overrideAck).append(' Allow out-of-Section Outcome / CLO (Teacher override)'));
+                $alignment.append($overrideReason);
+                if (state.coreContext && state.coreContext.learner_context && state.coreContext.learner_context.status === 'UNSPECIFIED') {
+                    $alignment.append($('<label class="small d-block mt-2 mb-0"></label>').append($ack).append(' I acknowledge learner context is unspecified'));
+                }
+                var terminal = intent && ['creating', 'retry_exhausted'].indexOf(intent.status) !== -1;
+                $purpose.prop('disabled', terminal);
+                $objectives.prop('disabled', terminal);
+                $outcomes.prop('disabled', terminal);
+                $overrideAck.prop('disabled', terminal);
+                $overrideReason.prop('disabled', terminal);
+                $overrideAck.off('change.scopegate').on('change.scopegate', function() {
+                    setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
+                });
+                $overrideReason.off('input.scopegate change.scopegate').on('input.scopegate change.scopegate', function() {
+                    setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
+                });
+                [$purpose, $objectives, $outcomes, $ack].forEach(function($control) { $control.off('change.intent20').on('change.intent20', saveSelection); });
+                $ack.prop('disabled', terminal);
+                $panel.append($alignment);
+            }
 
             function getIntent(type) {
                 return (state.activityIntents[section.ref] || []).find(function(intent) { return intent.activity_type === type; }) || null;
@@ -880,8 +1444,24 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                     if (quizIntent.options.question_type) $quizType.val(quizIntent.options.question_type);
                     if (quizIntent.options.choices_per_question) $quizChoices.val(quizIntent.options.choices_per_question);
                 }
-                if (assignmentIntent && assignmentIntent.options && assignmentIntent.options.grade) {
-                    $assignmentGrade.val(assignmentIntent.options.grade);
+                if (assignmentIntent && assignmentIntent.options && assignmentIntent.options.grade) $assignmentGrade.val(assignmentIntent.options.grade);
+                if (quizIntent) {
+                    $quizPurpose.val(quizIntent.purpose || 'PRACTICE');
+                    $quizObjectives.val(quizIntent.selected_objective_ids || []);
+                    $quizAck.prop('checked', quizIntent.learner_context_acknowledged === true);
+                    $quizOverrideAck.prop('checked', Boolean(quizIntent.alignment_override && quizIntent.alignment_override.acknowledged));
+                    $quizOverrideReason.val(quizIntent.alignment_override && quizIntent.alignment_override.reason || '');
+                    setOutcomeOverrideAvailability($quizOutcomes, $quizOverrideAck, $quizOverrideReason);
+                    $quizOutcomes.val(quizIntent.selected_outcome_ids || []);
+                }
+                if (assignmentIntent) {
+                    $assignmentPurpose.val(assignmentIntent.purpose || 'FORMATIVE');
+                    $assignmentObjectives.val(assignmentIntent.selected_objective_ids || []);
+                    $assignmentAck.prop('checked', assignmentIntent.learner_context_acknowledged === true);
+                    $assignmentOverrideAck.prop('checked', Boolean(assignmentIntent.alignment_override && assignmentIntent.alignment_override.acknowledged));
+                    $assignmentOverrideReason.val(assignmentIntent.alignment_override && assignmentIntent.alignment_override.reason || '');
+                    setOutcomeOverrideAvailability($assignmentOutcomes, $assignmentOverrideAck, $assignmentOverrideReason);
+                    $assignmentOutcomes.val(assignmentIntent.selected_outcome_ids || []);
                 }
                 $quizChoices.prop('disabled', $quizType.val() !== 'multichoice');
             }
@@ -919,9 +1499,40 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             function renderGeneratedPreview(intent, $panel) {
                 if (!intent || !intent.activity) return;
                 var $preview = $('<div class="bg-light border rounded p-2 mb-3 small"></div>');
-                $preview.append($('<div class="font-weight-bold mb-1"></div>').text(intent.status === 'shell' ? 'Empty Activity Shell Preview' : 'Generated Activity Preview'));
+                var provenance = intent.content_provenance || 'AI_GENERATED';
+                var activityRevision = Number(intent.activity_revision || 0);
+                var sourceGenerationRevision = Number(intent.source_generation_revision || (provenance === 'AI_GENERATED' ? activityRevision : 0));
+                var provenanceLabel = provenance === 'TEACHER_EDITED'
+                    ? 'Teacher Edited · Activity revision ' + activityRevision + ' · source AI revision ' + sourceGenerationRevision
+                    : 'AI Generated' + (activityRevision > 0 ? ' · Activity revision ' + activityRevision : '');
+                var $previewTitle = $('<div class="d-flex flex-wrap justify-content-between align-items-center mb-1"></div>');
+                $previewTitle.append($('<div class="font-weight-bold"></div>').text(intent.status === 'shell' ? 'Empty Activity Shell Preview' : 'Generated Activity Preview'));
+                $previewTitle.append($('<span class="badge"></span>').addClass(provenance === 'TEACHER_EDITED' ? 'badge-info' : 'badge-secondary').text(provenanceLabel));
+                $preview.append($previewTitle);
                 if (intent.review_required) {
-                    $preview.append($('<div class="alert alert-warning py-1 px-2 mb-2"></div>').text('AI-expanded content based on syllabus scope — Teacher review required.'));
+                    $preview.append($('<div class="alert alert-warning py-1 px-2 mb-2"></div>').text('AI-expanded source content — Teacher review required before approval.'));
+                }
+                if (intent.quality_review) {
+                    var review = intent.quality_review;
+                    var $review = $('<div class="border rounded p-2 mb-2"></div>');
+                    $review.append($('<div class="font-weight-bold mb-1"></div>').text(provenance === 'TEACHER_EDITED' ? 'Source AI self-review (before Teacher edit)' : 'AI self-review (Teacher review required)'));
+                    [['Outcome alignment', review.outcome_alignment], ['Learner-level fit', review.learner_level_fit], ['Scope compliance', review.scope_compliance], ['Purpose fit', review.purpose_fit]].forEach(function(check) {
+                        var status = check[1] === 'PASS' ? 'badge-success' : 'badge-warning';
+                        $review.append($('<span class="badge mr-1"></span>').addClass(status).text(check[0] + ': ' + check[1]));
+                    });
+                    if (provenance === 'TEACHER_EDITED') {
+                        $review.append($('<div class="small text-muted mt-2"></div>').text('Current Teacher edit was revalidated deterministically. No additional AI self-review call was made.'));
+                    }
+                    if (Array.isArray(review.warnings) && review.warnings.length) {
+                        var $reviewWarnings = $('<ul class="small mb-0 mt-2 pl-4"></ul>');
+                        review.warnings.forEach(function(warning) { $reviewWarnings.append($('<li></li>').text(warning)); });
+                        $review.append($reviewWarnings);
+                    }
+                    $preview.append($review);
+                }
+                if (intent.generation_metadata) {
+                    var metadata = intent.generation_metadata;
+                    $preview.append($('<div class="small text-muted mb-2"></div>').text('Source generation: Intent revision ' + (metadata.activity_intent_revision || intent.intent_revision || 'unknown') + ', Context revision ' + (metadata.core_context_revision || 'unknown')));
                 }
                 if (intent.activity.type === 'assignment') {
                     if (intent.activity.description) $preview.append($('<div class="mb-1"></div>').text(intent.activity.description));
@@ -934,20 +1545,135 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                 } else if (intent.activity.type === 'quiz') {
                     renderQuizActivityPreview(intent.activity, $preview);
                 }
+
+                if (intent.status === 'generated') {
+                    var $editToggle = $('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 mr-2"></button>').text('Edit Activity Content');
+                    var $editor = $('<div class="border rounded bg-white p-2 mt-2 d-none activity-content-editor"></div>');
+                    var $title = $('<input type="text" class="form-control form-control-sm mb-2">').val(intent.activity.title || '');
+                    var $description = $('<textarea class="form-control form-control-sm mb-2" rows="2"></textarea>').val(intent.activity.description || '');
+                    $editor.append($('<label class="small font-weight-bold mb-1"></label>').text('Title')).append($title);
+                    $editor.append($('<label class="small font-weight-bold mb-1"></label>').text('Description')).append($description);
+                    var assignmentInstructions = null;
+                    var questionEditors = [];
+                    if (intent.activity.type === 'assignment') {
+                        assignmentInstructions = $('<textarea class="form-control form-control-sm mb-2" rows="5"></textarea>').val((intent.activity.instructions || []).join('\n'));
+                        $editor.append($('<label class="small font-weight-bold mb-1"></label>').text('Instructions · one item per line')).append(assignmentInstructions);
+                        $editor.append($('<div class="small text-muted mb-2"></div>').text('Learning Objectives, grade, source references, Purpose and target LO/CLO remain controlled by the current Activity Intent.'));
+                    } else {
+                        (intent.activity.questions || []).forEach(function(question, questionIndex) {
+                            var $questionCard = $('<div class="border rounded p-2 mb-2"></div>');
+                            $questionCard.append($('<div class="small font-weight-bold mb-1"></div>').text('Question ' + (questionIndex + 1) + ' · ' + question.type));
+                            var $questionText = $('<textarea class="form-control form-control-sm mb-2" rows="2"></textarea>').val(question.question || '');
+                            $questionCard.append($questionText);
+                            var editor = {question: $questionText, feedback: null, choices: [], correct: null, accepted: null, grading: null};
+                            if (question.type === 'multichoice') {
+                                var $correct = $('<select class="form-control form-control-sm mb-2"></select>');
+                                (question.choices || []).forEach(function(choice, choiceIndex) {
+                                    var $choice = $('<input type="text" class="form-control form-control-sm mb-1">').val(choice.text || '');
+                                    $questionCard.append($('<label class="small mb-0"></label>').text('Choice ' + (choiceIndex + 1))).append($choice);
+                                    editor.choices.push({ref: choice.ref, input: $choice});
+                                    $correct.append($('<option></option>').val(choice.ref).text('Correct: ' + (choiceIndex + 1) + ' · ' + (choice.text || '')).prop('selected', (question.correct_choice_refs || []).indexOf(choice.ref) !== -1));
+                                });
+                                editor.correct = $correct;
+                                $questionCard.append($correct);
+                            } else if (question.type === 'shortanswer') {
+                                editor.accepted = $('<textarea class="form-control form-control-sm mb-2" rows="2"></textarea>').val((question.accepted_answers || []).join('\n'));
+                                $questionCard.append($('<label class="small mb-0"></label>').text('Accepted answers · one per line')).append(editor.accepted);
+                            } else if (question.type === 'essay') {
+                                editor.grading = $('<textarea class="form-control form-control-sm mb-2" rows="3"></textarea>').val((question.grading_guidance || []).join('\n'));
+                                $questionCard.append($('<label class="small mb-0"></label>').text('Grading guidance · one per line')).append(editor.grading);
+                            }
+                            if (question.type === 'multichoice' || question.type === 'truefalse') {
+                                editor.feedback = $('<textarea class="form-control form-control-sm mb-2" rows="2"></textarea>').val(question.feedback || '');
+                                $questionCard.append($('<label class="small mb-0"></label>').text('Feedback')).append(editor.feedback);
+                            }
+                            questionEditors.push(editor);
+                            $editor.append($questionCard);
+                        });
+                        $editor.append($('<div class="small text-muted mb-2"></div>').text('Question type/count, default marks, refs, source references, Purpose and target LO/CLO remain deterministic.'));
+                    }
+                    var $saveEdit = $('<button type="button" class="btn btn-sm btn-primary mr-2"></button>').text('Save Teacher Edit');
+                    var $cancelEdit = $('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text('Cancel');
+                    $editor.append($saveEdit).append($cancelEdit);
+                    $editToggle.on('click', function() { $editor.toggleClass('d-none'); });
+                    $cancelEdit.on('click', function() { $editor.addClass('d-none'); });
+                    $saveEdit.on('click', function() {
+                        var edited = JSON.parse(JSON.stringify(intent.activity));
+                        edited.title = $title.val().trim();
+                        edited.description = $description.val().trim();
+                        if (edited.type === 'assignment') {
+                            edited.instructions = assignmentInstructions.val().split(/\r?\n/).map(function(item) { return item.trim(); }).filter(Boolean);
+                        } else {
+                            (edited.questions || []).forEach(function(question, index) {
+                                var editor = questionEditors[index];
+                                question.question = editor.question.val().trim();
+                                if (question.type === 'multichoice') {
+                                    (question.choices || []).forEach(function(choice, choiceIndex) { choice.text = editor.choices[choiceIndex].input.val().trim(); });
+                                    question.correct_choice_refs = [editor.correct.val()];
+                                } else if (question.type === 'shortanswer') {
+                                    question.accepted_answers = editor.accepted.val().split(/\r?\n/).map(function(item) { return item.trim(); }).filter(Boolean);
+                                } else if (question.type === 'essay') {
+                                    question.grading_guidance = editor.grading.val().split(/\r?\n/).map(function(item) { return item.trim(); }).filter(Boolean);
+                                }
+                                if (editor.feedback) question.feedback = editor.feedback.val();
+                            });
+                        }
+                        $saveEdit.prop('disabled', true).text('Validating & Saving...');
+                        callBff('save_activity_edit', {
+                            run_id: state.runId,
+                            section_ref: section.ref,
+                            activity_ref: intent.activity_ref,
+                            activity: edited,
+                            expected_activity_revision: activityRevision
+                        }).then(function(result) {
+                            var list = state.activityIntents[section.ref] || [];
+                            var index = list.findIndex(function(item) { return item.activity_ref === result.activity_ref; });
+                            if (index >= 0) list[index] = result;
+                            else list.push(result);
+                            syncOptionInputs();
+                            renderPanels();
+                        }).catch(function(err) {
+                            $saveEdit.prop('disabled', false).text('Save Teacher Edit');
+                            showError('Teacher Activity edit was rejected: ' + err.message, err.details);
+                        });
+                    });
+                    $preview.append($editToggle).append($editor);
+                }
                 $panel.append($preview);
             }
 
-            function persistSelection() {
+            function persistSelection(instructions) {
                 $quiz.prop('disabled', true);
                 $assignment.prop('disabled', true);
-                return callBff('set_activity_intents', {
+                var quizOverride = $quizOverrideAck.is(':checked') && $quizOverrideReason.val().trim() ? {acknowledged: true, reason: $quizOverrideReason.val().trim()} : null;
+                var assignmentOverride = $assignmentOverrideAck.is(':checked') && $assignmentOverrideReason.val().trim() ? {acknowledged: true, reason: $assignmentOverrideReason.val().trim()} : null;
+                var quizSelectedOutcomes = $quizOutcomes.val() || [];
+                var assignmentSelectedOutcomes = $assignmentOutcomes.val() || [];
+                var quizOutsideSelected = quizSelectedOutcomes.some(function(id) { return !alignedOutcomeLookup[id]; });
+                var assignmentOutsideSelected = assignmentSelectedOutcomes.some(function(id) { return !alignedOutcomeLookup[id]; });
+                if (quizOutsideSelected && !quizOverride) return Promise.reject(new Error('Select Teacher override and enter a reason before targeting an out-of-Section CLO.'));
+                if (assignmentOutsideSelected && !assignmentOverride) return Promise.reject(new Error('Select Teacher override and enter a reason before targeting an out-of-Section CLO.'));
+                var payload = {
                     run_id: state.runId,
                     section_ref: section.ref,
                     quiz: $quiz.is(':checked') ? 1 : 0,
                     assignment: $assignment.is(':checked') ? 1 : 0,
                     quiz_options: quizOptions(),
-                    assignment_options: assignmentOptions()
-                }).then(function(result) {
+                    assignment_options: assignmentOptions(),
+                    quiz_purpose: $quizPurpose.val(),
+                    assignment_purpose: $assignmentPurpose.val(),
+                    quiz_selected_objective_ids: $quizObjectives.val() || [],
+                    assignment_selected_objective_ids: $assignmentObjectives.val() || [],
+                    quiz_selected_outcome_ids: quizSelectedOutcomes,
+                    assignment_selected_outcome_ids: assignmentSelectedOutcomes,
+                    quiz_learner_context_acknowledged: $quizAck.is(':checked'),
+                    assignment_learner_context_acknowledged: $assignmentAck.is(':checked')
+                };
+                if (quizOverride) payload.quiz_alignment_override = quizOverride;
+                if (assignmentOverride) payload.assignment_alignment_override = assignmentOverride;
+                if (instructions && Object.prototype.hasOwnProperty.call(instructions, 'quiz')) payload.quiz_generation_instruction = instructions.quiz;
+                if (instructions && Object.prototype.hasOwnProperty.call(instructions, 'assignment')) payload.assignment_generation_instruction = instructions.assignment;
+                return callBff('set_activity_intents', payload).then(function(result) {
                     state.activityIntents[section.ref] = result.intents || [];
                     syncOptionInputs();
                     return result;
@@ -960,7 +1686,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             function generateSelectedActivity(type, instruction, $button) {
                 $button.prop('disabled', true).html('<i class="fa fa-spinner fa-spin mr-1"></i> Creating...');
                 $('#btn-activity-finalize').prop('disabled', true);
-                return persistSelection().then(function() {
+                return persistSelection(type === 'quiz' ? {quiz: instruction} : {assignment: instruction}).then(function() {
                     var current = getIntent(type);
                     if (!current) throw new Error(type + ' is no longer selected.');
                     return callBff('generate_activity', {
@@ -1007,19 +1733,29 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                     return;
                 }
 
+                appendSemanticControls(type, intent, $panel);
                 if (intent.grounding_mode) {
                     var grounding = 'Grounding: ' + intent.grounding_mode;
                     if (intent.review_required) grounding += ' • Teacher review required';
                     $panel.append($('<div class="small text-muted mb-2"></div>').text(grounding));
                 }
+                if (intent.intent_revision) $panel.append($('<div class="small text-muted mb-1"></div>').text('Intent revision ' + intent.intent_revision));
                 if (intent.error) {
                     $panel.append($('<div class="alert alert-warning py-2 small mb-2"></div>').text(intent.error));
                 }
 
                 var $promptLabel = $('<label class="small font-weight-bold mb-1"></label>').text(label + ' Prompt (Optional)');
                 var $prompt = $('<textarea class="form-control form-control-sm mb-2" rows="3"></textarea>').attr('placeholder', isQuiz ? 'e.g., Focus on concepts from this week and keep questions beginner-friendly...' : "e.g., Ask students to build a small class that applies this week's concepts...");
+                if (isQuiz) $quizPrompt = $prompt; else $assignmentPrompt = $prompt;
                 if (intent.generation_instruction) $prompt.val(intent.generation_instruction);
                 $panel.append($promptLabel).append($prompt);
+                var $saveIntent = $('<button type="button" class="btn btn-sm btn-outline-secondary mb-2"></button>').text('Save Intent');
+                $saveIntent.on('click', function() {
+                    var instructions = {}; instructions[type] = $prompt.val().trim();
+                    $saveIntent.prop('disabled', true).text('Saving Intent...');
+                    persistSelection(instructions).then(function() { renderPanels(); }).catch(function(err) { $saveIntent.prop('disabled', false).text('Save Intent'); showError('Failed to save Activity Intent: ' + err.message, err.details); });
+                });
+                $panel.append($saveIntent);
 
                 var terminal = intent.status === 'generated' || intent.status === 'shell' || intent.status === 'creating' || intent.status === 'retry_exhausted';
                 var $advanced = $('<details class="mb-3"></details>');
@@ -1131,10 +1867,28 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                 });
             });
 
+            $file.on('change', function() {
+                var file = this.files && this.files[0];
+                if (!file) return;
+                var sizeError = fileSizeValidationError(file, MAX_MATERIAL_FILE_BYTES, 'Learning Material');
+                if (sizeError) {
+                    this.value = '';
+                    showError(sizeError);
+                    updateMaterialView();
+                    return;
+                }
+                clearError();
+            });
+
             $upload.on('click', function() {
                 var file = $file[0].files && $file[0].files[0];
                 if (!file) {
                     showError('Choose a Learning Material file for ' + weekTitle + '.');
+                    return;
+                }
+                var materialSizeError = fileSizeValidationError(file, MAX_MATERIAL_FILE_BYTES, 'Learning Material');
+                if (materialSizeError) {
+                    showError(materialSizeError);
                     return;
                 }
                 $upload.prop('disabled', true).html('<i class="fa fa-spinner fa-spin mr-1"></i> Uploading...');
@@ -1175,6 +1929,16 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
 
     function confirmStructureAndShowActivities() {
         if (!state.stagedMode) { setStep(3); return; }
+        if (unapprovedSourceOutcomes().length > 0) {
+            showError('Approve every source Learning Outcome before confirming the Course Structure.');
+            updateStructureContinueState();
+            return;
+        }
+        if (currentAlignmentIsStale()) {
+            showError('Revalidate Outcome alignment before confirming the Course Structure.');
+            renderAlignmentReview(state.currentStructure);
+            return;
+        }
         $('#btn-review-continue').prop('disabled', true).text('Confirming structure...');
         callBff('seal_structure', {run_id: state.runId, revision: state.structureRevision}).then(function(result) {
             state.currentStructure = result.structure_revision;
@@ -1184,7 +1948,7 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             setStep(3);
             renderActivityStructureStage();
         }).catch(function(err) {
-            $('#btn-review-continue').prop('disabled', false).text('Continue to Activity Structure');
+            updateStructureContinueState();
             showError('Failed to confirm course structure: ' + err.message, err.details);
         });
     }
@@ -1293,6 +2057,16 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
             $('#syllabus-file-input').on('change', function() {
                 var file = this.files[0];
                 if (file) {
+                    var sizeError = fileSizeValidationError(file, MAX_SYLLABUS_FILE_BYTES, 'Syllabus');
+                    if (sizeError) {
+                        state.selectedFile = null;
+                        this.value = '';
+                        $('#selected-file-info').addClass('d-none');
+                        showError(sizeError);
+                        updateGenerateButton();
+                        return;
+                    }
+                    clearError();
                     state.selectedFile = file;
                     $('#selected-file-name').text(file.name + ' (' + Math.round(file.size / 1024) + ' KB)');
                     $('#selected-file-info').removeClass('d-none');
@@ -1318,10 +2092,19 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                 var files = e.originalEvent.dataTransfer.files;
                 if (files && files.length > 0) {
                     var file = files[0];
+                    var sizeError = fileSizeValidationError(file, MAX_SYLLABUS_FILE_BYTES, 'Syllabus');
+                    if (sizeError) {
+                        state.selectedFile = null;
+                        $('#selected-file-info').addClass('d-none');
+                        showError(sizeError);
+                        updateGenerateButton();
+                        return;
+                    }
+                    clearError();
                     state.selectedFile = file;
                     $('#selected-file-name').text(file.name + ' (' + Math.round(file.size / 1024) + ' KB)');
                     $('#selected-file-info').removeClass('d-none');
-                    $('#btn-generate-plan').prop('disabled', false);
+                    updateGenerateButton();
                 }
             });
 
@@ -1372,6 +2155,27 @@ define(['jquery', 'local_agentpoc/contract_helpers'], function($, contractHelper
                 clearError();
             });
 
+            // A reload restores semantic state from the server; the URL carries only its run identifier.
+            var contextRunId = new URL(window.location.href).searchParams.get('context_run_id');
+            if (contextRunId) {
+                state.runId = contextRunId;
+                callBff('get_instructional_design', {run_id: contextRunId}).then(function(result) {
+                    showCoreContext(result.core_context);
+                    state.coreContextRevision = result.core_context.revision;
+                    state.outcomeProposals = result.outcome_proposals || [];                    state.competencyCandidates = result.competency_candidates || [];
+                    callBff('get_competency_candidates', {run_id: contextRunId}).then(function(candidateResult) { state.competencyCandidates = candidateResult.candidates || []; if (state.currentStructure) renderAlignmentReview(state.currentStructure); }).catch(function() {});
+                    state.outcomeCoverage = result.coverage || [];
+                    var restored = result.structure_revision;
+                    if (restored) {
+                        state.stagedMode = true;
+                        state.structureRevision = restored.revision;
+                        state.currentStructure = restored;
+                        state.currentEnvelope = structurePreviewEnvelope(restored);
+                        renderPreview(state.currentEnvelope, state.currentEnvelope);
+                        setStep(2);
+                    }
+                }).catch(function(err) { showError('Could not reload Course design state: ' + err.message); });
+            }
             // Initial view
             setStep(1);
         }

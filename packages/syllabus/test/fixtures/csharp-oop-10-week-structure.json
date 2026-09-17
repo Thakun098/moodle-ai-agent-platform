@@ -1,0 +1,214 @@
+[
+  {
+    "id": "e3316c23-9973-4131-a3e8-2681a4cb9832",
+    "run_id": "97b14cf5-fe51-478d-8465-2d448c9d99d5",
+    "revision": 1,
+    "title": "Untitled Course",
+    "summary": "ศึกษาแนวคิดและหลักการของการเขียนโปรแกรมเชิงวัตถุด้วยภาษา C# ตั้งแต่โครงสร้างโปรแกรม ชนิดข้อมูล ตัวแปร ตัวดำเนินการ โครงสร้างควบคุม เมธอด คลาสและวัตถุ การห่อหุ้มข้อมูล (Encapsulation) การสืบทอด (Inheritance) พหุรูปแบบ (Polymorphism) คลาสนามธรรม (Abstract Class) อินเทอร์เฟซ (Interface) การจัดการข้อยกเว้น (Exception Handling) คอลเลกชัน (Collections) การอ่านและเขียนไฟล์ และการบำรุงรักษาซอฟต์แวร์เบื้องต้น",
+    "content_json": {
+      "course": {
+        "title": "Untitled Course",
+        "summary": "ศึกษาแนวคิดและหลักการของการเขียนโปรแกรมเชิงวัตถุด้วยภาษา C# ตั้งแต่โครงสร้างโปรแกรม ชนิดข้อมูล ตัวแปร ตัวดำเนินการ โครงสร้างควบคุม เมธอด คลาสและวัตถุ การห่อหุ้มข้อมูล (Encapsulation) การสืบทอด (Inheritance) พหุรูปแบบ (Polymorphism) คลาสนามธรรม (Abstract Class) อินเทอร์เฟซ (Interface) การจัดการข้อยกเว้น (Exception Handling) คอลเลกชัน (Collections) การอ่านและเขียนไฟล์ และการบำรุงรักษาซอฟต์แวร์เบื้องต้น",
+        "course_code": "CS231"
+      },
+      "sections": [
+        {
+          "ref": "section-01",
+          "title": "สัปดาห์ที่ 1",
+          "summary": "แนะนำ C#, .NET, โครงสร้างโปรแกรม, แนวคิด Class/Object, การสร้าง Console Application ขั้นพื้นฐาน",
+          "position": 1,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "Main method; namespace;; การคอมไพล์และรันโปรแกรม; แนวคิด Class, Object,; State และ Behavior; เปรียบเทียบ Procedural; Programming กับ Object-Oriented Programming; ทดลองสร้าง Console Application; และสำรวจโครงสร้างโปรแกรม C#; เบื้องต้น; CLO1",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [
+            "source-outcome-79783a84f0757392e5e7"
+          ],
+          "aligned_objective_ids": [
+            "objective-8eb1f4ee985c7d0b1f33"
+          ]
+        },
+        {
+          "ref": "section-02",
+          "title": "สัปดาห์ที่ 2",
+          "summary": "ชนิดข้อมูล ตัวแปร; และตัวดำเนินการ; Built-in data types; value type และ reference type;; การประกาศตัวแปร; var; constant; type conversion;; arithmetic, comparison และ logical operators;; string interpolation; Console input/output; เขียนโปรแกรมรับข้อมูล คำนวณ และ; แสดงผลโดยเลือกชนิดข้อมูลให้เหมา; ะสม; CLO1",
+          "position": 2,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "และตัวดำเนินการ; Built-in data types; value type และ reference type;; การประกาศตัวแปร; var; constant; type conversion;; arithmetic, comparison และ logical operators;; string interpolation; Console input/output; เขียนโปรแกรมรับข้อมูล คำนวณ และ; แสดงผลโดยเลือกชนิดข้อมูลให้เหมา; ะสม; CLO1",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        },
+        {
+          "ref": "section-03",
+          "title": "สัปดาห์ที่ 3",
+          "summary": "โครงสร้างควบคุมและเมธ; อด; if/else, switch expression, for, while, do-while และ; foreach; การแบ่งโปรแกรมเป็น Method; parameter,; return value, optional parameter และ method; overloading เบื้องต้น; แยกปัญหาเป็นเมธอดย่อยและฝึกใช้โ; ครงสร้างควบคุมเพื่อจัดการเงื่อนไขแ; ละข้อมูลหลายรายการ; CLO1,; CLO2",
+          "position": 3,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "อด; if/else, switch expression, for, while, do-while และ; foreach; การแบ่งโปรแกรมเป็น Method; parameter,; return value, optional parameter และ method; overloading เบื้องต้น; แยกปัญหาเป็นเมธอดย่อยและฝึกใช้โ; ครงสร้างควบคุมเพื่อจัดการเงื่อนไขแ; ละข้อมูลหลายรายการ; CLO1,; CLO2",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        },
+        {
+          "ref": "section-04",
+          "title": "สัปดาห์ที่ 4",
+          "summary": "Class, Object และ; Constructor; การออกแบบ Class; Field, Property และ Method;; การสร้าง Object ด้วย new; Constructor; this; keyword; object initialization; ความแตกต่างระหว่าง; instance member และ static member; ออกแบบคลาสจากสถานการณ์จำลอง; เช่น Student, Product หรือ; BankAccount; แล้วสร้างวัตถุเพื่อทดสอบพฤติกรรม; CLO2",
+          "position": 4,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "Constructor; การออกแบบ Class; Field, Property และ Method;; การสร้าง Object ด้วย new; Constructor; this; keyword; object initialization; ความแตกต่างระหว่าง; instance member และ static member; ออกแบบคลาสจากสถานการณ์จำลอง; เช่น Student, Product หรือ; BankAccount; แล้วสร้างวัตถุเพื่อทดสอบพฤติกรรม; CLO2",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        },
+        {
+          "ref": "section-05",
+          "title": "สัปดาห์ที่ 5",
+          "summary": "Encapsulation; และการออกแบบข้อมูล; access modifiers: public, private, protected,; internal; การซ่อนข้อมูล; Property getter/setter;; validation ใน property หรือ method; หลัก Single; Responsibility เบื้องต้น; ปรับปรุงคลาสให้ปกป้อง state ภายใ; นและควบคุมการเปลี่ยนแปลงข้อมูลผ่; าน public interface ที่ชัดเจน; CLO2,; CLO3",
+          "position": 5,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "และการออกแบบข้อมูล; access modifiers: public, private, protected,; internal; การซ่อนข้อมูล; Property getter/setter;; validation ใน property หรือ method; หลัก Single; Responsibility เบื้องต้น; ปรับปรุงคลาสให้ปกป้อง state ภายใ; นและควบคุมการเปลี่ยนแปลงข้อมูลผ่; าน public interface ที่ชัดเจน; CLO2,; CLO3",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        },
+        {
+          "ref": "section-06",
+          "title": "สัปดาห์ที่ 6",
+          "summary": "Inheritance และ; Method Overriding; base class และ derived class; การใช้ : เพื่อสืบทอด;; protected member; base keyword; virtual/override;; การออกแบบความสัมพันธ์แบบ is-a; และข้อควรระวังในการใช้ inheritance; สร้างลำดับชั้นของคลาส เช่น; Person-Student-Teacher หรือ; Shape-Circle-Rectangle; และทดสอบ overriding; CLO3",
+          "position": 6,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "Method Overriding; base class และ derived class; การใช้ : เพื่อสืบทอด;; protected member; base keyword; virtual/override;; การออกแบบความสัมพันธ์แบบ is-a; และข้อควรระวังในการใช้ inheritance; สร้างลำดับชั้นของคลาส เช่น; Person-Student-Teacher หรือ; Shape-Circle-Rectangle; และทดสอบ overriding; CLO3",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        },
+        {
+          "ref": "section-07",
+          "title": "สัปดาห์ที่ 7",
+          "summary": "Polymorphism,; Abstract Class และ; Interface; polymorphic reference; dynamic dispatch; abstract; class และ abstract method; interface; การ; implement หลาย interface; การเลือกใช้ inheritance; กับ interface ให้เหมาะกับการออกแบบพฤติกรรม; ออกแบบระบบที่เรียกใช้วัตถุต่างชนิด; ผ่าน base type หรือ interface; เดียวกัน; CLO3",
+          "position": 7,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "Abstract Class และ; Interface; polymorphic reference; dynamic dispatch; abstract; class และ abstract method; interface; การ; implement หลาย interface; การเลือกใช้ inheritance; กับ interface ให้เหมาะกับการออกแบบพฤติกรรม; ออกแบบระบบที่เรียกใช้วัตถุต่างชนิด; ผ่าน base type หรือ interface; เดียวกัน; CLO3",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        },
+        {
+          "ref": "section-08",
+          "title": "สัปดาห์ที่ 8",
+          "summary": "Exception Handling; และ Collections; try/catch/finally; exception object; throw;; การแยกกรณีข้อผิดพลาด; List, Dictionary; การเพิ่ม ลบ; ค้นหา และวนซ้ำข้อมูล; แนวคิด generic collection; พัฒนาโปรแกรมที่จัดการข้อมูลหลาย; รายการและรองรับข้อผิดพลาดจากข้อ; มูลนำเข้าหรือการทำงาน; CLO4",
+          "position": 8,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "และ Collections; try/catch/finally; exception object; throw;; การแยกกรณีข้อผิดพลาด; List, Dictionary; การเพิ่ม ลบ; ค้นหา และวนซ้ำข้อมูล; แนวคิด generic collection; พัฒนาโปรแกรมที่จัดการข้อมูลหลาย; รายการและรองรับข้อผิดพลาดจากข้อ; มูลนำเข้าหรือการทำงาน; CLO4",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        },
+        {
+          "ref": "section-09",
+          "title": "สัปดาห์ที่ 9",
+          "summary": "File I/O; และการบูรณาการ OOP; การอ่านและเขียน text file; File, StreamReader และ; StreamWriter; using statement;; การแปลงข้อมูลระหว่าง object กับข้อความในรูปแบบง่าย;; การแบ่งความรับผิดชอบระหว่าง model และ service; class; บันทึกและโหลดข้อมูลของวัตถุจากไฟ; ล์ พร้อมจัดโครงสร้างโค้ดให้แยกหน้า; ที่ชัดเจน; CLO4,; CLO5",
+          "position": 9,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "และการบูรณาการ OOP; การอ่านและเขียน text file; File, StreamReader และ; StreamWriter; using statement;; การแปลงข้อมูลระหว่าง object กับข้อความในรูปแบบง่าย;; การแบ่งความรับผิดชอบระหว่าง model และ service; class; บันทึกและโหลดข้อมูลของวัตถุจากไฟ; ล์ พร้อมจัดโครงสร้างโค้ดให้แยกหน้า; ที่ชัดเจน; CLO4,; CLO5",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        },
+        {
+          "ref": "section-10",
+          "title": "สัปดาห์ที่ 10",
+          "summary": "Mini Project, Review; และ Code Presentation; บูรณาการ Class Design, Encapsulation,; Inheritance/Interface, Collections, Exception; Handling และ File I/O; ทบทวนแนวคิดสำคัญ; naming; convention; refactoring เบื้องต้น;; สรุปข้อดีและข้อจำกัดของ OOP; นำเสนอโปรแกรมขนาดเล็ก; อธิบายโครงสร้างคลาส; เหตุผลในการออกแบบ; และสะท้อนสิ่งที่เรียนรู้; CLO1-; CLO5; วิธีการจัดการเรียนรู้; การบรรยายสั้นร่วมกับการสาธิตโค้ด (mini lecture + live coding); การฝึกปฏิบัติในห้องปฏิบัติการ โดยให้ผู้เรียนทดลองแก้ปัญหาจากสถานการณ์จำลอง; การวิเคราะห์ตัวอย่างโค้ดที่ถูกต้องและตัวอย่างที่มีข้อผิดพลาด เพื่อฝึก debugging และ code reading; การอภิปรายแนวทางออกแบบ Class และความสัมพันธ์ระหว่าง Object; การพัฒนา Mini Project ในช่วงท้ายรายวิชาเพื่อบูรณาการความรู้หลายหัวข้อ; CS231 C# OOP - Mock Syllabus หน้า 3; การวัดและประเมินผล; องค์ประกอบการประเมิน สัดส่วน CLO ที่เกี่ยวข้อง; แบบฝึกปฏิบัติและการมีส่วนร่วมระหว่างเรียน 20% CLO1-CLO4; งานมอบหมายเชิงโปรแกรม 25% CLO2-CLO4; การประเมินความเข้าใจระหว่างรายวิชา 20% CLO1-CLO3; Mini Project และการนำเสนอ 25% CLO2-CLO5; การสะท้อนผลการเรียนรู้และคุณภาพโค้ด 10% CLO1-CLO5; รวม 100%; เครื่องมือและซอฟต์แวร์ที่ใช้; .NET SDK รุ่นปัจจุบันที่รองรับ C#; Visual Studio Code หรือ Visual Studio Community; Git สำหรับแนะนำแนวคิดการจัดเก็บเวอร์ชันของโค้ดในระดับพื้นฐาน; ระบบ Moodle สำหรับเผยแพร่เอกสาร ประกาศ และส่งงาน (ในกรณีใช้งานจริง); เอกสารและแหล่งเรียนรู้ประกอบ; Microsoft Learn: C# documentation และ .NET documentation; หนังสือหรือเอกสารประกอบการเรียนด้าน C# และ Object-Oriented Programming ที่ผู้สอนกำหนด; ตัวอย่างโค้ดและเอกสารสรุปสำหรับการฝึกปฏิบัติในแต่ละสัปดาห์; หมายเหตุสำหรับการทดสอบระบบ; เอกสารฉบับนี้เป็นข้อมูลจำลอง (Mock Data) ไม่ใช่เค้าโครงรายวิชาของสถาบันการศึกษาจริง จัดทำเพื่อทดสอบการอ่าน PDF การแยกช่วงเรียน การสร้าง; Course Structure และขั้นตอนเลือกสร้าง Activity ของระบบ AI Course Builder โดยจำกัด Course Period ไว้ที่ 10 ช่วงเรียนตาม ADR-0002; ตารางรายสัปดาห์ตั้งค่าให้หัวตารางทำซ้ำเมื่อเกิดการข้ามหน้า เพื่อใช้ทดสอบ PDF table extraction ได้ด้วย",
+          "position": 10,
+          "source_refs": [
+            {
+              "page": 2,
+              "text": "และ Code Presentation; บูรณาการ Class Design, Encapsulation,; Inheritance/Interface, Collections, Exception; Handling และ File I/O; ทบทวนแนวคิดสำคัญ; naming; convention; refactoring เบื้องต้น;; สรุปข้อดีและข้อจำกัดของ OOP; นำเสนอโปรแกรมขนาดเล็ก; อธิบายโครงสร้างคลาส; เหตุผลในการออกแบบ; และสะท้อนสิ่งที่เรียนรู้; CLO1-; CLO5; วิธีการจัดการเรียนรู้; การบรรยายสั้นร่วมกับการสาธิตโค้ด (mini lecture + live coding); การฝึกปฏิบัติในห้องปฏิบัติการ โดยให้ผู้เรียนทดลองแก้ปัญหาจากสถานการณ์จำลอง; การวิเคราะห์ตัวอย่างโค้ดที่ถูกต้องและตัวอย่างที่มีข้อผิดพลาด เพื่อฝึก debugging และ code reading; การอภิปรายแนวทางออกแบบ Class และความสัมพันธ์ระหว่าง Object; การพัฒนา Mini Project ในช่วงท้ายรายวิชาเพื่อบูรณาการความรู้หลายหัวข้อ; CS231 C# OOP - Mock Syllabus หน้า 3; การวัดและประเมินผล; องค์ประกอบการประเมิน สัดส่วน CLO ที่เกี่ยวข้อง; แบบฝึกปฏิบัติและการมีส่วนร่วมระหว่างเรียน 20% CLO1-CLO4; งานมอบหมายเชิงโปรแกรม 25% CLO2-CLO4; การประเมินความเข้าใจระหว่างรายวิชา 20% CLO1-CLO3; Mini Project และการนำเสนอ 25% CLO2-CLO5; การสะท้อนผลการเรียนรู้และคุณภาพโค้ด 10% CLO1-CLO5; รวม 100%; เครื่องมือและซอฟต์แวร์ที่ใช้; .NET SDK รุ่นปัจจุบันที่รองรับ C#; Visual Studio Code หรือ Visual Studio Community; Git สำหรับแนะนำแนวคิดการจัดเก็บเวอร์ชันของโค้ดในระดับพื้นฐาน; ระบบ Moodle สำหรับเผยแพร่เอกสาร ประกาศ และส่งงาน (ในกรณีใช้งานจริง); เอกสารและแหล่งเรียนรู้ประกอบ; Microsoft Learn: C# documentation และ .NET documentation; หนังสือหรือเอกสารประกอบการเรียนด้าน C# และ Object-Oriented Programming ที่ผู้สอนกำหนด; ตัวอย่างโค้ดและเอกสารสรุปสำหรับการฝึกปฏิบัติในแต่ละสัปดาห์; หมายเหตุสำหรับการทดสอบระบบ; เอกสารฉบับนี้เป็นข้อมูลจำลอง (Mock Data) ไม่ใช่เค้าโครงรายวิชาของสถาบันการศึกษาจริง จัดทำเพื่อทดสอบการอ่าน PDF การแยกช่วงเรียน การสร้าง; Course Structure และขั้นตอนเลือกสร้าง Activity ของระบบ AI Course Builder โดยจำกัด Course Period ไว้ที่ 10 ช่วงเรียนตาม ADR-0002; ตารางรายสัปดาห์ตั้งค่าให้หัวตารางทำซ้ำเมื่อเกิดการข้ามหน้า เพื่อใช้ทดสอบ PDF table extraction ได้ด้วย",
+              "source": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+              "section": "page 2"
+            }
+          ],
+          "activity_intents": [],
+          "alignment_status": "STALE_ALIGNMENT",
+          "aligned_outcome_ids": [],
+          "aligned_objective_ids": []
+        }
+      ]
+    },
+    "validation_status": "valid",
+    "validation_errors": null,
+    "sealed_at": null,
+    "sealed_by_moodle_user_id": null,
+    "created_at": "2026-09-14T08:28:42.678Z",
+    "teacher_constraints_json": {
+      "warnings": [],
+      "activityRules": [],
+      "alignment_state": "STALE_ALIGNMENT",
+      "alignment_context_revision": 1,
+      "stale_from_context_revision": 12
+    }
+  }
+]

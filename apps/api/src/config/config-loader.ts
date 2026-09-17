@@ -16,6 +16,8 @@ export interface AppConfig {
   readonly moodleBaseUrl?: string;
   readonly moodleToken?: string;
   readonly riskServiceKey?: string;
+  readonly instructionalDesignServiceKey?: string;
+  readonly moodleCompetencyFrameworkId?: number;
   readonly mcpServerCommand?: string;
   readonly mcpServerArgs?: readonly string[];
   readonly agentMaxSteps: number;
@@ -121,6 +123,10 @@ export function loadConfig(
   const moodleBaseUrl = parseOptionalNonEmptyString(env.MOODLE_BASE_URL);
   const moodleToken = parseOptionalNonEmptyString(env.MOODLE_TOKEN);
   const riskServiceKey = parseOptionalNonEmptyString(env.RISK_SERVICE_KEY);
+  const instructionalDesignServiceKey = parseOptionalNonEmptyString(env.INSTRUCTIONAL_DESIGN_SERVICE_KEY);
+  const moodleCompetencyFrameworkId = env.MOODLE_COMPETENCY_FRAMEWORK_ID === undefined || env.MOODLE_COMPETENCY_FRAMEWORK_ID.trim() === ""
+    ? undefined
+    : parsePositiveInteger(env.MOODLE_COMPETENCY_FRAMEWORK_ID, "MOODLE_COMPETENCY_FRAMEWORK_ID", 1, { min: 1 });
   const mcpServerCommand = parseOptionalNonEmptyString(env.MCP_SERVER_COMMAND);
   const mcpServerArgs = parseMcpServerArgs(env.MCP_SERVER_ARGS);
 
@@ -177,6 +183,8 @@ export function loadConfig(
     ...(moodleBaseUrl ? { moodleBaseUrl } : {}),
     ...(moodleToken ? { moodleToken } : {}),
     ...(riskServiceKey ? { riskServiceKey } : {}),
+    ...(instructionalDesignServiceKey ? { instructionalDesignServiceKey } : {}),
+    ...(moodleCompetencyFrameworkId !== undefined ? { moodleCompetencyFrameworkId } : {}),
     ...(mcpServerCommand ? { mcpServerCommand } : {}),
     ...(mcpServerArgs ? { mcpServerArgs } : {}),
     agentMaxSteps,

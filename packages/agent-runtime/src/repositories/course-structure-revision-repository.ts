@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import type { AppDatabase } from "../db/connection.js";
 import {
@@ -85,6 +86,71 @@ export class CourseStructureRevisionRepository {
       .update(courseStructureRevision)
       .set({ sealedAt: null, sealedByMoodleUserId: null })
       .where(eq(courseStructureRevision.runId, runId));
+  }
+
+  async markAlignmentStale(runId: string, contextRevision: number): Promise<void> {
+    const latest = await this.getLatestRevision(runId);
+    if (!latest) return;
+    const content = latest.contentJson as Record<string, unknown>;
+    const sections = Array.isArray(content.sections) ? content.sections.map((section) => ({ ...(section as Record<string, unknown>), alignment_status: "STALE_ALIGNMENT" })) : [];
+    const constraints = latest.teacherConstraintsJson as Record<string, unknown>;
+    await this.db.update(courseStructureRevision).set({
+      contentJson: { ...content, sections },
+      teacherConstraintsJson: { ...constraints, alignment_state: "STALE_ALIGNMENT", stale_from_context_revision: contextRevision },
+    }).where(eq(courseStructureRevision.id, latest.id));
+  }
+
+  async createRebasedStructureRevision(
+    runId: string,
+    currentContextRevision: number,
+    rebasedSections: unknown[],
+  ): Promise<CourseStructureRevisionRecord> {
+    const latest = await this.getLatestRevision(runId);
+    if (!latest) throw new Error(`No course structure revision exists to rebase for run ${runId}`);
+    if (latest.validationStatus !== "valid") {
+      throw new Error(`Cannot rebase invalid course structure revision ${runId}/${latest.revision}`);
+    }
+
+    const content = latest.contentJson as Record<string, unknown>;
+    const constraints = latest.teacherConstraintsJson as Record<string, unknown>;
+    const nextRevision = latest.revision + 1;
+
+    const newContent = {
+      ...content,
+      sections: rebasedSections,
+    };
+
+    const newConstraints = {
+      ...constraints,
+      alignment_state: "CURRENT",
+      alignment_context_revision: currentContextRevision,
+      stale_from_context_revision: null,
+    };
+
+    return this.saveRevision({
+      id: randomUUID(),
+      runId,
+      revision: nextRevision,
+      title: latest.title,
+      summary: latest.summary,
+      content: newContent,
+      teacherConstraintsJson: newConstraints,
+      validationStatus: "valid",
+      validationErrors: null,
+    });
+  }
+
+  async setExternalCoverageOverride(runId: string, override: { outcome_id: string; acknowledged: true; reason: string; teacher_id?: number }): Promise<CourseStructureRevisionRecord> {
+    const latest = await this.getLatestRevision(runId);
+    if (!latest) throw new Error("No course structure revision exists for coverage override");
+    const constraints = latest.teacherConstraintsJson as Record<string, unknown>;
+    const prior = Array.isArray(constraints.coverage_overrides) ? constraints.coverage_overrides : [];
+    const coverage_overrides = [...prior.filter((item) => (item as Record<string, unknown>).outcome_id !== override.outcome_id), override];
+    const [updated] = await this.db.update(courseStructureRevision).set({
+      teacherConstraintsJson: { ...constraints, coverage_overrides },
+    }).where(eq(courseStructureRevision.id, latest.id)).returning();
+    if (!updated) throw new Error("Failed to persist external coverage override");
+    return updated;
   }
 
   async sealRevision(data: {

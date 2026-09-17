@@ -141,7 +141,7 @@ describe('Student Risk scrutinize-audit regressions', () => {
     expect(result.status).toBe('FALLBACK');
   });
 
-  it('sorts validated actions by deterministic priority band while preserving in-band model order', async () => {
+  it('keeps the complete deterministic action set ordered by priority regardless of model action subset', async () => {
     const context = mediumContext();
     const p4 = context.eligible_actions.find((action) => action.priority_band === 'P4')!;
     const p2 = context.eligible_actions.find((action) => action.priority_band === 'P2')!;
@@ -155,6 +155,7 @@ describe('Student Risk scrutinize-audit regressions', () => {
       })),
     })]), context);
     expect(result.status).toBe('VALID');
-    expect(result.payload.actions.map((action) => action.priority_band)).toEqual(['P2', 'P4']);
+    expect(result.payload.actions.map((action) => action.priority_band)).toEqual(context.eligible_actions.map((action) => action.priority_band));
+    expect(result.payload.actions.map((action) => action.action_code)).toEqual(context.eligible_actions.map((action) => action.action_code));
   });
 });

@@ -6,3 +6,5 @@ export * from "./extractors/text-extractor.js";
 export * from "./ingest.js";
 export * from "./normalizer/deterministic-normalizer.js";
 export * from "./types.js";
+
+export * from "./core-course-design-context.js";

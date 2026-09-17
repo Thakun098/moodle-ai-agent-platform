@@ -29,7 +29,7 @@ define(['jquery'], function($) {
 
     var distributionText = function(dist) {
         dist = dist || {};
-        return 'สูง ' + (dist.HIGH || 0) + ' · ปานกลาง ' + (dist.MEDIUM || 0) + ' · ต่ำ ' + (dist.LOW || 0);
+        return (dist.HIGH || 0) + ' สูง · ' + (dist.MEDIUM || 0) + ' ปานกลาง · ' + (dist.LOW || 0) + ' ต่ำ';
     };
 
     var distributionBar = function(dist) {
@@ -44,9 +44,9 @@ define(['jquery'], function($) {
             '<span class="agentpoc-risk-segment-medium" style="width:' + width(medium) + '%"></span>' +
             '<span class="agentpoc-risk-segment-low" style="width:' + width(low) + '%"></span></div>' +
             '<div class="agentpoc-risk-legend">' +
-            '<div class="agentpoc-risk-legend-item"><span class="agentpoc-risk-dot high"></span>สูง<strong>' + high + '</strong></div>' +
-            '<div class="agentpoc-risk-legend-item"><span class="agentpoc-risk-dot medium"></span>ปานกลาง<strong>' + medium + '</strong></div>' +
-            '<div class="agentpoc-risk-legend-item"><span class="agentpoc-risk-dot low"></span>ต่ำ<strong>' + low + '</strong></div></div>';
+            '<div class="agentpoc-risk-legend-item"><span class="agentpoc-risk-dot high"></span><strong>' + high + '</strong><span>สูง</span></div>' +
+            '<div class="agentpoc-risk-legend-item"><span class="agentpoc-risk-dot medium"></span><strong>' + medium + '</strong><span>ปานกลาง</span></div>' +
+            '<div class="agentpoc-risk-legend-item"><span class="agentpoc-risk-dot low"></span><strong>' + low + '</strong><span>ต่ำ</span></div></div>';
     };
 
     var studentInitials = function(name) {

@@ -198,7 +198,7 @@ function deterministicFallback(message: string, actions: GovernedAction[], cover
 function validateStructuredInsight(value: unknown, allowedActions: GovernedAction[], allowedRuleRefs: Set<string>, allowedEvidenceRefs: Set<string>, allowedRiskRefs: Set<string>, allowedTrendRefs: Set<string>, ruleEvidenceRefs: Map<string, Set<string>>, requireCoverage: boolean): { ok: true; value: StructuredRiskInsight } | { ok: false; recoverable: boolean; errors: string[] } {
   if (!value || typeof value !== 'object') return { ok: false, recoverable: true, errors: ['OUTPUT_NOT_OBJECT'] };
   const x = value as any;
-  if (typeof x.summary !== 'string' || !Array.isArray(x.findings) || !Array.isArray(x.actions)) return { ok: false, recoverable: true, errors: ['OUTPUT_SCHEMA_INVALID'] };
+  if (typeof x.summary !== 'string' || x.summary.trim() === '' || !Array.isArray(x.findings) || !Array.isArray(x.actions)) return { ok: false, recoverable: true, errors: ['OUTPUT_SCHEMA_INVALID'] };
   if (requireCoverage && (typeof x.coverage_qualification !== 'string' || x.coverage_qualification.trim() === '')) return { ok: false, recoverable: false, errors: ['LIMITED_COVERAGE_QUALIFICATION_REQUIRED'] };
   const allowedActionMap = new Map(allowedActions.map((a) => [`${a.action_code}|${a.target_ref}`, a]));
   const errors: string[] = [];
@@ -228,25 +228,97 @@ function validateStructuredInsight(value: unknown, allowedActions: GovernedActio
   return { ok: true, value: { summary: x.summary, coverage_qualification: x.coverage_qualification ?? null, findings: x.findings, actions: orderedActions } };
 }
 
-const RISK_INSIGHT_RESPONSE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['summary', 'coverage_qualification', 'findings', 'actions'],
-  properties: {
-    summary: { type: 'string' },
-    coverage_qualification: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-    findings: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['text','risk_refs','trend_refs','rule_refs','evidence_refs'], properties: { text: { type: 'string' }, risk_refs: { type: 'array', items: { type: 'string' } }, trend_refs: { type: 'array', items: { type: 'string' } }, rule_refs: { type: 'array', items: { type: 'string' } }, evidence_refs: { type: 'array', items: { type: 'string' } } } } },
-    actions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['action_code','priority_band','target_ref','rationale'], properties: { action_code: { type: 'string' }, priority_band: { type: 'string', enum: ['P1','P2','P3','P4'] }, target_ref: { type: 'string' }, rationale: { type: 'string' } } } }
-  }
-} as const;
+interface ModelInsightDraftFinding {
+  text: string;
+  rule_refs: string[];
+  evidence_refs: string[];
+}
 
-async function modelJson(model: ModelClient, context: unknown, repairErrors?: string[]): Promise<unknown> {
-  const instruction = repairErrors ? `แก้ response ก่อนหน้าให้ตรง strict JSON contract นี้ ข้อผิดพลาด: ${repairErrors.join(', ')} ข้อความสำหรับผู้ใช้ทุกช่องต้องเป็นภาษาไทย` : 'ส่งกลับเฉพาะ JSON object เท่านั้น ห้ามสร้าง risk, trend, rule, evidence, action, target หรือ priority ขึ้นเอง ใช้ได้เฉพาะค่าที่มีใน context และข้อความสำหรับผู้ใช้ต้องเป็นภาษาไทยทั้งหมด';
+interface ModelInsightDraft {
+  summary: string;
+  coverage_qualification: string | null;
+  findings: ModelInsightDraftFinding[];
+}
+
+function modelFindingRuleCatalog(context: StudentInsightContext | CourseInsightContext): Array<{ rule_ref: string; evidence_refs: string[] }> {
+  if (context.schema_version === 'student-insight-context.v0.1') {
+    return context.material_rules.map((rule) => ({ rule_ref: rule.rule_id, evidence_refs: rule.evidence_refs }));
+  }
+  return [
+    ...context.aggregate.activity_issues.map((issue) => ({ rule_ref: issue.issue_id, evidence_refs: issue.evidence_refs })),
+    ...context.aggregate.common_competency_gaps.map((gap) => ({ rule_ref: gap.gap_id, evidence_refs: gap.evidence_refs })),
+  ];
+}
+
+async function modelJson(model: ModelClient, context: StudentInsightContext | CourseInsightContext, repairErrors?: string[]): Promise<unknown> {
+  const allowedFindingRules = modelFindingRuleCatalog(context);
+  const outputContract = {
+    summary: 'บทวิเคราะห์ภาษาไทย 2-4 ประโยค',
+    coverage_qualification: context.schema_version === 'course-insight-context.v0.1' && context.eligibility === 'LIMITED' ? 'ข้อความอธิบายข้อจำกัด coverage' : null,
+    findings: [{ text: 'ข้อค้นพบที่มีหลักฐานรองรับ', rule_refs: ['exact rule_ref from ALLOWED_FINDING_RULES'], evidence_refs: ['exact linked evidence_ref from that rule'] }],
+  };
+  const instruction = repairErrors
+    ? [
+        `แก้ JSON ก่อนหน้าให้ตรง contract ข้อผิดพลาด: ${repairErrors.join(', ')}`,
+        'ต้องส่ง summary, coverage_qualification และ findings ตาม OUTPUT_CONTRACT เท่านั้น',
+      ].join('\n')
+    : [
+        'วิเคราะห์เชิงสังเคราะห์ได้อย่างอิสระจากข้อมูลใน CONTEXT: เชื่อมโยง pattern ระหว่างมิติ ชี้สิ่งที่ควรให้ความสนใจก่อน เปรียบเทียบสัญญาณ และอธิบายความหมายเชิงการสอน',
+        'สำคัญ: LOW / MEDIUM / HIGH ใน CONTEXT คือระดับความเสี่ยง ไม่ใช่ระดับผลสัมฤทธิ์หรือความสามารถ; LOW = ความเสี่ยงต่ำ, MEDIUM = ความเสี่ยงปานกลาง, HIGH = ความเสี่ยงสูง',
+        'อย่าตีความ Progress LOW ว่าความก้าวหน้าต่ำ และอย่าตีความ Competency LOW ว่าสมรรถนะต่ำ',
+        'เมื่อเขียนข้อความสำหรับผู้สอน ให้ใช้คำว่า ความเสี่ยงต่ำ / ความเสี่ยงปานกลาง / ความเสี่ยงสูงในมิตินั้น แทนการเขียนระดับ LOW/MEDIUM/HIGH แบบลอย ๆ',
+        'summary สามารถสังเคราะห์ภาพรวมจาก distribution, dimensions, issues, gaps, associations และ coverage ได้ แต่ให้บรรยายเชิงคุณภาพโดยไม่ใส่เปอร์เซ็นต์ จำนวนผู้เรียน รหัสนักเรียน หรือรหัสกิจกรรม และห้ามคำนวณตัวเลขใหม่เอง',
+        'รายละเอียดเชิงตัวเลขให้กล่าวเฉพาะใน findings เมื่อสามารถผูกกับ exact rule_ref และ evidence_refs ที่ได้รับอนุญาต',
+        'findings ต้องเป็นข้อค้นพบที่ trace ได้เท่านั้น: rule_refs ใช้ได้เฉพาะ exact rule_ref ใน ALLOWED_FINDING_RULES และ evidence_refs ต้องเลือกจาก evidence_refs ที่ผูกกับ rule_ref นั้น',
+        'ห้ามใช้ underlying Student rule id เป็น Course finding หากไม่ได้อยู่ใน ALLOWED_FINDING_RULES',
+        'หากข้อสังเกตใดไม่มี allowed rule/evidence ที่รองรับ ให้กล่าวเชิงสรุปอย่างระมัดระวังใน summary แทน และอย่าใส่เป็น finding',
+        'ห้ามเดาสาเหตุภายนอก เช่น แรงจูงใจ ครอบครัว สุขภาพ เจตนา หรือสภาพจิตใจ และห้ามสรุป causation จาก correlation',
+        'ไม่ต้องเสนอ actions ใน JSON; action และ priority ถูกกำหนดโดย deterministic engine แยกต่างหาก',
+        'ข้อความสำหรับผู้ใช้ต้องเป็นภาษาไทย ยกเว้น code/ref/technical term ที่ควรคงเดิม',
+      ].join('\n');
   const result = await model.chat({
-    messages: [{ role: 'system', content: 'คุณเป็นผู้ช่วยสรุปข้อมูลความเสี่ยงสำหรับผู้สอน โดยข้อมูลเชิงกำหนดเป็นข้อมูลหลัก ข้อความที่ผู้ใช้เห็นทุกช่อง ได้แก่ summary, coverage_qualification, findings.text และ actions.rationale ต้องเขียนเป็นภาษาไทยทั้งหมด ห้ามแปลหรือเปลี่ยนค่า code/ref ที่ใช้เป็น contract.' }, { role: 'user', content: `${instruction}\nCONTEXT=${JSON.stringify(context)}` }],
-    format: RISK_INSIGHT_RESPONSE_SCHEMA as unknown as Record<string, unknown>, options: { temperature: 0, maxTokens: 1200 },
+    messages: [
+      {
+        role: 'system',
+        content: 'คุณเป็นนักวิเคราะห์ Learning Risk สำหรับผู้สอน ข้อมูล deterministic Risk และ evidence เป็นข้อเท็จจริงหลัก คุณมีอิสระในการสังเคราะห์ความหมาย แต่ไม่มีสิทธิ์เปลี่ยนระดับความเสี่ยง สร้างหลักฐานใหม่ หรือสรุปเหตุเชิงสาเหตุที่ข้อมูลไม่รองรับ เขียนให้เป็นธรรมชาติ กระชับ และช่วยการตัดสินใจของผู้สอน',
+      },
+      {
+        role: 'user',
+        content: `${instruction}\nOUTPUT_CONTRACT=${JSON.stringify(outputContract)}\nALLOWED_FINDING_RULES=${JSON.stringify(allowedFindingRules)}\nCONTEXT=${JSON.stringify(context)}`,
+      },
+    ],
+    format: 'json',
+    options: { temperature: 0.35, maxTokens: 1600 },
   });
   return JSON.parse(result.rawText || result.message.content);
+}
+
+function normalizeModelInsightDraft(value: unknown, actions: GovernedAction[]): unknown {
+  if (!value || typeof value !== 'object') return value;
+  const raw = value as any;
+  const findings = Array.isArray(raw.findings)
+    ? raw.findings.map((finding: any) => ({
+        text: typeof finding?.text === 'string' ? finding.text : typeof finding?.description === 'string' ? finding.description : '',
+        risk_refs: [],
+        trend_refs: [],
+        rule_refs: Array.isArray(finding?.rule_refs) ? finding.rule_refs : [],
+        evidence_refs: Array.isArray(finding?.evidence_refs) ? finding.evidence_refs : [],
+      }))
+    : [];
+  const summary = typeof raw.summary === 'string' && raw.summary.trim()
+    ? raw.summary
+    : findings.filter((finding: any) => finding.text).slice(0, 2).map((finding: any) => finding.text).join(' ');
+  return {
+    summary,
+    coverage_qualification: typeof raw.coverage_qualification === 'string' ? raw.coverage_qualification : null,
+    findings,
+    actions: actions.map((action) => ({
+      action_code: action.action_code,
+      priority_band: action.priority_band,
+      target_ref: action.target_ref,
+      rationale: 'ข้อเสนอการดำเนินการนี้ผ่านเกณฑ์เชิงกำหนดของระบบและเชื่อมโยงกับหลักฐานในสแนปช็อตที่เลือก',
+    })),
+  };
 }
 
 function ruleEvidenceMap(context: StudentInsightContext | CourseInsightContext): Map<string, Set<string>> {
@@ -260,25 +332,16 @@ function ruleEvidenceMap(context: StudentInsightContext | CourseInsightContext):
   return map;
 }
 
-function canonicalizeInsightNarrative(value: StructuredRiskInsight, context: StudentInsightContext | CourseInsightContext): StructuredRiskInsight {
+function preserveGroundedModelNarrative(value: StructuredRiskInsight, context: StudentInsightContext | CourseInsightContext): StructuredRiskInsight {
   const isStudent = context.schema_version === 'student-insight-context.v0.1';
-  const summary = isStudent
-    ? `ความเสี่ยงเชิงกำหนดของนักเรียนในสแนปช็อตที่เลือกอยู่ในระดับ ${context.overall_risk === 'HIGH' ? 'สูง' : 'ปานกลาง'} โดยกฎและหลักฐานด้านล่างเป็นข้อมูลหลักของการประเมิน`
-    : 'ข้อมูลเชิงลึกของรายวิชานี้อ้างอิงเฉพาะหลักฐานสรุปเชิงกำหนดจากสแนปช็อตที่เลือก';
-  const coverageQualification = !isStudent && context.eligibility === 'LIMITED'
+  const deterministicCoverage = !isStudent && context.eligibility === 'LIMITED'
     ? `ผลนี้ใช้กับนักเรียนที่สามารถประเมินได้เท่านั้น โดยมีความครอบคลุม ${Math.round(context.evaluation_coverage * 100)}%`
     : null;
   return {
-    summary,
-    coverage_qualification: coverageQualification,
-    findings: value.findings.map((finding) => ({
-      ...finding,
-      text: `ข้อค้นพบนี้มีหลักฐานรองรับตามกฎที่เกี่ยวข้องจำนวน ${finding.rule_refs.length} กฎ และหลักฐาน ${finding.evidence_refs.length} รายการในสแนปช็อตที่เลือก`,
-    })),
-    actions: value.actions.map((action) => ({
-      ...action,
-      rationale: 'สิทธิ์ในการเสนอการดำเนินการและระดับความสำคัญถูกกำหนดจากกฎเชิงกำหนดของสแนปช็อตที่เลือก',
-    })),
+    summary: value.summary.trim(),
+    coverage_qualification: deterministicCoverage ?? value.coverage_qualification,
+    findings: value.findings.map((finding) => ({ ...finding, text: finding.text.trim() })),
+    actions: value.actions.map((action) => ({ ...action, rationale: action.rationale.trim() })),
   };
 }
 
@@ -305,12 +368,14 @@ export async function generateGovernedInsight(model: ModelClient, context: Stude
     let raw: unknown;
     try {
       raw = await modelJson(model, context);
+      raw = normalizeModelInsightDraft(raw, actions);
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
       repairUsed = true;
       calls += 1;
       try {
         raw = await modelJson(model, context, ['INVALID_JSON']);
+        raw = normalizeModelInsightDraft(raw, actions);
       } catch {
         return fallback(['INVALID_JSON_AFTER_REPAIR'], 'ไม่สามารถสร้างข้อมูลเชิงลึกจาก AI ได้ ระบบยังคงใช้ผลความเสี่ยงและข้อเสนอการดำเนินการเชิงกำหนดเป็นข้อมูลหลัก');
       }
@@ -324,6 +389,7 @@ export async function generateGovernedInsight(model: ModelClient, context: Stude
       let repaired: unknown;
       try {
         repaired = await modelJson(model, context, validation.errors);
+        repaired = normalizeModelInsightDraft(repaired, actions);
       } catch {
         return fallback(['INVALID_OUTPUT_AFTER_REPAIR']);
       }
@@ -332,13 +398,20 @@ export async function generateGovernedInsight(model: ModelClient, context: Stude
     if (!validation.ok) return fallback(validation.errors);
     return {
       status: repairUsed ? 'REPAIRED' : 'VALID',
-      payload: canonicalizeInsightNarrative(validation.value, context),
+      payload: preserveGroundedModelNarrative(validation.value, context),
       model_calls: calls,
       blocked_reason: null,
       validation_errors: [],
     };
-  } catch {
-    return fallback(['MODEL_UNAVAILABLE'], 'โมเดล AI ไม่พร้อมใช้งานในขณะสร้างข้อมูลเชิงลึก ระบบยังคงแสดงผลความเสี่ยงและข้อเสนอการดำเนินการเชิงกำหนดได้ตามปกติ');
+  } catch (error) {
+    const code = typeof (error as any)?.code === 'string' ? String((error as any).code) : 'MODEL_PROVIDER_UNAVAILABLE';
+    if (code === 'MODEL_RATE_LIMITED') {
+      return fallback([code], 'ผู้ให้บริการ AI ถึงขีดจำกัดการเรียกใช้งานชั่วคราว ระบบจะลองสร้าง AI Summary ใหม่ได้อีกครั้งภายหลัง โดยผลความเสี่ยงเชิงกำหนดยังคงใช้งานได้ตามปกติ');
+    }
+    if (code === 'MODEL_RESPONSE_INVALID') {
+      return fallback([code], 'AI ตอบกลับมาแต่รูปแบบผลลัพธ์ไม่สามารถนำมาใช้เป็นข้อมูลเชิงลึกได้ ระบบจึงคงผลความเสี่ยงเชิงกำหนดไว้ และสามารถลองสร้าง AI Summary ใหม่ได้');
+    }
+    return fallback([code], 'ไม่สามารถเชื่อมต่อหรือรับผลจากผู้ให้บริการ AI ในรอบนี้ได้ ระบบจะลองสร้าง AI Summary ใหม่ได้ภายหลัง โดยผลความเสี่ยงเชิงกำหนดยังคงใช้งานได้ตามปกติ');
   }
 }
 

@@ -52,6 +52,8 @@ function extractMoodleId(targetType: string, data: unknown): number | null {
         : null;
     case "resource":
       return typeof obj.activity_id === "number" ? obj.activity_id : null;
+    case "competency":
+      return typeof obj.competency_id === "number" ? obj.competency_id : null;
     default:
       return null;
   }

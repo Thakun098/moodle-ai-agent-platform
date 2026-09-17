@@ -4,8 +4,8 @@
 
 - Every executable item has a stable task ID.
 - Mark `[x]` only after implementation and relevant tests are complete.
-- After marking a task complete, append an entry to `soc.md`.
-- If blocked, keep `[ ]` and record the blocker in `soc.md`.
+- After marking a task complete, append an entry to the current daily SOC file at `C:\moodle-prac\ai-platform-coordination\source-of-truth\soc\YYYY-MM-DD.md`.
+- If blocked, keep `[ ]` and record the blocker in the current daily SOC file at `C:\moodle-prac\ai-platform-coordination\source-of-truth\soc\YYYY-MM-DD.md`.
 - Do not silently change frozen architecture decisions to complete a task.
 
 ---
@@ -548,7 +548,7 @@
 # Phase 17 — Learning Material-Grounded Activity Generation
 
 - [x] **T1701 — Record approved architecture amendment**
-  - update `POC_BASELINE.md`, `Implementation.md`, `task.md`, and `soc.md`
+  - update `POC_BASELINE.md`, `Implementation.md`, `task.md`, and the current daily SOC file
   - record source authority and explicit POC exclusions
 
 - [x] **T1702 — Add internal Structure Revision model**
@@ -593,7 +593,7 @@
 - [ ] **T1802 — Document known limitations**
 - [ ] **T1803 — Document reusable vs disposable code**
 - [ ] **T1804 — Update `Implementation.md` with final actual behavior if needed**
-- [ ] **T1805 — Ensure every completed task has an `soc.md` entry**
+- [ ] **T1805 — Ensure every completed task has a daily SOC entry**
 - [ ] **T1806 — Tag/archive final POC state**
 
 ## 2026-09-10 — Additional contract audit
@@ -602,3 +602,105 @@
   - Report: `../ai-platform-coordination/contract-audit-2026-09-10.md`.
   - Existing targeted regression: 10/10 passed; isolated audit probes: 1 control passed, 5 negative assertions exposed defects.
   - Audit complete; F1–F4 remediation and live Moodle verification remain open. No production code changed.
+
+
+## Instructional Design Alignment — Coordination Tickets
+
+- [x] **Ticket 17 — Core Course Design Context & Syllabus Semantic Extraction** (2026-09-14)
+  - Additive source semantics, stable provenance, PostgreSQL revision 1, Moodle BFF summary/reload.
+  - 70 focused/compatibility tests passed; real Moodle browser reload for rich/incomplete fixtures passed.
+- [x] **Ticket 18 — Aligned Course Structure & Teacher Outcome Approval**
+  - DESIGN_STRUCTURE Core Context projection with activity-free prompt.
+  - Authorized Section Objective/Outcome mappings and measurable Outcome proposals.
+  - Teacher Outcome approval/edit revisions, deterministic coverage, external override, and STALE_ALIGNMENT.
+  - Safe candidate Structure publication and Moodle BFF/browser reload evidence.
+
+- [x] **Ticket 19 — Teacher-reviewed Competency Candidate Derivation** (2026-09-15)
+  - Approved-Outcome-only Candidate derivation, Teacher lifecycle decisions, many-to-many lineage, UNALIGNED override, and no Moodle Competency materialization before Execute.
+  - Focused/API/PostgreSQL/live Moodle browser evidence recorded in `../ai-platform-coordination/tickets/evidence/19-teacher-reviewed-competency-candidate-derivation.md`.
+- [x] **Ticket 20 — Versioned Activity Intent & Alignment Controls** (2026-09-15)
+  - Purpose/alignment/learner acknowledgment validation, versioned semantic Intent persistence, generation-instruction attribution, and sibling-safe stale transitions.
+  - Recursive canonical JSON equality fixed PostgreSQL `jsonb` key-order churn; PostgreSQL regression and Moodle BFF browser reload evidence passed.
+  - Closure evidence recorded in `../ai-platform-coordination/tickets/evidence/20-versioned-activity-intent-alignment-controls.md` and `../ai-platform-coordination/source-of-truth/soc/2026-09-15.md`.
+
+- [x] **Ticket 21 — Constructively Aligned Quiz/Assignment Generation** (2026-09-16)
+  - Bounded Groq provider-format recovery, Activity Design Context, structured self-review, deterministic hidden-scope validation, CAS publication safety, and human-readable LO/CLO Teacher target UI.
+  - Real Moodle/BFF/Groq acceptance completed; closure evidence recorded in `../ai-platform-coordination/tickets/evidence/21-constructively-aligned-activity-generation.md` and `../ai-platform-coordination/source-of-truth/audit/2026-09-16.md`.
+- [x] **Ticket 22 — Teacher-edited Activity Provenance & Revalidation** (2026-09-16)
+  - Immutable generated→Teacher-edited Activity content revisions with `TEACHER_EDITED` lineage and source generation revision.
+  - Deterministic edit revalidation, zero-LLM edit path, invalid-edit preservation, reloadable server-authoritative state, and Moodle edit/provenance UI.
+  - Finalizer hardened so malformed persisted generated content returns typed `PLAN_DOMAIN_INVALID` instead of HTTP 500.
+  - Final Official Preview verified current Teacher-edited Quiz/Assignment bodies and provenance; closure evidence recorded in `../ai-platform-coordination/tickets/evidence/22-teacher-edited-activity-provenance-revalidation.md`.
+
+
+## 2026-09-16 — Ticket 22 post-closure code-review remediation
+
+- [x] **T22-CR-01 — Preserve immutable AI revision lineage across regeneration**
+- [x] **T22-CR-02 — Preserve CAS for legacy first Teacher edit seed transition**
+- [x] **T22-CR-03 — Centralize Activity Intent response serialization**
+- [x] **T22-CR-04 — Attribute Approval self-review to source AI revision after Teacher edit**
+- [x] **T22-CR-05 — Move Teacher-edit domain orchestration out of Fastify handler**
+  - Final focused regression: 73/73 PASS.
+  - Moodle static UI regressions PASS.
+  - Workspace typecheck/build PASS.
+  - Runtime Moodle v0.1.29 Official Preview acceptance PASS.
+
+
+- [x] **Ticket 23 - Teacher-confirmed Competency Mapping & Evidence Eligibility** (2026-09-16)
+  - deterministic shared-Outcome Activity↔Competency proposals
+  - explicit Teacher mapping confirmation separate from evidence eligibility
+  - PostgreSQL persisted review revision/CAS and stale transitions
+  - Competency/Activity authority changes stale mapping/evidence without staling generated Activity
+  - Moodle BFF/UI mapping/evidence controls and Final Preview readback
+  - real browser acceptance: Quiz evidence declined, Assignment evidence confirmed, reload + stale + re-confirm lifecycle
+  - plugin `2026091604 / v0.1.30`; Ticket 19–23 compatibility 60/60 PASS; workspace typecheck/build PASS
+
+
+## 2026-09-16 - Ticket 24 closure
+
+- [x] **Ticket 24 - Moodle-native Competency Materialization & Readback** (2026-09-16)
+  - Explicit framework guard proved at runtime (`COMPETENCY_FRAMEWORK_REQUIRED` before Moodle mutation).
+  - Selected Moodle framework ID 2 after MCP visibility/manageability readback.
+  - Approval-time Competency execution snapshot persisted for exact Plan revision.
+  - Fixed approved-scope parity + canonical JSONB comparison in snapshot-current guard.
+  - Deployed Moodle competency external APIs in plugin `2026091605 / v0.1.31`.
+  - Real partial Execute failure preserved Course 25 / Competency 6 / execution mappings; no rollback/reset.
+  - Fixed bounded Activity↔Competency idempotency refs and reconciled successfully from preserved partial state.
+  - Moodle readback: Quiz 120 `rule_outcome=0`; Assignment 121 `rule_outcome=1`; only approved Competency materialized.
+  - Same approved revision rerun produced no duplicate native Competency/mappings.
+  - Final Verify PASS and Risk native competency readback PASS.
+  - Focused compatibility 69/69 PASS; workspace typecheck/build PASS.
+
+Next Instructional Design frontier: Ticket 25 — Moodle E2E Acceptance for Instructional Design Alignment.
+
+
+## 2026-09-16 — Tickets 17–24 High audit remediation
+
+- [x] **T17-24-CR-01 — Freeze Instructional Design authority across Approval / Execute / Verify**
+  - centralized Run-row lifecycle guard for authority-changing mutations
+  - mutation invalidates approval and returns mutable preview/failed state to planning
+  - approval publishes only from preview
+  - exact approved Plan/revision is atomically claimed immediately before Moodle mutation
+  - changed MaterialSnapshot path is included in the same lifecycle policy
+- [x] **SCR-01 — Make one Plan revision one immutable execution authority**
+  - Competency execution snapshot is insert-once/idempotent-same-authority
+  - different authority for the same Plan revision is rejected
+  - finalization creates revision N+1 after authority invalidation instead of reusing a snapshotted revision
+- [x] **SCR-02 — Invalidate dependent Competency approval when approved Outcome changes**
+  - dependent APPROVED Candidates return to PROPOSED with revision increment
+  - invalidation happens before new Core Context revision publication; failure prevents publication
+- [x] **SCR-03 — Fail closed on Verify authority and completion**
+  - exact execution snapshot required
+  - exact current approved Plan/revision + awaiting_verification required before readback
+  - completion/failure uses atomic verification-authority CAS
+  - stale old revision and concurrent completion races covered by regression tests
+- [x] **Final High-remediation verification**
+  - final broad regression: **33 test files / 136 tests PASS**
+  - workspace `pnpm typecheck` PASS
+  - workspace `pnpm build` PASS
+  - `git diff --check` PASS (line-ending warnings only)
+  - final code-review + 9arm Scrutinize found no remaining High bypass
+
+Medium/Low findings `T17-24-CR-02` through `CR-07` where applicable, plus the recorded Standards finding, remain open and were intentionally not remediated in this pass.
+
+Next Instructional Design frontier remains Ticket 25 — Moodle E2E Acceptance for Instructional Design Alignment; Ticket 25 has not been started by this remediation.

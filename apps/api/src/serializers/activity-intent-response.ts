@@ -1,0 +1,37 @@
+import type { ActivityIntentRecord } from "@moodle-agent-poc/agent-runtime";
+
+export function serializeActivityIntent(record: ActivityIntentRecord, includeContent = true) {
+  return {
+    id: record.id,
+    run_id: record.runId,
+    structure_revision: record.structureRevision,
+    section_ref: record.sectionRef,
+    activity_ref: record.activityRef,
+    activity_type: record.activityType,
+    status: record.status,
+    intent_revision: record.intentRevision,
+    purpose: record.purpose,
+    selected_objective_ids: record.selectedObjectiveIdsJson,
+    selected_outcome_ids: record.selectedOutcomeIdsJson,
+    context_revision: record.contextRevision ?? null,
+    learner_context_revision: record.learnerContextRevision ?? null,
+    learner_context_acknowledged: record.learnerContextAcknowledged,
+    alignment_override: record.alignmentOverrideJson ?? null,
+    attempt_count: record.attemptCount,
+    max_attempts: record.maxAttempts,
+    options: record.optionsJson,
+    grounding_mode: record.groundingMode ?? null,
+    material_snapshot_id: record.materialSnapshotId ?? null,
+    review_required: record.reviewRequired,
+    shell_confirmed_at: record.shellConfirmedAt ?? null,
+    ...(includeContent ? { activity: record.contentJson ?? null } : {}),
+    content_provenance: record.contentProvenance ?? (record.contentJson ? "AI_GENERATED" : null),
+    activity_revision: record.activityRevision,
+    source_generation_revision: record.sourceGenerationRevision ?? null,
+    generation_instruction: record.generationInstruction ?? null,
+    quality_review: record.qualityReviewJson ?? null,
+    generation_metadata: record.generationMetadataJson ?? null,
+    error: record.error ?? null,
+    updated_at: record.updatedAt,
+  };
+}

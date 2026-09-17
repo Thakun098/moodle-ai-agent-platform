@@ -1,0 +1,253 @@
+{
+  "metadata": {
+    "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+    "filename": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+    "byte_size": 66628,
+    "media_type": "application/pdf"
+  },
+  "raw_text": "CS231 C# OOP - Mock Syllabus หน้า 1\r\nเค้าโครงรายวิชา (Mock Syllabus)\r\nCS231 การเขียนโปรแกรมเชิงวัตถุด้วยภาษา C#\r\nObject-Oriented Programming with C#\r\nเอกสารจำลองสำหรับทดสอบระบบ AI Course Builder - แผนการเรียน 10 สัปดาห์\r\nรหัสวิชา CS231\r\nชื่อรายวิชา (ไทย) การเขียนโปรแกรมเชิงวัตถุด้วยภาษา C#\r\nชื่อรายวิชา (อังกฤษ) Object-Oriented Programming with C#\r\nหน่วยกิต 3(2-2-5)\r\nระดับการศึกษา ปริญญาตรี ชั้นปีที่ 2 (ข้อมูลจำลอง)\r\nภาคการศึกษา ภาคเรียนที่ 1 ปีการศึกษา 2569\r\nระยะเวลา 10 สัปดาห์ รวม 40 ชั่วโมง (บรรยาย 20 ชั่วโมง / ปฏิบัติ 20 ชั่วโมง)\r\nรายวิชาที่ควรเรียนมาก่อน การเขียนโปรแกรมคอมพิวเตอร์เบื้องต้น หรือเทียบเท่า\r\nผู้สอน อาจารย์ตัวอย่าง ภาควิชาวิทยาการคอมพิวเตอร์\r\n1. คำอธิบายรายวิชา\r\nศึกษาแนวคิดและหลักการของการเขียนโปรแกรมเชิงวัตถุด้วยภาษา C# ตั้งแต่โครงสร้างโปรแกรม ชนิดข้อมูล ตัวแปร ตัวดำเนินการ\r\nโครงสร้างควบคุม เมธอด คลาสและวัตถุ การห่อหุ้มข้อมูล (Encapsulation) การสืบทอด (Inheritance) พหุรูปแบบ (Polymorphism)\r\nคลาสนามธรรม (Abstract Class) อินเทอร์เฟซ (Interface) การจัดการข้อยกเว้น (Exception Handling) คอลเลกชัน (Collections)\r\nรวมถึงการอ่านและเขียนไฟล์ โดยเน้นการวิเคราะห์ปัญหา การออกแบบโปรแกรมที่มีโครงสร้าง การเขียนโค้ดที่อ่านง่าย การทดสอบ\r\nและการบำรุงรักษาซอฟต์แวร์เบื้องต้น\r\n2. วัตถุประสงค์รายวิชา\r\n2.1 เข้าใจแนวคิดพื้นฐานของ Object-Oriented Programming และการประยุกต์ใช้ด้วยภาษา C#\r\n2.2 ออกแบบ Class, Object, Property, Method และ Constructor ให้เหมาะกับปัญหาที่กำหนด\r\n2.3 ประยุกต์ใช้ Encapsulation, Inheritance และ Polymorphism เพื่อจัดโครงสร้างโปรแกรม\r\n2.4 ใช้ Exception Handling, Collections และ File I/O ในโปรแกรมระดับพื้นฐานถึงกลาง\r\n2.5 พัฒนาทักษะการอ่านโค้ด การแก้ข้อผิดพลาด และการสร้างโปรแกรมขนาดเล็กแบบบูรณาการ\r\n3. ผลลัพธ์การเรียนรู้ของรายวิชา (Course Learning Outcomes: CLOs)\r\nCLO ผลลัพธ์การเรียนรู้ที่คาดหวัง\r\nCLO1 อธิบายหลักการพื้นฐานของ C# และแนวคิดการเขียนโปรแกรมเชิงวัตถุได้อย่างถูกต้อง\r\nCLO2 ออกแบบและสร้าง Class/Object ที่ใช้ Property, Method และ Constructor ได้เหมาะสม\r\nCLO3 ประยุกต์ใช้ Encapsulation, Inheritance, Polymorphism, Abstract Class และ Interface ในการแก้ปัญหาได้\r\nCLO4 ใช้ Exception Handling, Collections และ File I/O เพื่อจัดการข้อมูลและข้อผิดพลาดของโปรแกรมได้\r\nCLO5 พัฒนาและอธิบายโปรแกรม C# ขนาดเล็กที่บูรณาการแนวคิด OOP ได้อย่างมีโครงสร้าง\r\n4. แผนการจัดการเรียนรู้รายสัปดาห์\r\nรายวิชานี้แบ่งเป็น 10 ช่วงเรียน โดยแต่ละสัปดาห์ประกอบด้วยการบรรยายแนวคิดหลัก และการฝึกปฏิบัติด้วยภาษา C# เพื่อเชื่อมโยงแนวคิด\r\nOOP จากพื้นฐานไปสู่การประยุกต์ใช้\n\nCS231 C# OOP - Mock Syllabus หน้า 2\r\nช่วงเรียน หัวข้อ สาระสำคัญ กิจกรรมการเรียนรู้ CLO\r\nสัปดาห์ที่ 1 บทนำสู่ C# และ OOP ภาพรวม .NET และภาษา C#; โครงสร้างโปรแกรม;\r\nMain method; namespace;\r\nการคอมไพล์และรันโปรแกรม; แนวคิด Class, Object,\r\nState และ Behavior; เปรียบเทียบ Procedural\r\nProgramming กับ Object-Oriented Programming\r\nทดลองสร้าง Console Application\r\nและสำรวจโครงสร้างโปรแกรม C#\r\nเบื้องต้น\r\nCLO1\r\nสัปดาห์ที่ 2 ชนิดข้อมูล ตัวแปร\r\nและตัวดำเนินการ\r\nBuilt-in data types; value type และ reference type;\r\nการประกาศตัวแปร; var; constant; type conversion;\r\narithmetic, comparison และ logical operators;\r\nstring interpolation; Console input/output\r\nเขียนโปรแกรมรับข้อมูล คำนวณ และ\r\nแสดงผลโดยเลือกชนิดข้อมูลให้เหมา\r\nะสม\r\nCLO1\r\nสัปดาห์ที่ 3 โครงสร้างควบคุมและเมธ\r\nอด\r\nif/else, switch expression, for, while, do-while และ\r\nforeach; การแบ่งโปรแกรมเป็น Method; parameter,\r\nreturn value, optional parameter และ method\r\noverloading เบื้องต้น\r\nแยกปัญหาเป็นเมธอดย่อยและฝึกใช้โ\r\nครงสร้างควบคุมเพื่อจัดการเงื่อนไขแ\r\nละข้อมูลหลายรายการ\r\nCLO1,\r\nCLO2\r\nสัปดาห์ที่ 4 Class, Object และ\r\nConstructor\r\nการออกแบบ Class; Field, Property และ Method;\r\nการสร้าง Object ด้วย new; Constructor; this\r\nkeyword; object initialization; ความแตกต่างระหว่าง\r\ninstance member และ static member\r\nออกแบบคลาสจากสถานการณ์จำลอง\r\nเช่น Student, Product หรือ\r\nBankAccount\r\nแล้วสร้างวัตถุเพื่อทดสอบพฤติกรรม\r\nCLO2\r\nสัปดาห์ที่ 5 Encapsulation\r\nและการออกแบบข้อมูล\r\naccess modifiers: public, private, protected,\r\ninternal; การซ่อนข้อมูล; Property getter/setter;\r\nvalidation ใน property หรือ method; หลัก Single\r\nResponsibility เบื้องต้น\r\nปรับปรุงคลาสให้ปกป้อง state ภายใ\r\nนและควบคุมการเปลี่ยนแปลงข้อมูลผ่\r\nาน public interface ที่ชัดเจน\r\nCLO2,\r\nCLO3\r\nสัปดาห์ที่ 6 Inheritance และ\r\nMethod Overriding\r\nbase class และ derived class; การใช้ : เพื่อสืบทอด;\r\nprotected member; base keyword; virtual/override;\r\nการออกแบบความสัมพันธ์แบบ is-a\r\nและข้อควรระวังในการใช้ inheritance\r\nสร้างลำดับชั้นของคลาส เช่น\r\nPerson-Student-Teacher หรือ\r\nShape-Circle-Rectangle\r\nและทดสอบ overriding\r\nCLO3\r\nสัปดาห์ที่ 7 Polymorphism,\r\nAbstract Class และ\r\nInterface\r\npolymorphic reference; dynamic dispatch; abstract\r\nclass และ abstract method; interface; การ\r\nimplement หลาย interface; การเลือกใช้ inheritance\r\nกับ interface ให้เหมาะกับการออกแบบพฤติกรรม\r\nออกแบบระบบที่เรียกใช้วัตถุต่างชนิด\r\nผ่าน base type หรือ interface\r\nเดียวกัน\r\nCLO3\r\nสัปดาห์ที่ 8 Exception Handling\r\nและ Collections\r\ntry/catch/finally; exception object; throw;\r\nการแยกกรณีข้อผิดพลาด; List, Dictionary; การเพิ่ม ลบ\r\nค้นหา และวนซ้ำข้อมูล; แนวคิด generic collection\r\nพัฒนาโปรแกรมที่จัดการข้อมูลหลาย\r\nรายการและรองรับข้อผิดพลาดจากข้อ\r\nมูลนำเข้าหรือการทำงาน\r\nCLO4\r\nสัปดาห์ที่ 9 File I/O\r\nและการบูรณาการ OOP\r\nการอ่านและเขียน text file; File, StreamReader และ\r\nStreamWriter; using statement;\r\nการแปลงข้อมูลระหว่าง object กับข้อความในรูปแบบง่าย;\r\nการแบ่งความรับผิดชอบระหว่าง model และ service\r\nclass\r\nบันทึกและโหลดข้อมูลของวัตถุจากไฟ\r\nล์ พร้อมจัดโครงสร้างโค้ดให้แยกหน้า\r\nที่ชัดเจน\r\nCLO4,\r\nCLO5\r\nสัปดาห์ที่ 10 Mini Project, Review\r\nและ Code Presentation\r\nบูรณาการ Class Design, Encapsulation,\r\nInheritance/Interface, Collections, Exception\r\nHandling และ File I/O; ทบทวนแนวคิดสำคัญ; naming\r\nconvention; refactoring เบื้องต้น;\r\nสรุปข้อดีและข้อจำกัดของ OOP\r\nนำเสนอโปรแกรมขนาดเล็ก\r\nอธิบายโครงสร้างคลาส\r\nเหตุผลในการออกแบบ\r\nและสะท้อนสิ่งที่เรียนรู้\r\nCLO1-\r\nCLO5\r\n5. วิธีการจัดการเรียนรู้\r\n5.1 การบรรยายสั้นร่วมกับการสาธิตโค้ด (mini lecture + live coding)\r\n5.2 การฝึกปฏิบัติในห้องปฏิบัติการ โดยให้ผู้เรียนทดลองแก้ปัญหาจากสถานการณ์จำลอง\r\n5.3 การวิเคราะห์ตัวอย่างโค้ดที่ถูกต้องและตัวอย่างที่มีข้อผิดพลาด เพื่อฝึก debugging และ code reading\r\n5.4 การอภิปรายแนวทางออกแบบ Class และความสัมพันธ์ระหว่าง Object\r\n5.5 การพัฒนา Mini Project ในช่วงท้ายรายวิชาเพื่อบูรณาการความรู้หลายหัวข้อ\n\nCS231 C# OOP - Mock Syllabus หน้า 3\r\n6. การวัดและประเมินผล\r\nองค์ประกอบการประเมิน สัดส่วน CLO ที่เกี่ยวข้อง\r\nแบบฝึกปฏิบัติและการมีส่วนร่วมระหว่างเรียน 20% CLO1-CLO4\r\nงานมอบหมายเชิงโปรแกรม 25% CLO2-CLO4\r\nการประเมินความเข้าใจระหว่างรายวิชา 20% CLO1-CLO3\r\nMini Project และการนำเสนอ 25% CLO2-CLO5\r\nการสะท้อนผลการเรียนรู้และคุณภาพโค้ด 10% CLO1-CLO5\r\nรวม 100%\r\n7. เครื่องมือและซอฟต์แวร์ที่ใช้\r\n• .NET SDK รุ่นปัจจุบันที่รองรับ C#\r\n• Visual Studio Code หรือ Visual Studio Community\r\n• Git สำหรับแนะนำแนวคิดการจัดเก็บเวอร์ชันของโค้ดในระดับพื้นฐาน\r\n• ระบบ Moodle สำหรับเผยแพร่เอกสาร ประกาศ และส่งงาน (ในกรณีใช้งานจริง)\r\n8. เอกสารและแหล่งเรียนรู้ประกอบ\r\n8.1 Microsoft Learn: C# documentation และ .NET documentation\r\n8.2 หนังสือหรือเอกสารประกอบการเรียนด้าน C# และ Object-Oriented Programming ที่ผู้สอนกำหนด\r\n8.3 ตัวอย่างโค้ดและเอกสารสรุปสำหรับการฝึกปฏิบัติในแต่ละสัปดาห์\r\n9. หมายเหตุสำหรับการทดสอบระบบ\r\nเอกสารฉบับนี้เป็นข้อมูลจำลอง (Mock Data) ไม่ใช่เค้าโครงรายวิชาของสถาบันการศึกษาจริง จัดทำเพื่อทดสอบการอ่าน PDF การแยกช่วงเรียน การสร้าง\r\nCourse Structure และขั้นตอนเลือกสร้าง Activity ของระบบ AI Course Builder โดยจำกัด Course Period ไว้ที่ 10 ช่วงเรียนตาม ADR-0002\r\nตารางรายสัปดาห์ตั้งค่าให้หัวตารางทำซ้ำเมื่อเกิดการข้ามหน้า เพื่อใช้ทดสอบ PDF table extraction ได้ด้วย",
+  "course_code": "CS231",
+  "schema_version": "0.1",
+  "course_description": "ศึกษาแนวคิดและหลักการของการเขียนโปรแกรมเชิงวัตถุด้วยภาษา C# ตั้งแต่โครงสร้างโปรแกรม ชนิดข้อมูล ตัวแปร ตัวดำเนินการ\nโครงสร้างควบคุม เมธอด คลาสและวัตถุ การห่อหุ้มข้อมูล (Encapsulation) การสืบทอด (Inheritance) พหุรูปแบบ (Polymorphism)\nคลาสนามธรรม (Abstract Class) อินเทอร์เฟซ (Interface) การจัดการข้อยกเว้น (Exception Handling) คอลเลกชัน (Collections)\nรวมถึงการอ่านและเขียนไฟล์ โดยเน้นการวิเคราะห์ปัญหา การออกแบบโปรแกรมที่มีโครงสร้าง การเขียนโค้ดที่อ่านง่าย การทดสอบ\nและการบำรุงรักษาซอฟต์แวร์เบื้องต้น\n2. วัตถุประสงค์รายวิชา\n2.1 เข้าใจแนวคิดพื้นฐานของ Object-Oriented Programming และการประยุกต์ใช้ด้วยภาษา C#\n2.2 ออกแบบ Class, Object, Property, Method และ Constructor ให้เหมาะกับปัญหาที่กำหนด\n2.3 ประยุกต์ใช้ Encapsulation, Inheritance และ Polymorphism เพื่อจัดโครงสร้างโปรแกรม\n2.4 ใช้ Exception Handling, Collections และ File I/O ในโปรแกรมระดับพื้นฐานถึงกลาง\n2.5 พัฒนาทักษะการอ่านโค้ด การแก้ข้อผิดพลาด และการสร้างโปรแกรมขนาดเล็กแบบบูรณาการ",
+  "schedule_or_topics": [
+    {
+      "title": "บทนำสู่ C# และ OOP ภาพรวม .NET และภาษา C#; โครงสร้างโปรแกรม;",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "Main method; namespace;",
+        "การคอมไพล์และรันโปรแกรม; แนวคิด Class, Object,",
+        "State และ Behavior; เปรียบเทียบ Procedural",
+        "Programming กับ Object-Oriented Programming",
+        "ทดลองสร้าง Console Application",
+        "และสำรวจโครงสร้างโปรแกรม C#",
+        "เบื้องต้น",
+        "CLO1"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 1"
+    },
+    {
+      "title": "ชนิดข้อมูล ตัวแปร",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "และตัวดำเนินการ",
+        "Built-in data types; value type และ reference type;",
+        "การประกาศตัวแปร; var; constant; type conversion;",
+        "arithmetic, comparison และ logical operators;",
+        "string interpolation; Console input/output",
+        "เขียนโปรแกรมรับข้อมูล คำนวณ และ",
+        "แสดงผลโดยเลือกชนิดข้อมูลให้เหมา",
+        "ะสม",
+        "CLO1"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 2"
+    },
+    {
+      "title": "โครงสร้างควบคุมและเมธ",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "อด",
+        "if/else, switch expression, for, while, do-while และ",
+        "foreach; การแบ่งโปรแกรมเป็น Method; parameter,",
+        "return value, optional parameter และ method",
+        "overloading เบื้องต้น",
+        "แยกปัญหาเป็นเมธอดย่อยและฝึกใช้โ",
+        "ครงสร้างควบคุมเพื่อจัดการเงื่อนไขแ",
+        "ละข้อมูลหลายรายการ",
+        "CLO1,",
+        "CLO2"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 3"
+    },
+    {
+      "title": "Class, Object และ",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "Constructor",
+        "การออกแบบ Class; Field, Property และ Method;",
+        "การสร้าง Object ด้วย new; Constructor; this",
+        "keyword; object initialization; ความแตกต่างระหว่าง",
+        "instance member และ static member",
+        "ออกแบบคลาสจากสถานการณ์จำลอง",
+        "เช่น Student, Product หรือ",
+        "BankAccount",
+        "แล้วสร้างวัตถุเพื่อทดสอบพฤติกรรม",
+        "CLO2"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 4"
+    },
+    {
+      "title": "Encapsulation",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "และการออกแบบข้อมูล",
+        "access modifiers: public, private, protected,",
+        "internal; การซ่อนข้อมูล; Property getter/setter;",
+        "validation ใน property หรือ method; หลัก Single",
+        "Responsibility เบื้องต้น",
+        "ปรับปรุงคลาสให้ปกป้อง state ภายใ",
+        "นและควบคุมการเปลี่ยนแปลงข้อมูลผ่",
+        "าน public interface ที่ชัดเจน",
+        "CLO2,",
+        "CLO3"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 5"
+    },
+    {
+      "title": "Inheritance และ",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "Method Overriding",
+        "base class และ derived class; การใช้ : เพื่อสืบทอด;",
+        "protected member; base keyword; virtual/override;",
+        "การออกแบบความสัมพันธ์แบบ is-a",
+        "และข้อควรระวังในการใช้ inheritance",
+        "สร้างลำดับชั้นของคลาส เช่น",
+        "Person-Student-Teacher หรือ",
+        "Shape-Circle-Rectangle",
+        "และทดสอบ overriding",
+        "CLO3"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 6"
+    },
+    {
+      "title": "Polymorphism,",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "Abstract Class และ",
+        "Interface",
+        "polymorphic reference; dynamic dispatch; abstract",
+        "class และ abstract method; interface; การ",
+        "implement หลาย interface; การเลือกใช้ inheritance",
+        "กับ interface ให้เหมาะกับการออกแบบพฤติกรรม",
+        "ออกแบบระบบที่เรียกใช้วัตถุต่างชนิด",
+        "ผ่าน base type หรือ interface",
+        "เดียวกัน",
+        "CLO3"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 7"
+    },
+    {
+      "title": "Exception Handling",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "และ Collections",
+        "try/catch/finally; exception object; throw;",
+        "การแยกกรณีข้อผิดพลาด; List, Dictionary; การเพิ่ม ลบ",
+        "ค้นหา และวนซ้ำข้อมูล; แนวคิด generic collection",
+        "พัฒนาโปรแกรมที่จัดการข้อมูลหลาย",
+        "รายการและรองรับข้อผิดพลาดจากข้อ",
+        "มูลนำเข้าหรือการทำงาน",
+        "CLO4"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 8"
+    },
+    {
+      "title": "File I/O",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "และการบูรณาการ OOP",
+        "การอ่านและเขียน text file; File, StreamReader และ",
+        "StreamWriter; using statement;",
+        "การแปลงข้อมูลระหว่าง object กับข้อความในรูปแบบง่าย;",
+        "การแบ่งความรับผิดชอบระหว่าง model และ service",
+        "class",
+        "บันทึกและโหลดข้อมูลของวัตถุจากไฟ",
+        "ล์ พร้อมจัดโครงสร้างโค้ดให้แยกหน้า",
+        "ที่ชัดเจน",
+        "CLO4,",
+        "CLO5"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 9"
+    },
+    {
+      "title": "Mini Project, Review",
+      "source": {
+        "kind": "page",
+        "page": 2
+      },
+      "topics": [
+        "และ Code Presentation",
+        "บูรณาการ Class Design, Encapsulation,",
+        "Inheritance/Interface, Collections, Exception",
+        "Handling และ File I/O; ทบทวนแนวคิดสำคัญ; naming",
+        "convention; refactoring เบื้องต้น;",
+        "สรุปข้อดีและข้อจำกัดของ OOP",
+        "นำเสนอโปรแกรมขนาดเล็ก",
+        "อธิบายโครงสร้างคลาส",
+        "เหตุผลในการออกแบบ",
+        "และสะท้อนสิ่งที่เรียนรู้",
+        "CLO1-",
+        "CLO5",
+        "วิธีการจัดการเรียนรู้",
+        "การบรรยายสั้นร่วมกับการสาธิตโค้ด (mini lecture + live coding)",
+        "การฝึกปฏิบัติในห้องปฏิบัติการ โดยให้ผู้เรียนทดลองแก้ปัญหาจากสถานการณ์จำลอง",
+        "การวิเคราะห์ตัวอย่างโค้ดที่ถูกต้องและตัวอย่างที่มีข้อผิดพลาด เพื่อฝึก debugging และ code reading",
+        "การอภิปรายแนวทางออกแบบ Class และความสัมพันธ์ระหว่าง Object",
+        "การพัฒนา Mini Project ในช่วงท้ายรายวิชาเพื่อบูรณาการความรู้หลายหัวข้อ",
+        "CS231 C# OOP - Mock Syllabus หน้า 3",
+        "การวัดและประเมินผล",
+        "องค์ประกอบการประเมิน สัดส่วน CLO ที่เกี่ยวข้อง",
+        "แบบฝึกปฏิบัติและการมีส่วนร่วมระหว่างเรียน 20% CLO1-CLO4",
+        "งานมอบหมายเชิงโปรแกรม 25% CLO2-CLO4",
+        "การประเมินความเข้าใจระหว่างรายวิชา 20% CLO1-CLO3",
+        "Mini Project และการนำเสนอ 25% CLO2-CLO5",
+        "การสะท้อนผลการเรียนรู้และคุณภาพโค้ด 10% CLO1-CLO5",
+        "รวม 100%",
+        "เครื่องมือและซอฟต์แวร์ที่ใช้",
+        ".NET SDK รุ่นปัจจุบันที่รองรับ C#",
+        "Visual Studio Code หรือ Visual Studio Community",
+        "Git สำหรับแนะนำแนวคิดการจัดเก็บเวอร์ชันของโค้ดในระดับพื้นฐาน",
+        "ระบบ Moodle สำหรับเผยแพร่เอกสาร ประกาศ และส่งงาน (ในกรณีใช้งานจริง)",
+        "เอกสารและแหล่งเรียนรู้ประกอบ",
+        "Microsoft Learn: C# documentation และ .NET documentation",
+        "หนังสือหรือเอกสารประกอบการเรียนด้าน C# และ Object-Oriented Programming ที่ผู้สอนกำหนด",
+        "ตัวอย่างโค้ดและเอกสารสรุปสำหรับการฝึกปฏิบัติในแต่ละสัปดาห์",
+        "หมายเหตุสำหรับการทดสอบระบบ",
+        "เอกสารฉบับนี้เป็นข้อมูลจำลอง (Mock Data) ไม่ใช่เค้าโครงรายวิชาของสถาบันการศึกษาจริง จัดทำเพื่อทดสอบการอ่าน PDF การแยกช่วงเรียน การสร้าง",
+        "Course Structure และขั้นตอนเลือกสร้าง Activity ของระบบ AI Course Builder โดยจำกัด Course Period ไว้ที่ 10 ช่วงเรียนตาม ADR-0002",
+        "ตารางรายสัปดาห์ตั้งค่าให้หัวตารางทำซ้ำเมื่อเกิดการข้ามหน้า เพื่อใช้ทดสอบ PDF table extraction ได้ด้วย"
+      ],
+      "week_or_unit": "สัปดาห์ที่ 10"
+    }
+  ],
+  "learning_objectives": [
+    "CLO ผลลัพธ์การเรียนรู้ที่คาดหวัง",
+    "CLO1 อธิบายหลักการพื้นฐานของ C# และแนวคิดการเขียนโปรแกรมเชิงวัตถุได้อย่างถูกต้อง",
+    "CLO2 ออกแบบและสร้าง Class/Object ที่ใช้ Property, Method และ Constructor ได้เหมาะสม",
+    "CLO3 ประยุกต์ใช้ Encapsulation, Inheritance, Polymorphism, Abstract Class และ Interface ในการแก้ปัญหาได้",
+    "CLO4 ใช้ Exception Handling, Collections และ File I/O เพื่อจัดการข้อมูลและข้อผิดพลาดของโปรแกรมได้",
+    "CLO5 พัฒนาและอธิบายโปรแกรม C# ขนาดเล็กที่บูรณาการแนวคิด OOP ได้อย่างมีโครงสร้าง",
+    "แผนการจัดการเรียนรู้รายสัปดาห์",
+    "รายวิชานี้แบ่งเป็น 10 ช่วงเรียน โดยแต่ละสัปดาห์ประกอบด้วยการบรรยายแนวคิดหลัก และการฝึกปฏิบัติด้วยภาษา C# เพื่อเชื่อมโยงแนวคิด",
+    "OOP จากพื้นฐานไปสู่การประยุกต์ใช้",
+    "CS231 C# OOP - Mock Syllabus หน้า 2",
+    "ช่วงเรียน หัวข้อ สาระสำคัญ กิจกรรมการเรียนรู้ CLO"
+  ]
+}

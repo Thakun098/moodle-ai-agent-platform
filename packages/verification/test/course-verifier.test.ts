@@ -110,3 +110,44 @@ describe("Phase 14 course verifier", () => {
     expect(result.passed).toBe(true);
   });
 });
+
+
+describe("Ticket 24 native Competency verification", () => {
+  const snapshot = {
+    runId: "run-v", planId: "plan-v", revision: 1, mappingReviewRevision: 4, capturedAt: "2026-09-16T00:00:00.000Z",
+    competencies: [{ candidateId: "competency-1", competencyRevision: 2, name: "Design classes", description: "Design", outcomeIds: ["o1"], idnumber: "AGENTPOC-C1" }],
+    mappings: [{ activityIntentId: "intent-1", activityRef: "assignment-01", competencyId: "competency-1", intentRevision: 1, activityRevision: 1, competencyRevision: 2, evidence: "CONFIRMED" as const }],
+  };
+
+  function competencyRepos() {
+    const r = repos();
+    const ids: Record<string, number> = { course: 10, "section-01": 20, "assignment-01": 30, "quiz-01": 40, "question-01": 50, "competency:competency-1": 90 };
+    r.mappingRepo.findMoodleIdByLocalRef = vi.fn(async (_runId: string, _planId: string, _revision: number, ref: string) => ids[ref] ?? null);
+    return r;
+  }
+
+  function competencyManager(ruleOutcome: number, includeCompetency = true) {
+    const base = manager();
+    const original = base.callTool;
+    base.callTool = vi.fn(async (name: string, args: any) => {
+      if (name === "moodle_get_course_competencies") return { status: "success", data: {
+        course_id: 10,
+        course_competencies: includeCompetency ? [{ course_link_id: 901, competency_id: 90, framework_id: 7, idnumber: "AGENTPOC-C1", shortname: "Design classes" }] : [],
+        activity_links: includeCompetency ? [{ link_id: 902, activity_id: 30, competency_id: 90, rule_outcome: ruleOutcome }] : [],
+      } };
+      return original(name, args);
+    });
+    return base;
+  }
+
+  it("passes only when native Course Competency identity and evidence rule exactly match the approved snapshot", async () => {
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(1), repositories: competencyRepos(), competencySnapshot: snapshot, competencyFrameworkId: 7 });
+    expect(result.passed).toBe(true);
+  });
+
+  it("fails when Moodle readback silently changes evidence behavior", async () => {
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(0), repositories: competencyRepos(), competencySnapshot: snapshot, competencyFrameworkId: 7 });
+    expect(result.passed).toBe(false);
+    if (!result.passed) expect(result.issues.some((entry) => entry.path === "/competencies/activity-links")).toBe(true);
+  });
+});

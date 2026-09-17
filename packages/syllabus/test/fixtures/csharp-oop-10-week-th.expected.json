@@ -1,0 +1,669 @@
+{
+  "schema_version": "0.1",
+  "policy_version": "instructional-design.v0.1",
+  "revision": 1,
+  "run_id": "expected-run",
+  "source_syllabus": {
+    "normalized_syllabus_version": "0.1",
+    "filename": "CSharp_OOP_10_Week_Mock_Syllabus_TH_FINAL.pdf",
+    "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+    "text_sha256": "e71a777d9299bf9052c969a3dfa4a723f96b68b0bfc329e5c623612fab789111"
+  },
+  "course": {
+    "title": [
+      {
+        "text": "การเขียนโปรแกรมเชิงวัตถุด้วยภาษา C#",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 7,
+            "end_line": 7,
+            "text": "ชื่อรายวิชา (ไทย) การเขียนโปรแกรมเชิงวัตถุด้วยภาษา C#"
+          }
+        ]
+      },
+      {
+        "text": "Object-Oriented Programming with C#",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 8,
+            "end_line": 8,
+            "text": "ชื่อรายวิชา (อังกฤษ) Object-Oriented Programming with C#"
+          }
+        ]
+      }
+    ],
+    "code": [
+      {
+        "text": "CS231",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 6,
+            "end_line": 6,
+            "text": "รหัสวิชา CS231"
+          }
+        ]
+      }
+    ],
+    "description": [
+      {
+        "text": "ศึกษาแนวคิดและหลักการของการเขียนโปรแกรมเชิงวัตถุด้วยภาษา C# ตั้งแต่โครงสร้างโปรแกรม ชนิดข้อมูล ตัวแปร ตัวดำเนินการ",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 16,
+            "end_line": 16,
+            "text": "ศึกษาแนวคิดและหลักการของการเขียนโปรแกรมเชิงวัตถุด้วยภาษา C# ตั้งแต่โครงสร้างโปรแกรม ชนิดข้อมูล ตัวแปร ตัวดำเนินการ"
+          }
+        ]
+      },
+      {
+        "text": "โครงสร้างควบคุม เมธอด คลาสและวัตถุ การห่อหุ้มข้อมูล (Encapsulation) การสืบทอด (Inheritance) พหุรูปแบบ (Polymorphism)",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 17,
+            "end_line": 17,
+            "text": "โครงสร้างควบคุม เมธอด คลาสและวัตถุ การห่อหุ้มข้อมูล (Encapsulation) การสืบทอด (Inheritance) พหุรูปแบบ (Polymorphism)"
+          }
+        ]
+      },
+      {
+        "text": "คลาสนามธรรม (Abstract Class) อินเทอร์เฟซ (Interface) การจัดการข้อยกเว้น (Exception Handling) คอลเลกชัน (Collections)",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 18,
+            "end_line": 18,
+            "text": "คลาสนามธรรม (Abstract Class) อินเทอร์เฟซ (Interface) การจัดการข้อยกเว้น (Exception Handling) คอลเลกชัน (Collections)"
+          }
+        ]
+      },
+      {
+        "text": "รวมถึงการอ่านและเขียนไฟล์ โดยเน้นการวิเคราะห์ปัญหา การออกแบบโปรแกรมที่มีโครงสร้าง การเขียนโค้ดที่อ่านง่าย การทดสอบ",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 19,
+            "end_line": 19,
+            "text": "รวมถึงการอ่านและเขียนไฟล์ โดยเน้นการวิเคราะห์ปัญหา การออกแบบโปรแกรมที่มีโครงสร้าง การเขียนโค้ดที่อ่านง่าย การทดสอบ"
+          }
+        ]
+      },
+      {
+        "text": "และการบำรุงรักษาซอฟต์แวร์เบื้องต้น",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 20,
+            "end_line": 20,
+            "text": "และการบำรุงรักษาซอฟต์แวร์เบื้องต้น"
+          }
+        ]
+      }
+    ],
+    "duration": [
+      {
+        "text": "10 สัปดาห์",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 12,
+            "end_line": 12,
+            "text": "ระยะเวลา 10 สัปดาห์ รวม 40 ชั่วโมง (บรรยาย 20 ชั่วโมง / ปฏิบัติ 20 ชั่วโมง)"
+          }
+        ]
+      }
+    ],
+    "learning_hours": [
+      {
+        "text": "รวม 40 ชั่วโมง (บรรยาย 20 ชั่วโมง / ปฏิบัติ 20 ชั่วโมง)",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 12,
+            "end_line": 12,
+            "text": "ระยะเวลา 10 สัปดาห์ รวม 40 ชั่วโมง (บรรยาย 20 ชั่วโมง / ปฏิบัติ 20 ชั่วโมง)"
+          }
+        ]
+      }
+    ]
+  },
+  "learner_context": {
+    "revision": 1,
+    "status": "PROVIDED_BY_SYLLABUS",
+    "target_learners": [],
+    "education_level": [
+      {
+        "text": "ปริญญาตรี",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 10,
+            "end_line": 10,
+            "text": "ระดับการศึกษา ปริญญาตรี ชั้นปีที่ 2 (ข้อมูลจำลอง)"
+          }
+        ]
+      }
+    ],
+    "year_level": [
+      {
+        "text": "ชั้นปีที่ 2",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 10,
+            "end_line": 10,
+            "text": "ระดับการศึกษา ปริญญาตรี ชั้นปีที่ 2 (ข้อมูลจำลอง)"
+          }
+        ]
+      }
+    ],
+    "prerequisites": [
+      {
+        "text": "การเขียนโปรแกรมคอมพิวเตอร์เบื้องต้น หรือเทียบเท่า",
+        "origin": "PROVIDED_BY_SYLLABUS",
+        "source_refs": [
+          {
+            "source": "syllabus",
+            "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+            "start_line": 13,
+            "end_line": 13,
+            "text": "รายวิชาที่ควรเรียนมาก่อน การเขียนโปรแกรมคอมพิวเตอร์เบื้องต้น หรือเทียบเท่า"
+          }
+        ]
+      }
+    ],
+    "prior_knowledge": [],
+    "teacher_acknowledged_unspecified": false
+  },
+  "learning_objectives": [
+    {
+      "objective_id": "objective-8eb1f4ee985c7d0b1f33",
+      "source_text": "2.1 เข้าใจแนวคิดพื้นฐานของ Object-Oriented Programming และการประยุกต์ใช้ด้วยภาษา C#",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 22,
+          "end_line": 22,
+          "text": "2.1 เข้าใจแนวคิดพื้นฐานของ Object-Oriented Programming และการประยุกต์ใช้ด้วยภาษา C#"
+        }
+      ],
+      "status": "SOURCE"
+    },
+    {
+      "objective_id": "objective-b9dccfcd4fba815b49f1",
+      "source_text": "2.2 ออกแบบ Class, Object, Property, Method และ Constructor ให้เหมาะกับปัญหาที่กำหนด",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 23,
+          "end_line": 23,
+          "text": "2.2 ออกแบบ Class, Object, Property, Method และ Constructor ให้เหมาะกับปัญหาที่กำหนด"
+        }
+      ],
+      "status": "SOURCE"
+    },
+    {
+      "objective_id": "objective-77797f4b90bd4f51f63f",
+      "source_text": "2.3 ประยุกต์ใช้ Encapsulation, Inheritance และ Polymorphism เพื่อจัดโครงสร้างโปรแกรม",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 24,
+          "end_line": 24,
+          "text": "2.3 ประยุกต์ใช้ Encapsulation, Inheritance และ Polymorphism เพื่อจัดโครงสร้างโปรแกรม"
+        }
+      ],
+      "status": "SOURCE"
+    },
+    {
+      "objective_id": "objective-7f6b7b6a5760b62df088",
+      "source_text": "2.4 ใช้ Exception Handling, Collections และ File I/O ในโปรแกรมระดับพื้นฐานถึงกลาง",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 25,
+          "end_line": 25,
+          "text": "2.4 ใช้ Exception Handling, Collections และ File I/O ในโปรแกรมระดับพื้นฐานถึงกลาง"
+        }
+      ],
+      "status": "SOURCE"
+    },
+    {
+      "objective_id": "objective-b4b92f7510fbfaa30667",
+      "source_text": "2.5 พัฒนาทักษะการอ่านโค้ด การแก้ข้อผิดพลาด และการสร้างโปรแกรมขนาดเล็กแบบบูรณาการ",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 26,
+          "end_line": 26,
+          "text": "2.5 พัฒนาทักษะการอ่านโค้ด การแก้ข้อผิดพลาด และการสร้างโปรแกรมขนาดเล็กแบบบูรณาการ"
+        }
+      ],
+      "status": "SOURCE"
+    }
+  ],
+  "source_learning_outcomes": [
+    {
+      "source_outcome_id": "source-outcome-79783a84f0757392e5e7",
+      "source_text": "CLO1 อธิบายหลักการพื้นฐานของ C# และแนวคิดการเขียนโปรแกรมเชิงวัตถุได้อย่างถูกต้อง",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 29,
+          "end_line": 29,
+          "text": "CLO1 อธิบายหลักการพื้นฐานของ C# และแนวคิดการเขียนโปรแกรมเชิงวัตถุได้อย่างถูกต้อง"
+        }
+      ],
+      "measurable_status": "MEASURABLE",
+      "review_required": false
+    },
+    {
+      "source_outcome_id": "source-outcome-635a300acbecd35b3564",
+      "source_text": "CLO2 ออกแบบและสร้าง Class/Object ที่ใช้ Property, Method และ Constructor ได้เหมาะสม",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 30,
+          "end_line": 30,
+          "text": "CLO2 ออกแบบและสร้าง Class/Object ที่ใช้ Property, Method และ Constructor ได้เหมาะสม"
+        }
+      ],
+      "measurable_status": "MEASURABLE",
+      "review_required": false
+    },
+    {
+      "source_outcome_id": "source-outcome-6c5c102fb6b9671d554d",
+      "source_text": "CLO3 ประยุกต์ใช้ Encapsulation, Inheritance, Polymorphism, Abstract Class และ Interface ในการแก้ปัญหาได้",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 31,
+          "end_line": 31,
+          "text": "CLO3 ประยุกต์ใช้ Encapsulation, Inheritance, Polymorphism, Abstract Class และ Interface ในการแก้ปัญหาได้"
+        }
+      ],
+      "measurable_status": "MEASURABLE",
+      "review_required": false
+    },
+    {
+      "source_outcome_id": "source-outcome-dc3f398c8f962130d9a7",
+      "source_text": "CLO4 ใช้ Exception Handling, Collections และ File I/O เพื่อจัดการข้อมูลและข้อผิดพลาดของโปรแกรมได้",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 32,
+          "end_line": 32,
+          "text": "CLO4 ใช้ Exception Handling, Collections และ File I/O เพื่อจัดการข้อมูลและข้อผิดพลาดของโปรแกรมได้"
+        }
+      ],
+      "measurable_status": "MEASURABLE",
+      "review_required": false
+    },
+    {
+      "source_outcome_id": "source-outcome-43de3878eb61a02beead",
+      "source_text": "CLO5 พัฒนาและอธิบายโปรแกรม C# ขนาดเล็กที่บูรณาการแนวคิด OOP ได้อย่างมีโครงสร้าง",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 33,
+          "end_line": 33,
+          "text": "CLO5 พัฒนาและอธิบายโปรแกรม C# ขนาดเล็กที่บูรณาการแนวคิด OOP ได้อย่างมีโครงสร้าง"
+        }
+      ],
+      "measurable_status": "MEASURABLE",
+      "review_required": false
+    }
+  ],
+  "approved_learning_outcomes": [],
+  "schedule_or_topics": [
+    {
+      "week_or_unit": "สัปดาห์ที่ 1",
+      "title": "บทนำสู่ C# และ OOP ภาพรวม .NET และภาษา C#; โครงสร้างโปรแกรม;",
+      "topics": [
+        "Main method; namespace;",
+        "การคอมไพล์และรันโปรแกรม; แนวคิด Class, Object,",
+        "State และ Behavior; เปรียบเทียบ Procedural",
+        "Programming กับ Object-Oriented Programming",
+        "ทดลองสร้าง Console Application",
+        "และสำรวจโครงสร้างโปรแกรม C#",
+        "เบื้องต้น",
+        "CLO1"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 2",
+      "title": "ชนิดข้อมูล ตัวแปร",
+      "topics": [
+        "และตัวดำเนินการ",
+        "Built-in data types; value type และ reference type;",
+        "การประกาศตัวแปร; var; constant; type conversion;",
+        "arithmetic, comparison และ logical operators;",
+        "string interpolation; Console input/output",
+        "เขียนโปรแกรมรับข้อมูล คำนวณ และ",
+        "แสดงผลโดยเลือกชนิดข้อมูลให้เหมา",
+        "ะสม",
+        "CLO1"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 3",
+      "title": "โครงสร้างควบคุมและเมธ",
+      "topics": [
+        "อด",
+        "if/else, switch expression, for, while, do-while และ",
+        "foreach; การแบ่งโปรแกรมเป็น Method; parameter,",
+        "return value, optional parameter และ method",
+        "overloading เบื้องต้น",
+        "แยกปัญหาเป็นเมธอดย่อยและฝึกใช้โ",
+        "ครงสร้างควบคุมเพื่อจัดการเงื่อนไขแ",
+        "ละข้อมูลหลายรายการ",
+        "CLO1,",
+        "CLO2"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 4",
+      "title": "Class, Object และ",
+      "topics": [
+        "Constructor",
+        "การออกแบบ Class; Field, Property และ Method;",
+        "การสร้าง Object ด้วย new; Constructor; this",
+        "keyword; object initialization; ความแตกต่างระหว่าง",
+        "instance member และ static member",
+        "ออกแบบคลาสจากสถานการณ์จำลอง",
+        "เช่น Student, Product หรือ",
+        "BankAccount",
+        "แล้วสร้างวัตถุเพื่อทดสอบพฤติกรรม",
+        "CLO2"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 5",
+      "title": "Encapsulation",
+      "topics": [
+        "และการออกแบบข้อมูล",
+        "access modifiers: public, private, protected,",
+        "internal; การซ่อนข้อมูล; Property getter/setter;",
+        "validation ใน property หรือ method; หลัก Single",
+        "Responsibility เบื้องต้น",
+        "ปรับปรุงคลาสให้ปกป้อง state ภายใ",
+        "นและควบคุมการเปลี่ยนแปลงข้อมูลผ่",
+        "าน public interface ที่ชัดเจน",
+        "CLO2,",
+        "CLO3"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 6",
+      "title": "Inheritance และ",
+      "topics": [
+        "Method Overriding",
+        "base class และ derived class; การใช้ : เพื่อสืบทอด;",
+        "protected member; base keyword; virtual/override;",
+        "การออกแบบความสัมพันธ์แบบ is-a",
+        "และข้อควรระวังในการใช้ inheritance",
+        "สร้างลำดับชั้นของคลาส เช่น",
+        "Person-Student-Teacher หรือ",
+        "Shape-Circle-Rectangle",
+        "และทดสอบ overriding",
+        "CLO3"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 7",
+      "title": "Polymorphism,",
+      "topics": [
+        "Abstract Class และ",
+        "Interface",
+        "polymorphic reference; dynamic dispatch; abstract",
+        "class และ abstract method; interface; การ",
+        "implement หลาย interface; การเลือกใช้ inheritance",
+        "กับ interface ให้เหมาะกับการออกแบบพฤติกรรม",
+        "ออกแบบระบบที่เรียกใช้วัตถุต่างชนิด",
+        "ผ่าน base type หรือ interface",
+        "เดียวกัน",
+        "CLO3"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 8",
+      "title": "Exception Handling",
+      "topics": [
+        "และ Collections",
+        "try/catch/finally; exception object; throw;",
+        "การแยกกรณีข้อผิดพลาด; List, Dictionary; การเพิ่ม ลบ",
+        "ค้นหา และวนซ้ำข้อมูล; แนวคิด generic collection",
+        "พัฒนาโปรแกรมที่จัดการข้อมูลหลาย",
+        "รายการและรองรับข้อผิดพลาดจากข้อ",
+        "มูลนำเข้าหรือการทำงาน",
+        "CLO4"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 9",
+      "title": "File I/O",
+      "topics": [
+        "และการบูรณาการ OOP",
+        "การอ่านและเขียน text file; File, StreamReader และ",
+        "StreamWriter; using statement;",
+        "การแปลงข้อมูลระหว่าง object กับข้อความในรูปแบบง่าย;",
+        "การแบ่งความรับผิดชอบระหว่าง model และ service",
+        "class",
+        "บันทึกและโหลดข้อมูลของวัตถุจากไฟ",
+        "ล์ พร้อมจัดโครงสร้างโค้ดให้แยกหน้า",
+        "ที่ชัดเจน",
+        "CLO4,",
+        "CLO5"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    {
+      "week_or_unit": "สัปดาห์ที่ 10",
+      "title": "Mini Project, Review",
+      "topics": [
+        "และ Code Presentation",
+        "บูรณาการ Class Design, Encapsulation,",
+        "Inheritance/Interface, Collections, Exception",
+        "Handling และ File I/O; ทบทวนแนวคิดสำคัญ; naming",
+        "convention; refactoring เบื้องต้น;",
+        "สรุปข้อดีและข้อจำกัดของ OOP",
+        "นำเสนอโปรแกรมขนาดเล็ก",
+        "อธิบายโครงสร้างคลาส",
+        "เหตุผลในการออกแบบ",
+        "และสะท้อนสิ่งที่เรียนรู้",
+        "CLO1-",
+        "CLO5",
+        "วิธีการจัดการเรียนรู้",
+        "การบรรยายสั้นร่วมกับการสาธิตโค้ด (mini lecture + live coding)",
+        "การฝึกปฏิบัติในห้องปฏิบัติการ โดยให้ผู้เรียนทดลองแก้ปัญหาจากสถานการณ์จำลอง",
+        "การวิเคราะห์ตัวอย่างโค้ดที่ถูกต้องและตัวอย่างที่มีข้อผิดพลาด เพื่อฝึก debugging และ code reading",
+        "การอภิปรายแนวทางออกแบบ Class และความสัมพันธ์ระหว่าง Object",
+        "การพัฒนา Mini Project ในช่วงท้ายรายวิชาเพื่อบูรณาการความรู้หลายหัวข้อ",
+        "CS231 C# OOP - Mock Syllabus หน้า 3",
+        "การวัดและประเมินผล",
+        "องค์ประกอบการประเมิน สัดส่วน CLO ที่เกี่ยวข้อง",
+        "แบบฝึกปฏิบัติและการมีส่วนร่วมระหว่างเรียน 20% CLO1-CLO4",
+        "งานมอบหมายเชิงโปรแกรม 25% CLO2-CLO4",
+        "การประเมินความเข้าใจระหว่างรายวิชา 20% CLO1-CLO3",
+        "Mini Project และการนำเสนอ 25% CLO2-CLO5",
+        "การสะท้อนผลการเรียนรู้และคุณภาพโค้ด 10% CLO1-CLO5",
+        "รวม 100%",
+        "เครื่องมือและซอฟต์แวร์ที่ใช้",
+        ".NET SDK รุ่นปัจจุบันที่รองรับ C#",
+        "Visual Studio Code หรือ Visual Studio Community",
+        "Git สำหรับแนะนำแนวคิดการจัดเก็บเวอร์ชันของโค้ดในระดับพื้นฐาน",
+        "ระบบ Moodle สำหรับเผยแพร่เอกสาร ประกาศ และส่งงาน (ในกรณีใช้งานจริง)",
+        "เอกสารและแหล่งเรียนรู้ประกอบ",
+        "Microsoft Learn: C# documentation และ .NET documentation",
+        "หนังสือหรือเอกสารประกอบการเรียนด้าน C# และ Object-Oriented Programming ที่ผู้สอนกำหนด",
+        "ตัวอย่างโค้ดและเอกสารสรุปสำหรับการฝึกปฏิบัติในแต่ละสัปดาห์",
+        "หมายเหตุสำหรับการทดสอบระบบ",
+        "เอกสารฉบับนี้เป็นข้อมูลจำลอง (Mock Data) ไม่ใช่เค้าโครงรายวิชาของสถาบันการศึกษาจริง จัดทำเพื่อทดสอบการอ่าน PDF การแยกช่วงเรียน การสร้าง",
+        "Course Structure และขั้นตอนเลือกสร้าง Activity ของระบบ AI Course Builder โดยจำกัด Course Period ไว้ที่ 10 ช่วงเรียนตาม ADR-0002",
+        "ตารางรายสัปดาห์ตั้งค่าให้หัวตารางทำซ้ำเมื่อเกิดการข้ามหน้า เพื่อใช้ทดสอบ PDF table extraction ได้ด้วย"
+      ],
+      "source": {
+        "kind": "page",
+        "page": 2
+      }
+    }
+  ],
+  "assessment_requirements": [
+    {
+      "text": "แบบฝึกปฏิบัติและการมีส่วนร่วมระหว่างเรียน 20% CLO1-CLO4",
+      "origin": "PROVIDED_BY_SYLLABUS",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 158,
+          "end_line": 158,
+          "text": "แบบฝึกปฏิบัติและการมีส่วนร่วมระหว่างเรียน 20% CLO1-CLO4"
+        }
+      ]
+    },
+    {
+      "text": "งานมอบหมายเชิงโปรแกรม 25% CLO2-CLO4",
+      "origin": "PROVIDED_BY_SYLLABUS",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 159,
+          "end_line": 159,
+          "text": "งานมอบหมายเชิงโปรแกรม 25% CLO2-CLO4"
+        }
+      ]
+    },
+    {
+      "text": "การประเมินความเข้าใจระหว่างรายวิชา 20% CLO1-CLO3",
+      "origin": "PROVIDED_BY_SYLLABUS",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 160,
+          "end_line": 160,
+          "text": "การประเมินความเข้าใจระหว่างรายวิชา 20% CLO1-CLO3"
+        }
+      ]
+    },
+    {
+      "text": "Mini Project และการนำเสนอ 25% CLO2-CLO5",
+      "origin": "PROVIDED_BY_SYLLABUS",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 161,
+          "end_line": 161,
+          "text": "Mini Project และการนำเสนอ 25% CLO2-CLO5"
+        }
+      ]
+    },
+    {
+      "text": "การสะท้อนผลการเรียนรู้และคุณภาพโค้ด 10% CLO1-CLO5",
+      "origin": "PROVIDED_BY_SYLLABUS",
+      "source_refs": [
+        {
+          "source": "syllabus",
+          "sha256": "b3f633f9c004cf175a6d1149ba26ccee5d3ad2e3d28835ebf0435cdfbcb855e7",
+          "start_line": 162,
+          "end_line": 162,
+          "text": "การสะท้อนผลการเรียนรู้และคุณภาพโค้ด 10% CLO1-CLO5"
+        }
+      ]
+    }
+  ],
+  "grading_policy": [],
+  "constraints": [],
+  "missing_information": [
+    {
+      "code": "APPROVED_OUTCOMES_REQUIRED",
+      "field": "approved_learning_outcomes",
+      "message": "Teacher-approved Outcomes are required for Outcome-based Activity generation and Competency derivation.",
+      "severity": "BLOCKING",
+      "applies_to_stage": [
+        "ACTIVITY_GENERATION",
+        "DERIVE_COMPETENCIES"
+      ]
+    }
+  ],
+  "provenance": {
+    "extractor_version": "syllabus-semantics.v0.2",
+    "location_basis": "NORMALIZED_RAW_TEXT_LINES"
+  }
+}

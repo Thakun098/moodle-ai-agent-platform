@@ -24,6 +24,9 @@ export interface SectionStructureDraft {
   source_refs: SourceReference[];
   activityIntents: ActivityIntent[];
   grounding?: import("./grounding/section-grounding.js").SectionGrounding;
+  aligned_objective_ids?: string[];
+  aligned_outcome_ids?: string[];
+  alignment_status?: "CURRENT" | "STALE_ALIGNMENT";
 }
 
 export interface CourseStructureDraft {

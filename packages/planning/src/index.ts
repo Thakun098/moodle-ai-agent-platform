@@ -25,8 +25,13 @@ export * from "./structure/course-structure-revision.js";
 export * from "./generators/material-activity-generator.js";
 export * from "./orchestration/section-activity-orchestrator.js";
 export * from "./finalization/course-plan-finalizer.js";
-
 export * from "./instructions/structure-instruction.js";
 export * from "./instructions/activity-default-policy.js";
 export * from "./grounding/activity-grounding-resolver.js";
 export * from "./generators/empty-activity-shell.js";
+export * from "./structure/instructional-design-alignment.js";
+export * from "./competency/competency-candidate-planner.js";
+export * from "./competency/competency-mapping.js";
+export * from "./activity/activity-design.js";
+export * from "./activity/activity-intent.js";
+export * from "./activity/teacher-edit-validation.js";

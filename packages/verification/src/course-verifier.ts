@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  CompetencyExecutionSnapshot,
   ExecutionMappingRepository,
   McpClientManager,
   RunRepository,
@@ -26,6 +27,8 @@ export interface VerifyCourseConfig {
   repositories: CourseVerificationRepositories;
   courseFormat?: string | undefined;
   categoryId?: number | undefined;
+  competencySnapshot?: CompetencyExecutionSnapshot | undefined;
+  competencyFrameworkId?: number | undefined;
 }
 
 interface ExpectedActivity {
@@ -138,6 +141,19 @@ function issue(kind: VerificationIssue["kind"], path: string, message: string, e
   return { kind, path, message, ...(expected !== undefined ? { expected } : {}), ...(actual !== undefined ? { actual } : {}) };
 }
 
+async function finishVerificationAuthority(
+  runRepo: RunRepository,
+  input: { runId: string; planId: string; revision: number; passed: boolean; finalResult?: Record<string, unknown>; error?: string },
+): Promise<void> {
+  const extended = runRepo as RunRepository & { finishApprovedVerification?: (value: typeof input) => Promise<unknown> };
+  if (typeof extended.finishApprovedVerification === "function") {
+    await extended.finishApprovedVerification(input);
+    return;
+  }
+  if (input.passed) await runRepo.completeRun(input.runId, input.finalResult);
+  else await runRepo.failRun(input.runId, input.error ?? "Verification failed.");
+}
+
 export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<VerificationResult> {
   const { runId, planEnvelope: plan, mcpClientManager: manager, repositories } = config;
   await manager.discoverTools();
@@ -149,7 +165,7 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
     const message = err instanceof Error ? err.message : String(err);
     const result: VerificationResult = { plan_id: plan.plan_id, revision: plan.revision, passed: false, issues: [issue("missing", "/mappings", message)] };
     await repositories.verificationRepo.recordVerification({ id: randomUUID(), runId, planId: plan.plan_id, revision: plan.revision, passed: false, issues: result.issues });
-    await repositories.runRepo.failRun(runId, message);
+    await finishVerificationAuthority(repositories.runRepo, { runId, planId: plan.plan_id, revision: plan.revision, passed: false, error: message });
     return result;
   }
 
@@ -161,7 +177,7 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
     issues.push(issue("read_error", "/course", message));
     const result: VerificationResult = { plan_id: plan.plan_id, revision: plan.revision, passed: false, issues: issues as [VerificationIssue, ...VerificationIssue[]] };
     await repositories.verificationRepo.recordVerification({ id: randomUUID(), runId, planId: plan.plan_id, revision: plan.revision, passed: false, issues, expectedStructure: expected as unknown as Record<string, unknown> });
-    await repositories.runRepo.failRun(runId, message);
+    await finishVerificationAuthority(repositories.runRepo, { runId, planId: plan.plan_id, revision: plan.revision, passed: false, error: message });
     return result;
   }
 
@@ -220,6 +236,39 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
     }
   }
 
+  if (config.competencySnapshot && config.competencySnapshot.competencies.length > 0) {
+    if (!Number.isSafeInteger(config.competencyFrameworkId) || Number(config.competencyFrameworkId) <= 0) {
+      issues.push(issue("missing", "/competencies/framework", "Configured Competency Framework is required for native Competency verification"));
+    } else {
+      try {
+        const readback = await callRead(manager, "moodle_get_course_competencies", { course_id: expected.courseId }) as any;
+        const expectedCompetencies = [];
+        for (const competency of config.competencySnapshot.competencies) {
+          const nativeId = await repositories.mappingRepo.findMoodleIdByLocalRef(runId, plan.plan_id, plan.revision, `competency:${competency.candidateId}`);
+          if (!nativeId) { issues.push(issue("missing", `/competencies/${competency.candidateId}/mapping`, "Native Competency execution mapping is missing")); continue; }
+          expectedCompetencies.push({ competency_id: nativeId, framework_id: config.competencyFrameworkId, idnumber: competency.idnumber, shortname: competency.name });
+        }
+        const actualCompetencies = (Array.isArray(readback?.course_competencies) ? readback.course_competencies : []).filter((item: any) => Number(item.framework_id) === config.competencyFrameworkId).map((item: any) => ({ competency_id: Number(item.competency_id), framework_id: Number(item.framework_id), idnumber: String(item.idnumber), shortname: String(item.shortname) })).sort((a: any,b: any)=>a.competency_id-b.competency_id);
+        expectedCompetencies.sort((a,b)=>a.competency_id-b.competency_id);
+        if (JSON.stringify(actualCompetencies) !== JSON.stringify(expectedCompetencies)) issues.push(issue("mismatch", "/competencies/course", "Moodle Course Competencies do not exactly match the approved execution snapshot", expectedCompetencies, actualCompetencies));
+
+        const expectedLinks = [];
+        for (const mapping of config.competencySnapshot.mappings) {
+          const activityId = await repositories.mappingRepo.findMoodleIdByLocalRef(runId, plan.plan_id, plan.revision, mapping.activityRef);
+          const competencyId = await repositories.mappingRepo.findMoodleIdByLocalRef(runId, plan.plan_id, plan.revision, `competency:${mapping.competencyId}`);
+          if (!activityId || !competencyId) { issues.push(issue("missing", `/competencies/activity-links/${mapping.activityRef}`, "Native Activity or Competency identity is missing")); continue; }
+          expectedLinks.push({ activity_id: activityId, competency_id: competencyId, rule_outcome: mapping.evidence === "CONFIRMED" ? 1 : 0 });
+        }
+        const expectedCompetencyIds = new Set(expectedCompetencies.map((item) => item.competency_id));
+        const actualLinks = (Array.isArray(readback?.activity_links) ? readback.activity_links : []).filter((item: any) => expectedCompetencyIds.has(Number(item.competency_id))).map((item: any) => ({ activity_id: Number(item.activity_id), competency_id: Number(item.competency_id), rule_outcome: Number(item.rule_outcome) })).sort((a: any,b: any)=>a.activity_id-b.activity_id || a.competency_id-b.competency_id);
+        expectedLinks.sort((a,b)=>a.activity_id-b.activity_id || a.competency_id-b.competency_id);
+        if (JSON.stringify(actualLinks) !== JSON.stringify(expectedLinks)) issues.push(issue("mismatch", "/competencies/activity-links", "Moodle Activity Competency links/evidence behavior do not exactly match the approved execution snapshot", expectedLinks, actualLinks));
+      } catch (err) {
+        issues.push(issue("read_error", "/competencies", err instanceof Error ? err.message : String(err)));
+      }
+    }
+  }
+
   const passed = issues.length === 0;
   const result: VerificationResult = passed
     ? { plan_id: plan.plan_id, revision: plan.revision, passed: true, issues: [] }
@@ -230,7 +279,9 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
     expectedStructure: expected as unknown as Record<string, unknown>,
     observedMoodleStructure: actualCourse as Record<string, unknown>,
   });
-  if (passed) await repositories.runRepo.completeRun(runId, result as unknown as Record<string, unknown>);
-  else await repositories.runRepo.failRun(runId, `Verification failed with ${issues.length} issue(s)`);
+  await finishVerificationAuthority(repositories.runRepo, {
+    runId, planId: plan.plan_id, revision: plan.revision, passed,
+    ...(passed ? { finalResult: result as unknown as Record<string, unknown> } : { error: `Verification failed with ${issues.length} issue(s)` }),
+  });
   return result;
 }

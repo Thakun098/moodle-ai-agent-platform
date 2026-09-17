@@ -108,4 +108,19 @@ describe("Instructional Design persistence", () => {
     });
     expect(quizNoop).toMatchObject({ status: "stale", intentRevision: 2, generationInstruction: "Quiz revised" });
   });
+
+  it("persists self-review metadata and rejects a completion with stale expected revisions", async () => {
+    const selected = await intentRepo.select({
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", runId, structureRevision: 1, sectionRef: "section-01", activityRef: "assignment-01", activityType: "assignment", maxAttempts: 2,
+      optionsJson: { grade: 100 }, purpose: "FORMATIVE", selectedObjectiveIdsJson: ["objective-1"], selectedOutcomeIdsJson: ["outcome-1"], contextRevision: 3,
+      learnerContextRevision: 2, learnerContextAcknowledged: true, generationInstruction: "Explain the queue trace.",
+    });
+    const started = await intentRepo.beginAttempt(selected.id);
+    expect(started).toMatchObject({ status: "creating", intentRevision: 1 });
+    const result = { contentJson: { type: "assignment" }, groundingMode: "MATERIAL_GROUNDED", reviewRequired: false, qualityReviewJson: { outcome_alignment: "PASS", learner_level_fit: "WARN", scope_compliance: "PASS", purpose_fit: "PASS", warnings: ["LEARNER_CONTEXT_UNSPECIFIED"] }, generationMetadataJson: { operation: "ACTIVITY_GENERATION", activity_intent_revision: 1, material_snapshot_id: "snapshot-1" } };
+    expect(await intentRepo.complete(selected.id, result, { intentRevision: 2, contextRevision: 3, learnerContextRevision: 2 })).toBe(false);
+    expect(await intentRepo.get(selected.id)).toMatchObject({ status: "creating", contentJson: null });
+    expect(await intentRepo.complete(selected.id, result, { intentRevision: 1, contextRevision: 3, learnerContextRevision: 2 })).toBe(true);
+    expect(await intentRepo.get(selected.id)).toMatchObject({ status: "generated", qualityReviewJson: result.qualityReviewJson, generationMetadataJson: result.generationMetadataJson, generationInstruction: "Explain the queue trace." });
+  });
 });

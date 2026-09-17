@@ -16,7 +16,8 @@ export type PocExecutionTargetType =
   | "assignment"
   | "quiz"
   | "question"
-  | "resource";
+  | "resource"
+  | "competency";
 
 export const pocExecutionMapping = pgTable(
   "poc_execution_mapping",

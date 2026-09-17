@@ -1,6 +1,8 @@
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import type { AppDatabase } from "../db/connection.js";
 import { activityIntent, type ActivityIntentRecord } from "../db/schema/activity-intents.js";
+import { activityRevision } from "../db/schema/activity-revisions.js";
 
 type ActivityPurpose = "PRACTICE" | "FORMATIVE" | "SUMMATIVE";
 
@@ -47,10 +49,16 @@ function semanticChanged(existing: ActivityIntentRecord, input: SemanticFields):
 }
 
 function updateStatusForChange(existing: ActivityIntentRecord): { status: ActivityIntentRecord["status"]; error: string | null } {
-  const generated = existing.status === "generated" || existing.status === "shell" || existing.contentJson !== null;
+  const generated = existing.status === "generated" || existing.status === "shell" || existing.status === "creating" || existing.contentJson !== null;
   return generated
     ? { status: "stale", error: "Activity Intent changed. Regenerate this Activity before finalization." }
     : { status: "selected", error: null };
+}
+
+export interface ActivityCompletionExpectation {
+  intentRevision: number;
+  contextRevision?: number | null;
+  learnerContextRevision?: number | null;
 }
 
 export class ActivityIntentRepository {
@@ -111,6 +119,8 @@ export class ActivityIntentRepository {
         reviewRequired: false,
         shellConfirmedAt: null,
         contentJson: null,
+        qualityReviewJson: null,
+        generationMetadataJson: null,
         error: null,
         updatedAt: new Date().toISOString(),
       }).where(eq(activityIntent.id, existing.id)).returning();
@@ -168,12 +178,12 @@ export class ActivityIntentRepository {
     let changed = 0;
     for (const row of rows) {
       if ((row.contextRevision ?? null) === contextRevision) continue;
-      if (row.status !== "generated" && row.status !== "shell") continue;
+      if (row.status !== "generated" && row.status !== "shell" && row.status !== "creating") continue;
       const updated = await this.db.update(activityIntent).set({
         status: "stale",
         error: "Core Course Design Context changed. Regenerate this Activity before finalization.",
         updatedAt: new Date().toISOString(),
-      }).where(and(eq(activityIntent.id, row.id), inArray(activityIntent.status, ["generated", "shell"]))).returning();
+      }).where(and(eq(activityIntent.id, row.id), inArray(activityIntent.status, ["generated", "shell", "creating"]))).returning();
       changed += updated.length;
     }
     return changed;
@@ -203,7 +213,7 @@ export class ActivityIntentRepository {
   }
 
   async markStaleForSection(runId: string, structureRevision: number, sectionRef: string): Promise<number> {
-    const rows = await this.db.update(activityIntent).set({ status: "stale", error: "Activity grounding source changed. Regenerate this Activity before finalization.", updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.runId, runId), eq(activityIntent.structureRevision, structureRevision), eq(activityIntent.sectionRef, sectionRef), inArray(activityIntent.status, ["generated", "shell"]))).returning();
+    const rows = await this.db.update(activityIntent).set({ status: "stale", error: "Activity grounding source changed. Regenerate this Activity before finalization.", updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.runId, runId), eq(activityIntent.structureRevision, structureRevision), eq(activityIntent.sectionRef, sectionRef), inArray(activityIntent.status, ["generated", "shell", "creating"]))).returning();
     return rows.length;
   }
 
@@ -220,9 +230,88 @@ export class ActivityIntentRepository {
     await this.db.update(activityIntent).set({ status: "insufficient_evidence", groundingMode: "INSUFFICIENT_EVIDENCE", reviewRequired: false, error: null, updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.id, id), inArray(activityIntent.status, ["selected", "insufficient_evidence", "stale"])));
   }
 
-  async complete(id: string, result: { contentJson: Record<string, unknown>; groundingMode: string; reviewRequired: boolean; materialSnapshotId?: string; generationInstruction?: string }): Promise<boolean> {
-    const rows = await this.db.update(activityIntent).set({ ...result, status: "generated", materialSnapshotId: result.materialSnapshotId ?? null, generationInstruction: result.generationInstruction ?? null, error: null, updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.id, id), eq(activityIntent.status, "creating"))).returning();
+  async markStale(id: string, error: string): Promise<boolean> {
+    const rows = await this.db.update(activityIntent).set({ status: "stale", error, updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.id, id), eq(activityIntent.status, "creating"))).returning();
     return rows.length === 1;
+  }
+
+  async complete(id: string, result: { contentJson: Record<string, unknown>; groundingMode: string; reviewRequired: boolean; materialSnapshotId?: string; generationInstruction?: string | null; qualityReviewJson?: Record<string, unknown> | null; generationMetadataJson?: Record<string, unknown> | null }, expected?: ActivityCompletionExpectation): Promise<boolean> {
+    const conditions = [eq(activityIntent.id, id), eq(activityIntent.status, "creating")];
+    if (expected) {
+      conditions.push(eq(activityIntent.intentRevision, expected.intentRevision));
+      if (expected.contextRevision !== undefined) conditions.push(expected.contextRevision === null ? isNull(activityIntent.contextRevision) : eq(activityIntent.contextRevision, expected.contextRevision));
+      if (expected.learnerContextRevision !== undefined) conditions.push(expected.learnerContextRevision === null ? isNull(activityIntent.learnerContextRevision) : eq(activityIntent.learnerContextRevision, expected.learnerContextRevision));
+    }
+
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx.select().from(activityIntent).where(and(...conditions));
+      if (!current) return false;
+
+      const revisions = await tx.select().from(activityRevision)
+        .where(eq(activityRevision.activityIntentId, current.id))
+        .orderBy(activityRevision.revision);
+      let maxRevision = Math.max(current.activityRevision, 0, ...revisions.map((candidate) => candidate.revision));
+      const seedLegacyGeneration = Boolean(current.contentJson) && current.activityRevision === 0;
+      const legacyRevision = seedLegacyGeneration ? maxRevision + 1 : null;
+      if (legacyRevision !== null) maxRevision = legacyRevision;
+      const generatedRevision = maxRevision + 1;
+      const now = new Date().toISOString();
+
+      const rows = await tx.update(activityIntent).set({
+        contentJson: result.contentJson,
+        groundingMode: result.groundingMode,
+        reviewRequired: result.reviewRequired,
+        status: "generated",
+        materialSnapshotId: result.materialSnapshotId ?? null,
+        ...(result.generationInstruction !== undefined ? { generationInstruction: result.generationInstruction } : {}),
+        qualityReviewJson: result.qualityReviewJson ?? null,
+        generationMetadataJson: result.generationMetadataJson ?? null,
+        contentProvenance: "AI_GENERATED",
+        activityRevision: generatedRevision,
+        sourceGenerationRevision: generatedRevision,
+        error: null,
+        updatedAt: now,
+      }).where(and(
+        ...conditions,
+        eq(activityIntent.activityRevision, current.activityRevision),
+      )).returning();
+      if (rows.length !== 1) return false;
+
+      if (legacyRevision !== null && current.contentJson) {
+        await tx.insert(activityRevision).values({
+          id: randomUUID(),
+          activityIntentId: current.id,
+          revision: legacyRevision,
+          provenance: "AI_GENERATED",
+          sourceGenerationRevision: legacyRevision,
+          intentRevision: current.intentRevision,
+          contextRevision: current.contextRevision,
+          learnerContextRevision: current.learnerContextRevision,
+          groundingMode: current.groundingMode,
+          materialSnapshotId: current.materialSnapshotId,
+          contentJson: current.contentJson,
+          qualityReviewJson: current.qualityReviewJson,
+          generationMetadataJson: current.generationMetadataJson,
+        });
+      }
+
+      await tx.insert(activityRevision).values({
+        id: randomUUID(),
+        activityIntentId: current.id,
+        revision: generatedRevision,
+        provenance: "AI_GENERATED",
+        sourceGenerationRevision: generatedRevision,
+        intentRevision: current.intentRevision,
+        contextRevision: current.contextRevision,
+        learnerContextRevision: current.learnerContextRevision,
+        groundingMode: result.groundingMode,
+        materialSnapshotId: result.materialSnapshotId ?? null,
+        contentJson: result.contentJson,
+        qualityReviewJson: result.qualityReviewJson ?? null,
+        generationMetadataJson: result.generationMetadataJson ?? null,
+      });
+      return true;
+    });
   }
 
   async confirmShell(id: string, contentJson: Record<string, unknown>): Promise<boolean> {

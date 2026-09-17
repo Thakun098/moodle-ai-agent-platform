@@ -86,6 +86,24 @@ describe('Ticket 15 evidence-grounded AI Insight governance', () => {
     expect(model.calls).toHaveLength(1);
   });
 
+  it('preserves grounded model narrative instead of replacing it with a scripted template', async () => {
+    const payload = mediumPayload();
+    const context = buildStudentInsightContext(payload, 'snap-natural', STUDENT, new RiskTrendEngine().calculate([]))!;
+    const action = context.eligible_actions[0]!;
+    const rule = context.material_rules[0]!;
+    const evidence = context.material_evidence[0]!;
+    const modelSummary = 'ผลการประเมินล่าสุดชี้ว่านักเรียนมีความเสี่ยงที่ควรได้รับการติดตาม โดยหลักฐานด้านผลการเรียนและสมรรถนะสอดคล้องกันในสแนปช็อตนี้';
+    const modelFinding = 'ผลการประเมินที่ไม่ผ่านเชื่อมโยงกับหลักฐานที่รองรับกฎความเสี่ยงโดยตรง';
+    const model = new QueueModel([JSON.stringify({ summary: modelSummary, coverage_qualification: null, findings: [{ text: modelFinding, rule_refs: [rule.rule_id], evidence_refs: [evidence.evidence_id] }], actions: [{ action_code: 'INVENTED', priority_band: 'P1', target_ref: 'bad', rationale: 'ignore me' }] })]);
+    const result = await generateGovernedInsight(model, context);
+    expect(result.status).toBe('VALID');
+    expect(result.payload.summary).toBe(modelSummary);
+    expect(result.payload.findings[0]?.text).toBe(modelFinding);
+    expect(result.payload.actions.map((item) => item.action_code)).toEqual(context.eligible_actions.map((item) => item.action_code));
+    expect(result.payload.actions[0]?.priority_band).toBe(action.priority_band);
+    expect(model.calls[0]?.format).toBe('json');
+  });
+
   it('performs at most one repair for recoverable malformed JSON/schema', async () => {
     const payload = mediumPayload();
     const context = buildStudentInsightContext(payload, 'snap-1', STUDENT, new RiskTrendEngine().calculate([]))!;
@@ -96,18 +114,19 @@ describe('Ticket 15 evidence-grounded AI Insight governance', () => {
     expect(model.calls).toHaveLength(2);
   });
 
-  it('rejects invented action as a hard violation with no repair call', async () => {
+  it('ignores invented model actions and keeps deterministic eligible actions authoritative', async () => {
     const payload = mediumPayload();
     const context = buildStudentInsightContext(payload, 'snap-1', STUDENT, new RiskTrendEngine().calculate([]))!;
     const invented = JSON.stringify({ summary: 'bad', coverage_qualification: null, findings: [], actions: [{ action_code: 'SEND_STUDENT_MESSAGE', priority_band: 'P1', target_ref: `student:${STUDENT}`, rationale: 'bad' }] });
     const model = new QueueModel([invented, validOutput(context)]);
     const result = await generateGovernedInsight(model, context);
-    expect(result.status).toBe('FALLBACK');
-    expect(result.validation_errors.some((x) => x.startsWith('UNAUTHORIZED_ACTION'))).toBe(true);
+    expect(result.status).toBe('VALID');
+    expect(result.payload.actions.some((action) => action.action_code === 'SEND_STUDENT_MESSAGE')).toBe(false);
+    expect(result.payload.actions.map((action) => action.action_code)).toEqual(context.eligible_actions.map((action) => action.action_code));
     expect(model.calls).toHaveLength(1);
   });
 
-  it('rejects priority-band mutation as a hard violation', async () => {
+  it('ignores model priority-band mutation and preserves deterministic priority bands', async () => {
     const payload = mediumPayload();
     const context = buildStudentInsightContext(payload, 'snap-1', STUDENT, new RiskTrendEngine().calculate([]))!;
     const action = context.eligible_actions[0]!;
@@ -115,8 +134,9 @@ describe('Ticket 15 evidence-grounded AI Insight governance', () => {
     const output = JSON.stringify({ summary: 'bad', coverage_qualification: null, findings: [], actions: [{ action_code: action.action_code, priority_band: badBand, target_ref: action.target_ref, rationale: 'bad' }] });
     const model = new QueueModel([output]);
     const result = await generateGovernedInsight(model, context);
-    expect(result.status).toBe('FALLBACK');
-    expect(result.validation_errors.some((x) => x.startsWith('PRIORITY_BAND_MISMATCH'))).toBe(true);
+    expect(result.status).toBe('VALID');
+    const rendered = result.payload.actions.find((candidate) => candidate.action_code === action.action_code && candidate.target_ref === action.target_ref);
+    expect(rendered?.priority_band).toBe(action.priority_band);
     expect(model.calls).toHaveLength(1);
   });
 
@@ -179,13 +199,13 @@ describe('Ticket 15 evidence-grounded AI Insight governance', () => {
     const result = new StudentRiskEvaluator().evaluate(normalized);
     const aggregate = new CourseRiskAggregator().aggregate({ normalized_students: [normalized], student_results: [result], course_id: 77, data_as_of: evidence.observed_at });
     const payload: RiskSnapshotPayloadV01 = { schema_version: 'risk-snapshot.v0.1', course_id: 77, source_evidence: evidence, normalized_students: [normalized], student_results: [result], course_aggregate: aggregate };
-    const cached = { insightId: 'cached-1', courseId: 77, studentId: STUDENT, scope: 'STUDENT' as const, snapshotId: 'snap-cache', riskModelVersion: 'risk-profile.v0.1', status: 'FALLBACK' as const, payload: { summary: 'cached', coverage_qualification: null, findings: [], actions: [{ action_code: 'FOLLOW_UP_OVERDUE_ACTIVITY', priority_band: 'P1', target_ref: `student:${STUDENT}`, rationale: 'legacy' }, { action_code: 'REVIEW_COMPETENCY_EVIDENCE', priority_band: 'P2', target_ref: `student:${STUDENT}`, rationale: 'valid' }] }, staleReason: null, generatedAt: new Date().toISOString() };
+    const cached = { insightId: 'cached-1', courseId: 77, studentId: STUDENT, scope: 'STUDENT' as const, snapshotId: 'snap-cache', riskModelVersion: 'risk-profile.v0.1', status: 'FALLBACK' as const, payload: { governance_policy_version: 'risk-insight-governance.v0.5', summary: 'cached', coverage_qualification: null, findings: [], actions: [{ action_code: 'FOLLOW_UP_OVERDUE_ACTIVITY', priority_band: 'P1', target_ref: `student:${STUDENT}`, rationale: 'legacy' }, { action_code: 'REVIEW_COMPETENCY_EVIDENCE', priority_band: 'P2', target_ref: `student:${STUDENT}`, rationale: 'valid' }] }, staleReason: null, generatedAt: new Date().toISOString() };
     const cache = { async getForSnapshot() { return cached; }, async upsert(input: any) { return { ...input, staleReason: null }; } };
     const snapshots = { async getSnapshot() { return { snapshotId: 'snap-cache', courseId: 77, riskModelVersion: 'risk-profile.v0.1', payload }; }, async listStudentHistory() { return []; } };
     const service = new RiskInsightService(new QueueModel([]), snapshots, cache as any);
     const insight = await service.getStudentInsight(77, 'snap-cache', STUDENT);
     expect(insight.cached).toBe(true);
-    expect(insight.validation_errors).toContain('CACHED_GOVERNANCE_POLICY_OBSOLETE');
+    expect(insight.validation_errors).toContain('CACHED_ACTION_POLICY_FILTERED');
     expect(insight.payload.actions.some((action) => action.action_code === 'FOLLOW_UP_OVERDUE_ACTIVITY')).toBe(false);
     expect(insight.payload.actions.some((action) => action.action_code === 'REVIEW_COMPETENCY_EVIDENCE')).toBe(true);
   });
@@ -197,7 +217,7 @@ describe('Ticket 15 evidence-grounded AI Insight governance', () => {
     let upserted: any = null;
     const cached = {
       insightId: 'cached-force', courseId: 77, studentId: STUDENT, scope: 'STUDENT' as const, snapshotId: 'force-snap', riskModelVersion: 'risk-profile.v0.1', status: 'VALID' as const,
-      payload: { governance_policy_version: 'risk-insight-governance.v0.3', summary: 'cached summary', coverage_qualification: null, findings: [], actions: [] },
+      payload: { governance_policy_version: 'risk-insight-governance.v0.5', summary: 'cached summary', coverage_qualification: null, findings: [], actions: [] },
       staleReason: null, generatedAt: new Date().toISOString(),
     };
     const cache = {

@@ -125,3 +125,29 @@ describe("Per-Activity generation — ADR-0002", () => {
     await app.close();
   });
 });
+
+  it("persists generation instruction before a failed model attempt and keeps the intent revision trace", async () => {
+    const events: string[] = [];
+    const intents = makeIntentRepo();
+    intents.row.contextRevision = 3;
+    intents.row.learnerContextRevision = 1;
+    intents.row.intentRevision = 1;
+    intents.updateContextRevision = vi.fn().mockImplementation(async () => { events.push("context"); intents.row.contextRevision = 3; intents.row.intentRevision += 1; return intents.row; });
+    intents.updateGenerationInstruction = vi.fn().mockImplementation(async (_id: string, instruction: string) => { events.push("instruction"); intents.row.generationInstruction = instruction; intents.row.intentRevision += 1; return intents.row; });
+    const timeout = Object.assign(new Error("model timed out"), { code: "MODEL_TIMEOUT" });
+    const model = { ping: vi.fn(), listModels: vi.fn(), chat: vi.fn().mockImplementation(async () => { events.push("model"); throw timeout; }) };
+    const context = {
+      schema_version: "0.1", policy_version: "instructional-design.v0.1", revision: 3, run_id: "run-1",
+      source_syllabus: { normalized_syllabus_version: "0.1", filename: "syllabus.md", sha256: "a".repeat(64), text_sha256: "b".repeat(64) }, course: {},
+      learner_context: { revision: 1, status: "PROVIDED_BY_SYLLABUS", target_learners: [], education_level: [], year_level: [], prerequisites: [], prior_knowledge: [], teacher_acknowledged_unspecified: false },
+      learning_objectives: [], source_learning_outcomes: [], approved_learning_outcomes: [], schedule_or_topics: [], assessment_requirements: [], grading_policy: [], constraints: [], missing_information: [], provenance: { extractor_version: "syllabus-semantics.v0.2", location_basis: "NORMALIZED_RAW_TEXT_LINES" },
+    };
+    const runRepo = { getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning", normalizedSyllabus: syllabus("Recursion") }), getCoreCourseDesignContext: vi.fn().mockResolvedValue(context) };
+    const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: structureRepo() as any, activityIntentRepo: intents as any, snapshotRepo: noSnapshotRepo as any, modelClient: model as any, fastifyOptions: { logger: false } });
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/activities/assignment-01/generate", payload: { generation_instruction: "Explain recursion with one trace." } });
+    expect(response.statusCode).toBe(200);
+    expect(intents.updateGenerationInstruction).toHaveBeenCalledWith("intent-1", "Explain recursion with one trace.", 3);
+    expect(events.indexOf("instruction")).toBeLessThan(events.indexOf("model"));
+    expect(JSON.parse(response.body)).toMatchObject({ status: "timed_out", generation_instruction: "Explain recursion with one trace.", intent_revision: 2 });
+    await app.close();
+  });

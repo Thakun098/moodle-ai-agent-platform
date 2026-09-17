@@ -530,7 +530,7 @@ Add Skip/Create Activities decision, optional Material controls, per-Activity st
 Focused suites, monorepo typecheck/test/build, Moodle UI regression.
 
 ### T12 — Real Moodle E2E acceptance
-Run all five acceptance scenarios and update `status.md` + `soc.md` with evidence.
+Run all five acceptance scenarios and update `status.md` + the current daily SOC file with evidence.
 
 ## 19. Acceptance criteria
 

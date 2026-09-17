@@ -9,6 +9,11 @@ import type {
   MoodleCreatedCourse,
   MoodleCreatedQuestion,
   MoodleCreatedResource,
+  MoodleCompetencyFramework,
+  MoodleCreatedCompetency,
+  MoodleCourseCompetencyLink,
+  MoodleActivityCompetencyLink,
+  MoodleCourseCompetencyReadback,
   MoodleCreatedQuiz,
   MoodleCreatedSection,
   MoodleQuizDetails,
@@ -44,6 +49,11 @@ function expectString(val: unknown, fieldName: string): string {
     return String(val);
   }
   throw new MoodleResponseError(`Expected string for '${fieldName}', received: ${typeof val}`);
+}
+
+function expectBoolean(val: unknown, fieldName: string): boolean {
+  if (typeof val === 'boolean') return val;
+  return expectBooleanFlag(val, fieldName);
 }
 
 function expectBooleanFlag(val: unknown, fieldName: string): boolean {
@@ -359,4 +369,16 @@ export function parseCourseStructure(raw: unknown): MoodleCourseStructure {
   });
 
   return { course, sections };
+}
+
+export function parseCompetencyFrameworks(raw: unknown): MoodleCompetencyFramework[] {
+  if (!Array.isArray(raw)) throw new MoodleResponseError('Expected array of competency frameworks');
+  return raw.map((item, idx) => { if (!isObject(item)) throw new MoodleResponseError('Invalid competency framework'); return { frameworkId: expectNumber(item.framework_id, `frameworks[${idx}].framework_id`), shortname: expectString(item.shortname, 'shortname'), idnumber: expectString(item.idnumber, 'idnumber'), visible: expectBoolean(item.visible, 'visible'), canManage: expectBoolean(item.can_manage, 'can_manage') }; });
+}
+export function parseCreatedCompetency(raw: unknown): MoodleCreatedCompetency { if (!isObject(raw)) throw new MoodleResponseError('Expected created competency object'); return { competencyId: expectNumber(raw.competency_id,'competency_id'), frameworkId: expectNumber(raw.framework_id,'framework_id'), idnumber: expectString(raw.idnumber,'idnumber'), shortname: expectString(raw.shortname,'shortname'), created: expectBoolean(raw.created,'created') }; }
+export function parseCourseCompetencyLink(raw: unknown): MoodleCourseCompetencyLink { if (!isObject(raw)) throw new MoodleResponseError('Expected course competency link object'); return { courseId: expectNumber(raw.course_id,'course_id'), competencyId: expectNumber(raw.competency_id,'competency_id'), linked: expectBoolean(raw.linked,'linked') }; }
+export function parseActivityCompetencyLink(raw: unknown): MoodleActivityCompetencyLink { if (!isObject(raw)) throw new MoodleResponseError('Expected activity competency link object'); return { linkId: expectNumber(raw.link_id,'link_id'), activityId: expectNumber(raw.activity_id,'activity_id'), competencyId: expectNumber(raw.competency_id,'competency_id'), ruleOutcome: expectNumber(raw.rule_outcome,'rule_outcome') }; }
+export function parseCourseCompetencyReadback(raw: unknown): MoodleCourseCompetencyReadback {
+  if (!isObject(raw) || !Array.isArray(raw.course_competencies) || !Array.isArray(raw.activity_links)) throw new MoodleResponseError('Expected course competency readback object');
+  return { courseId: expectNumber(raw.course_id,'course_id'), courseCompetencies: raw.course_competencies.map((item,idx) => { if(!isObject(item)) throw new MoodleResponseError('Invalid course competency row'); return { courseLinkId: expectNumber(item.course_link_id,`course_competencies[${idx}].course_link_id`), competencyId: expectNumber(item.competency_id,'competency_id'), frameworkId: expectNumber(item.framework_id,'framework_id'), idnumber: expectString(item.idnumber,'idnumber'), shortname: expectString(item.shortname,'shortname') }; }), activityLinks: raw.activity_links.map((item,idx) => { if(!isObject(item)) throw new MoodleResponseError('Invalid activity competency row'); return { linkId: expectNumber(item.link_id,`activity_links[${idx}].link_id`), activityId: expectNumber(item.activity_id,'activity_id'), competencyId: expectNumber(item.competency_id,'competency_id'), ruleOutcome: expectNumber(item.rule_outcome,'rule_outcome') }; }) };
 }

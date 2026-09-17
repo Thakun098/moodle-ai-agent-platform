@@ -124,3 +124,8 @@ export type {
   RiskEvidenceDatasetState,
   RiskEvidenceDatasetStatus,
 } from "./risk/contracts.js";
+
+export type * from "./syllabus/core-course-design-context.js";
+export type * from "./instructional-design/competency-candidates.js";
+
+export { assertInitialCoreCourseDesignContext } from "./validation/core-course-design-context-validator.js";

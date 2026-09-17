@@ -99,6 +99,10 @@ describe("Approval Gate & Lifecycle Integration (Phase 16)", () => {
       config: testConfig,
       runRepo: mockRunRepo,
       planRepo: mockPlanRepo,
+      candidateRepo: { list: vi.fn(async () => []) } as any,
+      activityIntentRepo: {} as any,
+      competencyReviewRepo: { review: vi.fn(async () => ({ revision: 0, mappings: [] })) } as any,
+      competencySnapshotRepo: { save: vi.fn(async (snapshot: any) => snapshot) } as any,
     });
 
     const response = await app.inject({
@@ -383,6 +387,8 @@ describe("Approval Gate & Lifecycle Integration (Phase 16)", () => {
         } as PocRunRecord;
       }),
       setNormalizedSyllabus: vi.fn().mockResolvedValue({} as PocRunRecord),
+      initializeCoreCourseDesignContext: vi.fn().mockResolvedValue(undefined),
+      failRun: vi.fn().mockResolvedValue({} as PocRunRecord),
     } as unknown as RunRepository;
 
     const app = buildApp({

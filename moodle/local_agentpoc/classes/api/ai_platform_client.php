@@ -30,6 +30,12 @@ require_once($CFG->libdir . '/filelib.php');
 
 class ai_platform_client {
 
+    /** Read the persisted semantic revision without reconstructing browser authority. */
+    public function get_core_context(string $runid): array {
+        return $this->request('GET', '/api/runs/' . rawurlencode($runid) . '/core-context');
+    }
+
+
     /** @var string Base URL for AI platform API */
     protected string $baseurl;
 
@@ -236,18 +242,41 @@ class ai_platform_client {
     }
 
     /** Selects/deselects Quiz and Assignment explicitly for one sealed section. */
-    public function set_activity_intents(string $runid, string $sectionref, bool $quiz, bool $assignment, array $quizoptions = [], array $assignmentoptions = []): array {
-        return $this->request('PUT', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/activity-intents', [
+    public function set_activity_intents(string $runid, string $sectionref, bool $quiz, bool $assignment, array $quizoptions = [], array $assignmentoptions = [], array $semantic = []): array {
+        $payload = [
             'quiz' => $quiz,
             'assignment' => $assignment,
             'quiz_options' => $quizoptions,
             'assignment_options' => $assignmentoptions,
-        ]);
+        ];
+        foreach ($semantic as $key => $value) {
+            if ($value !== null && $value !== '') {
+                $payload[$key] = $value;
+            }
+        }
+        return $this->request('PUT', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/activity-intents', $payload);
     }
 
     /** Reads explicit Activity Intents for one section. */
     public function get_activity_intents(string $runid, string $sectionref): array {
         return $this->request('GET', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/activity-intents');
+    }
+
+    /** Reads immutable Activity content revision history. */
+    public function get_activity_revisions(string $runid, string $sectionref, string $activityref): array {
+        return $this->request('GET', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/activities/' . urlencode($activityref) . '/revisions');
+    }
+
+    /** Saves one deterministically revalidated Teacher Activity edit. */
+    public function save_activity_edit(string $runid, string $sectionref, string $activityref, array $activity, ?int $expectedrevision, int $moodleuserid): array {
+        $payload = [
+            'activity' => $activity,
+            'edited_by_moodle_user_id' => $moodleuserid,
+        ];
+        if ($expectedrevision !== null) {
+            $payload['expected_activity_revision'] = $expectedrevision;
+        }
+        return $this->request('PUT', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/activities/' . urlencode($activityref) . '/edit', $payload);
     }
 
     /** Generates one explicitly selected Activity. */
@@ -469,5 +498,58 @@ class ai_platform_client {
             'plan_id' => $planid,
             'revision' => $revision,
         ]);
+    }
+
+    /** Header for the protected Instructional Design approval/readback surface. */
+    protected function instructional_design_headers(): array {
+        $key = trim((string)get_config('local_agentpoc', 'instructionaldesignservicekey'));
+        if ($key === '') {
+            throw new \moodle_exception('erroraiplatform', 'local_agentpoc', '', 'Instructional Design service credential is not configured.');
+        }
+        return ['X-AgentPOC-Instructional-Design-Key: ' . $key];
+    }
+
+    /** Reads planning-only mapping/evidence decisions; never learner proficiency. */
+    public function get_competency_mappings(string $runid): array {
+        return $this->request('GET', '/api/runs/' . urlencode($runid) . '/competency-mappings', null, $this->instructional_design_headers());
+    }
+
+    /** Actor identity is provided by the authenticated Moodle BFF. */
+    public function decide_competency_mapping(string $runid, array $payload): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/competency-mappings/decision', $payload, $this->instructional_design_headers());
+    }
+
+    /** Fetches the persisted Core Context, structure alignment, and Outcome review state. */
+    public function get_instructional_design(string $runid): array {
+        return $this->request('GET', '/api/runs/' . urlencode($runid) . '/instructional-design', null, $this->instructional_design_headers());
+    }
+
+    /** Persists a Teacher approval/edit of one source Outcome. */
+    public function approve_learning_outcome(string $runid, array $payload): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/outcomes/approve', $payload, $this->instructional_design_headers());
+    }
+
+    /** Reads persisted Competency Candidate lifecycle state. */
+    public function get_competency_candidates(string $runid): array {
+        return $this->request('GET', '/api/runs/' . urlencode($runid) . '/competency-candidates', null, $this->instructional_design_headers());
+    }
+
+    /** Derives proposal-only Competency Candidates from approved Outcomes. */
+    public function derive_competency_candidates(string $runid): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/competency-candidates/derive', new \stdClass(), $this->instructional_design_headers());
+    }
+
+    /** Persists a Teacher decision/edit for one Competency Candidate. */
+    public function decide_competency_candidate(string $runid, string $candidateid, array $payload): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/competency-candidates/' . urlencode($candidateid) . '/decision', $payload, $this->instructional_design_headers());
+    }
+    /** Persists explicit external coverage for one approved Outcome. */
+    public function set_coverage_override(string $runid, array $payload): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/course-structure/coverage-overrides', $payload, $this->instructional_design_headers());
+    }
+
+    /** Rebases structure alignment forward to current approved Outcome lineage. */
+    public function rebase_structure_alignment(string $runid): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/course-structure/rebase-alignment', [], $this->instructional_design_headers());
     }
 }
