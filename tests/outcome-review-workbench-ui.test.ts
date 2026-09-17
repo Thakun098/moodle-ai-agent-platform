@@ -9,6 +9,11 @@ describe("UX/UI Ticket 01 Outcome Review Workbench", () => {
     expect(built).toBe(js);
 
     expect(template).toContain('id="outcome-review-workbench"');
+    expect(template).toContain('.local-agentpoc-course-builder-page #page.drawers .main-inner');
+    expect(template).toContain('max-width: 1600px');
+    expect(template).toContain('flex: 0 0 22%');
+    expect(template).toContain('flex: 0 0 53%');
+    expect(template).toContain('flex: 0 0 25%');
     expect(js).toContain("function renderOutcomeReviewWorkbench()");
     expect(js).toContain("callBff('get_outcome_reviews', {run_id: state.runId})");
     expect(js).toContain("callBff('save_outcome_review'");

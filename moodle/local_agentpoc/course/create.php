@@ -33,6 +33,7 @@ require_capability('local/agentpoc:createcoursewithai', \context_system::instanc
 $PAGE->set_url(new \moodle_url('/local/agentpoc/course/create.php'));
 $PAGE->set_context(\context_system::instance());
 $PAGE->set_pagelayout('standard');
+$PAGE->add_body_class('local-agentpoc-course-builder-page');
 $PAGE->set_title(get_string('createcoursewithai', 'local_agentpoc'));
 $PAGE->set_heading(get_string('createcoursewithai', 'local_agentpoc'));
 
