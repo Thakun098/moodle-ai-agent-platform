@@ -10,6 +10,7 @@ import type {
   IdempotencyRepository,
   McpClientManager,
   ModelClient,
+  OutcomeReviewRepository,
   PlanRepository,
   RunRepository,
   SectionActivityDraftRepository,
@@ -40,6 +41,7 @@ import { runsRoutes } from "./routes/runs.js";
 import { courseStructureRoutes } from "./routes/course-structure.js";
 import { instructionalDesignRoutes } from "./routes/instructional-design.js";
 import { competencyMappingRoutes } from "./routes/competency-mappings.js";
+import { outcomeReviewRoutes } from "./routes/outcome-reviews.js";
 import { materialSnapshotRoutes } from "./routes/material-snapshots.js";
 import { riskDashboardRoutes, type RiskDashboardRepository } from "./routes/risk-dashboard.js";
 import { riskInsightRoutes, type RiskInsightUseCase } from "./routes/risk-insights.js";
@@ -64,6 +66,7 @@ export interface BuildAppOptions {
   readonly activityIntentRepo?: ActivityIntentRepository | undefined;
   readonly activityRevisionRepo?: ActivityRevisionRepository | undefined;
   readonly candidateRepo?: CompetencyCandidateRepository | undefined;
+  readonly outcomeReviewRepo?: OutcomeReviewRepository | undefined;
   readonly competencyReviewRepo?: CompetencyMappingReviewRepository | undefined;
   readonly competencySnapshotRepo?: CompetencyExecutionSnapshotRepository | undefined;
   readonly mcpClientManager?: McpClientManager | undefined;
@@ -78,7 +81,7 @@ export interface BuildAppOptions {
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const {
     config, fastifyOptions, runRepo, planRepo, modelClient, coursePlanner, assignmentPlanner, quizPlanner,
-    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, draftRepo, activityIntentRepo, activityRevisionRepo, candidateRepo, competencyReviewRepo, competencySnapshotRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo, riskDashboardRepo, riskInsightService,
+    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, draftRepo, activityIntentRepo, activityRevisionRepo, candidateRepo, outcomeReviewRepo, competencyReviewRepo, competencySnapshotRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo, riskDashboardRepo, riskInsightService,
   } = options;
 
   const defaultLoggerOptions = {
@@ -101,7 +104,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(competencyMappingRoutes, { config, ...(competencyReviewRepo ? { reviewRepo: competencyReviewRepo } : {}) });
   app.register(runsRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(competencyReviewRepo ? { competencyReviewRepo } : {}), ...(competencySnapshotRepo ? { competencySnapshotRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(courseStructureRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(structurePlanner ? { structurePlanner } : {}) });
-  app.register(instructionalDesignRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(modelClient ? { modelClient } : {}) });
+  app.register(instructionalDesignRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(outcomeReviewRepo ? { reviewRepo: outcomeReviewRepo } : {}), enforceOutcomeReview: true, ...(modelClient ? { modelClient } : {}) });
+  app.register(outcomeReviewRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(outcomeReviewRepo ? { reviewRepo: outcomeReviewRepo } : {}) });
   app.register(materialSnapshotRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
   app.register(activityIntentRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
   app.register(activityGenerationRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(modelClient ? { modelClient } : {}) });

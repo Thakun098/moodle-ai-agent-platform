@@ -524,6 +524,16 @@ class ai_platform_client {
         return $this->request('GET', '/api/runs/' . urlencode($runid) . '/instructional-design', null, $this->instructional_design_headers());
     }
 
+    /** Fetches server-authoritative LO/CLO review workflow state. */
+    public function get_outcome_reviews(string $runid): array {
+        return $this->request('GET', '/api/runs/' . urlencode($runid) . '/outcome-reviews', null, $this->instructional_design_headers());
+    }
+
+    /** Saves one explicit LO/CLO review decision without changing semantic Core Context authority. */
+    public function save_outcome_review(string $runid, array $payload): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/outcome-reviews', $payload, $this->instructional_design_headers());
+    }
+
     /** Persists a Teacher approval/edit of one source Outcome. */
     public function approve_learning_outcome(string $runid, array $payload): array {
         return $this->request('POST', '/api/runs/' . urlencode($runid) . '/outcomes/approve', $payload, $this->instructional_design_headers());

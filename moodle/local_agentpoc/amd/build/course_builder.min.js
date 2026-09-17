@@ -47,7 +47,9 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         outcomeCoverage: [],
         competencyCandidates: [],
         coreContextRevision: null,
-        coreContext: null
+        coreContext: null,
+        outcomeReviews: [],
+        selectedOutcomeReviewKey: null
     };
 
     function showCoreContext(context) {
@@ -363,6 +365,219 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
     }
 
 
+    function outcomeReviewKey(item) {
+        return item.item_type + ':' + item.item_id;
+    }
+
+    function outcomeReviewStatusPresentation(status) {
+        if (status === 'REVIEWED') return {label: 'Reviewed', badge: 'badge-info'};
+        if (status === 'NEEDS_REVISION') return {label: 'Needs revision', badge: 'badge-danger'};
+        if (status === 'APPROVED') return {label: 'CLO Approved', badge: 'badge-success'};
+        return {label: 'Pending review', badge: 'badge-secondary'};
+    }
+
+    function outcomeReviewWhereUsed(item) {
+        var sections = state.currentStructure && state.currentStructure.content && Array.isArray(state.currentStructure.content.sections)
+            ? state.currentStructure.content.sections
+            : [];
+        return sections.filter(function(section) {
+            var ids = item.item_type === 'LO' ? (section.aligned_objective_ids || []) : (section.aligned_outcome_ids || []);
+            return ids.indexOf(item.item_id) !== -1 || (item.approved_outcome_id && ids.indexOf(item.approved_outcome_id) !== -1);
+        }).map(function(section) { return section.title || section.ref; });
+    }
+
+    function focusOutcomeReviewSelection() {
+        var $target = $('#outcome-review-text:not(:disabled)');
+        if (!$target.length) $target = $('#outcome-review-next:not(:disabled)');
+        if (!$target.length) $target = $('.outcome-review-focus');
+        $target.first().trigger('focus');
+    }
+
+    function renderOutcomeReviewWorkbench() {
+        var $root = $('#outcome-review-workbench');
+        if (!$root.length) return;
+        var items = state.outcomeReviews || [];
+        if (!state.stagedMode || !items.length) {
+            $root.addClass('d-none').empty();
+            return;
+        }
+        $('#core-course-design-context').addClass('d-none');
+        $root.removeClass('d-none').empty();
+
+        var selected = items.find(function(item) { return outcomeReviewKey(item) === state.selectedOutcomeReviewKey; });
+        if (!selected) {
+            selected = items[0];
+            state.selectedOutcomeReviewKey = selected ? outcomeReviewKey(selected) : null;
+        }
+        if (!selected) return;
+
+        var completeCount = items.filter(function(item) { return item.status === 'REVIEWED' || item.status === 'APPROVED'; }).length;
+        var $header = $('<div class="outcome-workbench-header px-3 py-3 border-bottom bg-light"></div>');
+        $header.append($('<div class="d-flex flex-wrap justify-content-between align-items-center"></div>')
+            .append($('<div></div>')
+                .append($('<div class="font-weight-bold h6 mb-1"></div>').text('Outcome Review Workbench'))
+                .append($('<div class="small text-muted"></div>').text('Select → Inspect → Decide → Save → Next')))
+            .append($('<span class="badge badge-light border"></span>').text(completeCount + ' / ' + items.length + ' reviewed or approved')));
+        $root.append($header);
+
+        var $row = $('<div class="row no-gutters"></div>');
+        var $nav = $('<nav class="col-lg-3 outcome-review-nav border-right p-2" aria-label="Outcome navigator"></nav>');
+        var $workspace = $('<section class="col-lg-6 outcome-review-focus p-3" aria-live="polite" aria-labelledby="outcome-review-selected-title" tabindex="-1"></section>');
+        var $inspector = $('<aside class="col-lg-3 outcome-review-inspector border-left p-3"></aside>');
+
+        function appendNavGroup(title, type) {
+            $nav.append($('<div class="small text-uppercase text-muted font-weight-bold px-2 pt-2 pb-1"></div>').text(title));
+            items.filter(function(item) { return item.item_type === type; }).forEach(function(item) {
+                var presentation = outcomeReviewStatusPresentation(item.status);
+                var active = outcomeReviewKey(item) === state.selectedOutcomeReviewKey;
+                var label = semanticDisplayLabel(type, item.authoritative_text || item.source_text, item.item_id);
+                var $button = $('<button type="button" class="btn btn-block text-left outcome-review-nav-item mb-1"></button>')
+                    .addClass(active ? 'btn-primary' : 'btn-light')
+                    .attr('aria-current', active ? 'true' : null);
+                $button.append($('<div class="small font-weight-bold text-truncate"></div>').text(label));
+                $button.append($('<span class="badge mt-1"></span>').addClass(active ? 'badge-light' : presentation.badge).text(presentation.label));
+                $button.on('click', function() {
+                    state.selectedOutcomeReviewKey = outcomeReviewKey(item);
+                    renderOutcomeReviewWorkbench();
+                    focusOutcomeReviewSelection();
+                });
+                $nav.append($button);
+            });
+        }
+        appendNavGroup('Learning Objectives', 'LO');
+        appendNavGroup('Course Learning Outcomes', 'CLO');
+
+        var presentation = outcomeReviewStatusPresentation(selected.status);
+        var title = semanticDisplayLabel(selected.item_type, selected.authoritative_text || selected.source_text, selected.item_id);
+        $workspace.append($('<div class="d-flex justify-content-between align-items-start mb-3"></div>')
+            .append($('<div></div>').append($('<div class="small text-muted"></div>').text(selected.item_type === 'LO' ? 'Learning Objective' : 'Course Learning Outcome')).append($('<h5 class="mb-0" id="outcome-review-selected-title"></h5>').text(title)))
+            .append($('<span class="badge"></span>').addClass(presentation.badge).text(presentation.label)));
+
+        var editable = selected.status !== 'APPROVED';
+        var workingText = selected.draft_text !== null && selected.draft_text !== undefined ? selected.draft_text : (selected.authoritative_text || selected.source_text || '');
+        var $text = $('<textarea class="form-control mb-3" rows="5" id="outcome-review-text"></textarea>').val(workingText).prop('disabled', !editable);
+        $workspace.append($('<label class="small font-weight-bold mb-1" for="outcome-review-text"></label>').text(editable ? 'Review wording' : 'Approved wording'));
+        $workspace.append($text);
+        if (editable) {
+            $workspace.append($('<div class="small text-muted mb-3"></div>').text('Changes above remain a review draft until Save review succeeds. Source provenance remains unchanged.'));
+        }
+
+        var $actions = $('<div class="d-flex flex-wrap align-items-center outcome-review-actions"></div>');
+        if (editable) {
+            var $status = $('<select class="custom-select custom-select-sm mb-3" id="outcome-review-status"></select>');
+            $status.append($('<option value="PENDING_REVIEW">Pending review</option>'));
+            $status.append($('<option value="REVIEWED">Reviewed</option>'));
+            $status.append($('<option value="NEEDS_REVISION">Needs revision</option>'));
+            $status.val(selected.status === 'APPROVED' ? 'REVIEWED' : selected.status);
+            $workspace.append($('<label class="small font-weight-bold mb-1" for="outcome-review-status"></label>').text('Review decision'));
+            $workspace.append($status);
+
+            var $save = $('<button type="button" class="btn btn-primary mr-2 mb-2" id="outcome-review-save"></button>').text('Save review');
+            $save.on('click', function() {
+                $save.prop('disabled', true).text('Saving...');
+                callBff('save_outcome_review', {
+                    run_id: state.runId,
+                    item_type: selected.item_type,
+                    item_id: selected.item_id,
+                    status: $status.val(),
+                    draft_text: $text.val()
+                }).then(function() {
+                    return loadOutcomeReviews();
+                }).catch(function(err) {
+                    $save.prop('disabled', false).text('Save review');
+                    showError('Failed to save Outcome review: ' + err.message, err.details);
+                });
+            });
+            $actions.append($save);
+
+            if (selected.item_type === 'CLO' && selected.status === 'REVIEWED') {
+                var $approve = $('<button type="button" class="btn btn-success mr-2 mb-2" id="outcome-review-approve"></button>').text('Approve CLO');
+                $approve.on('click', function() {
+                    $approve.prop('disabled', true).text('Approving...');
+                    var text = String(selected.draft_text || selected.authoritative_text || selected.source_text || '').trim();
+                    var proposal = (state.outcomeProposals || []).find(function(item) { return item.source_outcome_id === selected.item_id; });
+                    var payload = {run_id: state.runId, source_outcome_id: selected.item_id};
+                    if (!selected.draft_text || text === String(selected.source_text || '').trim()) {
+                        payload.use_source_as_is = true;
+                    } else {
+                        payload.teacher_text = text;
+                        payload.recommended_text = proposal ? proposal.recommended_text : selected.source_text;
+                    }
+                    callBff('approve_learning_outcome', payload).then(function(result) {
+                        applyOutcomeApproval(result, selected.item_id);
+                        return loadOutcomeReviews();
+                    }).catch(function(err) {
+                        $approve.prop('disabled', false).text('Approve CLO');
+                        showError('Failed to approve CLO: ' + err.message, err.details);
+                    });
+                });
+                $actions.append($approve);
+            }
+        } else {
+            $workspace.append($('<div class="alert alert-success py-2 mb-3"></div>').text('This CLO is approved. Editing approved authority is handled by the safe approved-outcome flow.'));
+        }
+
+        var currentIndex = items.findIndex(function(item) { return outcomeReviewKey(item) === state.selectedOutcomeReviewKey; });
+        var $next = $('<button type="button" class="btn btn-outline-secondary mb-2 ml-auto" id="outcome-review-next"></button>').text('Next');
+        $next.prop('disabled', currentIndex < 0 || currentIndex >= items.length - 1);
+        $next.on('click', function() {
+            if (currentIndex >= 0 && currentIndex < items.length - 1) {
+                state.selectedOutcomeReviewKey = outcomeReviewKey(items[currentIndex + 1]);
+                renderOutcomeReviewWorkbench();
+                focusOutcomeReviewSelection();
+            }
+        });
+        $actions.append($next);
+        $workspace.append($actions);
+
+        $inspector.append($('<div class="small text-uppercase text-muted font-weight-bold mb-2"></div>').text('Inspector'));
+        $inspector.append($('<div class="font-weight-bold small mb-1"></div>').text('Authority'));
+        if (selected.item_type === 'LO') {
+            $inspector.append($('<div class="small mb-3"></div>').text('Review state only. LO has no CLO-style authority approval.'));
+        } else if (selected.status === 'APPROVED') {
+            $inspector.append($('<div class="small mb-3 text-success"></div>').text('CLO Approved — global Course Learning Outcome authority.'));
+        } else {
+            $inspector.append($('<div class="small mb-3"></div>').text(selected.status === 'REVIEWED' ? 'Reviewed — ready for explicit CLO approval.' : 'Review decision is not authority approval.'));
+        }
+
+        $inspector.append($('<div class="font-weight-bold small mb-1"></div>').text('Provenance / source'));
+        var refs = selected.source_refs || [];
+        if (!refs.length) {
+            $inspector.append($('<div class="small text-muted mb-3"></div>').text('No source reference available.'));
+        } else {
+            refs.forEach(function(ref) {
+                $inspector.append($('<div class="small border rounded bg-light p-2 mb-2"></div>').text('Line ' + ref.start_line + (ref.end_line && ref.end_line !== ref.start_line ? '–' + ref.end_line : '') + ': ' + (ref.text || '')));
+            });
+        }
+
+        $inspector.append($('<div class="font-weight-bold small mt-3 mb-1"></div>').text('Where used'));
+        var whereUsed = outcomeReviewWhereUsed(selected);
+        if (!whereUsed.length) {
+            $inspector.append($('<div class="small text-muted"></div>').text('Not currently mapped to a Week.'));
+        } else {
+            var $usedList = $('<ul class="small pl-3 mb-0"></ul>');
+            whereUsed.forEach(function(label) { $usedList.append($('<li></li>').text(label)); });
+            $inspector.append($usedList);
+        }
+
+        $row.append($nav).append($workspace).append($inspector);
+        $root.append($row);
+    }
+
+    function loadOutcomeReviews() {
+        if (!state.runId) return Promise.resolve(null);
+        return callBff('get_outcome_reviews', {run_id: state.runId}).then(function(result) {
+            state.outcomeReviews = result.items || [];
+            if (!state.selectedOutcomeReviewKey || !state.outcomeReviews.some(function(item) { return outcomeReviewKey(item) === state.selectedOutcomeReviewKey; })) {
+                var next = state.outcomeReviews.find(function(item) { return item.status !== 'APPROVED'; }) || state.outcomeReviews[0];
+                state.selectedOutcomeReviewKey = next ? outcomeReviewKey(next) : null;
+            }
+            renderOutcomeReviewWorkbench();
+            updateStructureContinueState();
+            return result;
+        });
+    }
+
     function approvedSourceOutcomeIds() {
         var approved = state.coreContext && Array.isArray(state.coreContext.approved_learning_outcomes)
             ? state.coreContext.approved_learning_outcomes
@@ -394,6 +609,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
     function updateStructureContinueState() {
         var $button = $('#btn-review-continue');
+        if ((state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION'; })) {
+            $button.prop('disabled', true).text('Resolve outcome revisions to continue');
+            return;
+        }
+        if ((state.outcomeReviews || []).some(function(item) { return item.item_type === 'LO' && item.status === 'PENDING_REVIEW'; })) {
+            $button.prop('disabled', true).text('Review Learning Objectives to continue');
+            return;
+        }
         if (unapprovedSourceOutcomes().length > 0) {
             $button.prop('disabled', true).text('Approve Outcomes to continue');
             return;
@@ -623,58 +846,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             $staleAlert.append($revalidateBtn);
             $root.append($staleAlert);
         }
-        var proposals = state.outcomeProposals || [];
-        var proposalBySource = {};
-        proposals.forEach(function(proposal) { proposalBySource[proposal.source_outcome_id] = proposal; });
-        var pendingSources = unapprovedSourceOutcomes();
-        $root.append($('<div class="font-weight-bold mt-3 mb-2"></div>').text('Source Learning Outcomes · Teacher approval required'));
-        if (!pendingSources.length) {
-            $root.append($('<div class="small text-success"></div>').text('All source Learning Outcomes are Teacher-approved.'));
-        }
-        pendingSources.forEach(function(sourceOutcome) {
-            var proposal = proposalBySource[sourceOutcome.source_outcome_id];
-            var $card = $('<div class="border rounded p-2 mb-2 outcome-approval-card"></div>');
-            $card.append($('<div class="small text-muted mb-1"></div>').text(sourceOutcome.source_outcome_id + ' · ' + (sourceOutcome.measurable_status || 'UNKNOWN')));
-            $card.append($('<div class="mb-2"></div>').text(sourceOutcome.source_text || 'Untitled source Outcome'));
-
-            var $approveAsIs = $('<button type="button" class="btn btn-sm btn-outline-primary mr-2"></button>').text('Approve source as-is');
-            $approveAsIs.on('click', function() {
-                $approveAsIs.prop('disabled', true).text('Saving...');
-                callBff('approve_learning_outcome', {
-                    run_id: state.runId,
-                    source_outcome_id: sourceOutcome.source_outcome_id,
-                    use_source_as_is: true
-                }).then(function(result) {
-                    applyOutcomeApproval(result, sourceOutcome.source_outcome_id);
-                }).catch(function(err) {
-                    $approveAsIs.prop('disabled', false).text('Approve source as-is');
-                    showError('Failed to approve Learning Outcome: ' + err.message, err.details);
-                });
-            });
-            $card.append($approveAsIs);
-
-            if (proposal) {
-                $card.append($('<div class="small text-muted mt-2 mb-1"></div>').text('Measurable wording proposal'));
-                var $input = $('<input type="text" class="form-control form-control-sm mb-2">').val(proposal.recommended_text || '');
-                var $approveEdited = $('<button type="button" class="btn btn-sm btn-primary"></button>').text('Approve edited Outcome');
-                $approveEdited.on('click', function() {
-                    $approveEdited.prop('disabled', true).text('Saving...');
-                    callBff('approve_learning_outcome', {
-                        run_id: state.runId,
-                        source_outcome_id: sourceOutcome.source_outcome_id,
-                        recommended_text: proposal.recommended_text,
-                        teacher_text: $input.val()
-                    }).then(function(result) {
-                        applyOutcomeApproval(result, sourceOutcome.source_outcome_id);
-                    }).catch(function(err) {
-                        $approveEdited.prop('disabled', false).text('Approve edited Outcome');
-                        showError('Failed to approve Learning Outcome: ' + err.message, err.details);
-                    });
-                });
-                $card.append($input).append($approveEdited);
-            }
-            $root.append($card);
-        });
+        renderOutcomeReviewWorkbench();
         renderCompetencyCandidates($root);
         renderExternalCoverageControls($root);
         updateStructureContinueState();
@@ -1159,6 +1331,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             state.coreContextRevision = structureResult.core_context_revision || null;
             state.currentEnvelope = structurePreviewEnvelope(state.currentStructure);
             renderPreview(state.currentEnvelope, state.currentEnvelope);
+            loadOutcomeReviews().catch(function(err) { showError('Could not load Outcome review state: ' + err.message, err.details); });
             $('#upload-progress-area').addClass('d-none');
             setStep(2);
         }).catch(function(err) {
@@ -1929,6 +2102,16 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
     function confirmStructureAndShowActivities() {
         if (!state.stagedMode) { setStep(3); return; }
+        if ((state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION'; })) {
+            showError('Resolve every Outcome marked Needs revision before confirming the Course Structure.');
+            updateStructureContinueState();
+            return;
+        }
+        if ((state.outcomeReviews || []).some(function(item) { return item.item_type === 'LO' && item.status === 'PENDING_REVIEW'; })) {
+            showError('Review every Learning Objective before confirming the Course Structure.');
+            updateStructureContinueState();
+            return;
+        }
         if (unapprovedSourceOutcomes().length > 0) {
             showError('Approve every source Learning Outcome before confirming the Course Structure.');
             updateStructureContinueState();
@@ -2172,6 +2355,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                         state.currentStructure = restored;
                         state.currentEnvelope = structurePreviewEnvelope(restored);
                         renderPreview(state.currentEnvelope, state.currentEnvelope);
+                        loadOutcomeReviews().catch(function(reviewErr) { showError('Could not reload Outcome review state: ' + reviewErr.message, reviewErr.details); });
                         setStep(2);
                     }
                 }).catch(function(err) { showError('Could not reload Course design state: ' + err.message); });

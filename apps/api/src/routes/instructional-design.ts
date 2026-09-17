@@ -1,5 +1,5 @@
 import type { CompetencyCandidateDecision, CoreCourseDesignContext } from "@moodle-agent-poc/contracts";
-import { CompetencyCandidateRepository, CourseStructureRevisionRepository, getDatabase, RunRepository, type CompetencyCandidateRecord, type ModelClient } from "@moodle-agent-poc/agent-runtime";
+import { CompetencyCandidateRepository, CourseStructureRevisionRepository, getDatabase, OutcomeReviewRepository, RunRepository, type CompetencyCandidateRecord, type ModelClient } from "@moodle-agent-poc/agent-runtime";
 import {
   approveLearningOutcome,
   assertOutcomeCoverage,
@@ -20,6 +20,8 @@ export interface InstructionalDesignRoutesOptions {
   runRepo?: RunRepository;
   structureRevisionRepo?: CourseStructureRevisionRepository;
   candidateRepo?: CompetencyCandidateRepository;
+  reviewRepo?: OutcomeReviewRepository;
+  enforceOutcomeReview?: boolean;
   modelClient?: ModelClient;
 }
 
@@ -150,16 +152,45 @@ export const instructionalDesignRoutes: FastifyPluginAsync<InstructionalDesignRo
     if (!repo || typeof (repo as { saveCoreCourseDesignContextRevision?: unknown }).saveCoreCourseDesignContextRevision !== "function") {
       return reply.status(501).send({ error: { code: "OUTCOME_PERSISTENCE_UNAVAILABLE", message: "Outcome revision persistence is not configured." } });
     }
-    await beginInstructionalDesignMutation(repo, request.params.runId);
     const body = request.body && typeof request.body === "object" ? request.body as Record<string, unknown> : {};
-    const updated = approveLearningOutcome(context, {
-      source_outcome_id: String(body.source_outcome_id ?? ""),
+    const sourceOutcomeId = String(body.source_outcome_id ?? "");
+    const sourceOutcome = context.source_learning_outcomes.find((outcome) => outcome.source_outcome_id === sourceOutcomeId);
+    let reviewedApprovalText: string | null = null;
+    if (options.enforceOutcomeReview) {
+      const reviewRepo = options.reviewRepo ?? new OutcomeReviewRepository(getDatabase());
+      const review = await reviewRepo.get(request.params.runId, "CLO", sourceOutcomeId);
+      if (!review || review.status !== "REVIEWED") {
+        return reply.status(409).send({ error: { code: "OUTCOME_REVIEW_REQUIRED", message: "A CLO must be explicitly Reviewed before it can be approved." } });
+      }
+      if (!sourceOutcome) {
+        return reply.status(422).send({ error: { code: "OUTCOME_INVALID", message: "Unknown source Learning Outcome." } });
+      }
+      reviewedApprovalText = review.draftText?.trim() || sourceOutcome.source_text.trim();
+      const requestedApprovalText = body.use_source_as_is === true
+        ? sourceOutcome.source_text.trim()
+        : typeof body.teacher_text === "string" && body.teacher_text.trim() !== ""
+          ? body.teacher_text.trim()
+          : typeof body.recommended_text === "string" && body.recommended_text.trim() !== ""
+            ? body.recommended_text.trim()
+            : null;
+      if (requestedApprovalText !== reviewedApprovalText) {
+        return reply.status(409).send({ error: { code: "OUTCOME_REVIEW_TEXT_MISMATCH", message: "CLO approval must use the exact wording from the persisted Reviewed state." } });
+      }
+    }
+    await beginInstructionalDesignMutation(repo, request.params.runId);
+    const updated = approveLearningOutcome(context, reviewedApprovalText !== null && sourceOutcome ? {
+      source_outcome_id: sourceOutcomeId,
+      use_source_as_is: reviewedApprovalText === sourceOutcome.source_text.trim(),
+      ...(reviewedApprovalText !== sourceOutcome.source_text.trim() ? { teacher_text: reviewedApprovalText } : {}),
+      ...(typeof body.teacher_id === "number" ? { teacher_id: body.teacher_id } : {}),
+    } : {
+      source_outcome_id: sourceOutcomeId,
       use_source_as_is: body.use_source_as_is === true,
       ...(typeof body.recommended_text === "string" ? { recommended_text: body.recommended_text } : {}),
       ...(typeof body.teacher_text === "string" ? { teacher_text: body.teacher_text } : {}),
       ...(typeof body.teacher_id === "number" ? { teacher_id: body.teacher_id } : {}),
     });
-    const changedOutcome = updated.approved_learning_outcomes.find((outcome) => outcome.source_outcome_ids.includes(String(body.source_outcome_id ?? "")));
+    const changedOutcome = updated.approved_learning_outcomes.find((outcome) => outcome.source_outcome_ids.includes(sourceOutcomeId));
     const candidateRepo = options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase());
     if (changedOutcome && typeof (candidateRepo as { invalidateApprovedForOutcome?: unknown }).invalidateApprovedForOutcome === "function") {
       // Fail safe: dependent academic authority is withdrawn before the new

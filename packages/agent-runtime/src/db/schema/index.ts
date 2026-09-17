@@ -19,3 +19,4 @@ export * from "./core-course-design-contexts.js";
 export * from "./competency-candidates.js";
 export * from "./competency-mapping-reviews.js";
 export * from "./competency-execution-snapshots.js";
+export * from "./outcome-review-states.js";

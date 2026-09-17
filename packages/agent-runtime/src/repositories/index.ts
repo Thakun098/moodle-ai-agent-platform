@@ -16,3 +16,4 @@ export * from "./risk-insight-repository.js";
 export * from "./competency-candidate-repository.js";
 export * from "./competency-mapping-review-repository.js";
 export * from "./competency-execution-snapshot-repository.js";
+export * from "./outcome-review-repository.js";

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDatabase, createDbClient, type AppDatabase } from "../src/db/connection.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { pocRun } from "../src/db/schema/runs.js";
-import { ActivityIntentRepository, CompetencyCandidateRepository, RunRepository } from "../src/repositories/index.js";
+import { ActivityIntentRepository, CompetencyCandidateRepository, OutcomeReviewRepository, RunRepository } from "../src/repositories/index.js";
 
 const dbUrl = process.env.DATABASE_URL || "postgresql://moodle_agent_poc:moodle_agent_poc_dev@127.0.0.1:55432/moodle_agent_poc";
 const runId = "33333333-3333-4333-8333-333333333333";
@@ -14,15 +14,28 @@ describe("Instructional Design persistence", () => {
   let runRepo: RunRepository;
   let candidateRepo: CompetencyCandidateRepository;
   let intentRepo: ActivityIntentRepository;
+  let outcomeReviewRepo: OutcomeReviewRepository;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = dbUrl;
     await runMigrations(dbUrl);
     const client = createDbClient(dbUrl); db = client.db; pool = client.pool;
-    runRepo = new RunRepository(db); candidateRepo = new CompetencyCandidateRepository(db); intentRepo = new ActivityIntentRepository(db);
+    runRepo = new RunRepository(db); candidateRepo = new CompetencyCandidateRepository(db); intentRepo = new ActivityIntentRepository(db); outcomeReviewRepo = new OutcomeReviewRepository(db);
   });
   beforeEach(async () => { await db.delete(pocRun).where(eq(pocRun.runId, runId)); await runRepo.createRun({ runId, model: "test", status: "planning" }); });
   afterAll(async () => { await closeDatabase(); if (pool) await pool.end(); });
+
+  it("persists explicit LO/CLO review state independently from Core Context revisions", async () => {
+    const first = await outcomeReviewRepo.upsert({
+      runId, itemType: "LO", itemId: "objective-1", status: "REVIEWED", draftText: "Explain loops clearly", updatedByMoodleUserId: "7",
+    });
+    expect(first).toMatchObject({ itemType: "LO", itemId: "objective-1", status: "REVIEWED", draftText: "Explain loops clearly" });
+    const changed = await outcomeReviewRepo.upsert({
+      runId, itemType: "LO", itemId: "objective-1", status: "NEEDS_REVISION", draftText: "Clarify measurable behavior", updatedByMoodleUserId: "7",
+    });
+    expect(changed).toMatchObject({ status: "NEEDS_REVISION", draftText: "Clarify measurable behavior" });
+    expect(await outcomeReviewRepo.list(runId)).toHaveLength(1);
+  });
 
   it("persists Candidate many-to-many lifecycle and revisioned decisions", async () => {
     const [created] = await candidateRepo.saveProposed(runId, [{ candidate_id: "candidate-1", name: "Program design", description: "Design programs", rationale: "Combines approved Outcomes", derived_from_outcome_ids: ["outcome-1", "outcome-2"], source_refs: [], status: "PROPOSED", revision: 1 }]);

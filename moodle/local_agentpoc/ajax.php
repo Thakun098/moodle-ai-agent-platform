@@ -132,6 +132,26 @@ try {
             $response['data'] = $client->get_instructional_design($runid);
             break;
 
+        case 'get_outcome_reviews':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_outcome_reviews($runid);
+            break;
+
+        case 'save_outcome_review':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $itemtype = required_param('item_type', PARAM_ALPHA);
+            $itemid = required_param('item_id', PARAM_ALPHANUMEXT);
+            $status = required_param('status', PARAM_ALPHANUMEXT);
+            $drafttext = optional_param('draft_text', '', PARAM_TEXT);
+            $response['data'] = $client->save_outcome_review($runid, [
+                'item_type' => $itemtype,
+                'item_id' => $itemid,
+                'status' => $status,
+                'draft_text' => $drafttext,
+                'teacher_id' => (int)$USER->id,
+            ]);
+            break;
+
         case 'approve_learning_outcome':
             $runid = required_param('run_id', PARAM_ALPHANUMEXT);
             $sourceoutcomeid = required_param('source_outcome_id', PARAM_ALPHANUMEXT);

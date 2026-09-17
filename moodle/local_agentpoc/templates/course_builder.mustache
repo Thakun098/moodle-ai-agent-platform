@@ -145,6 +145,8 @@
                             <p id="preview-course-summary" class="text-muted mt-2 mb-0 small"></p>
                         </div>
 
+                        <div id="outcome-review-workbench" class="outcome-review-workbench border rounded mb-4 d-none" aria-label="Learning Outcome review workbench"></div>
+
                         <!-- Sections Accordion Container -->
                         <div id="preview-sections-container">
                             <!-- Injected by JavaScript -->
@@ -541,6 +543,50 @@
 }
 .stepper-line.completed {
     background: #28a745;
+}
+
+.outcome-review-workbench {
+    overflow: visible;
+    background: #fff;
+}
+.outcome-workbench-header {
+    border-radius: 0.35rem 0.35rem 0 0;
+}
+.outcome-review-nav {
+    max-height: 560px;
+    overflow-y: auto;
+    background: #f8fafc;
+}
+.outcome-review-nav-item {
+    white-space: normal;
+}
+.outcome-review-focus {
+    min-height: 390px;
+}
+.outcome-review-inspector {
+    background: #fbfcfd;
+    align-self: flex-start;
+    position: sticky;
+    top: 1rem;
+}
+.outcome-review-actions {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e9ecef;
+}
+@media (max-width: 991.98px) {
+    .outcome-review-nav {
+        max-height: none;
+        border-right: 0 !important;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .outcome-review-inspector {
+        position: static;
+        border-left: 0 !important;
+        border-top: 1px solid #dee2e6;
+    }
 }
 
 .activity-week-card {
