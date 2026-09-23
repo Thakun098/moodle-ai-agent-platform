@@ -45,5 +45,18 @@ function xmldb_local_agentpoc_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026090402, 'local', 'agentpoc');
     }
 
+
+    if ($oldversion < 2026092106) {
+        // Rename the built-in service in place so existing service IDs, functions,
+        // users, and tokens remain attached to the same technical service.
+        $service = $DB->get_record('external_services', ['shortname' => 'local_agentpoc_service']);
+        if ($service && $service->name !== 'Teacher AI Assistance 2 Service') {
+            $service->name = 'Teacher AI Assistance 2 Service';
+            $DB->update_record('external_services', $service);
+        }
+
+        upgrade_plugin_savepoint(true, 2026092106, 'local', 'agentpoc');
+    }
+
     return true;
 }

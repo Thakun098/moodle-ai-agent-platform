@@ -28,7 +28,7 @@ require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/clilib.php');
 require_once($CFG->dirroot . '/course/lib.php');
 
-cli_heading('Moodle Agent POC — Course Builder Security & Authorization Tests');
+cli_heading('Teacher AI Assistance 2 — Course Builder Security & Authorization Tests');
 
 $passed = 0;
 $total = 0;

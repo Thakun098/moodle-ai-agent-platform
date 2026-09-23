@@ -57,7 +57,7 @@ class helper {
         if (!$category) {
             $category = new stdClass();
             $category->name       = 'Default for ' . $quizcontext->get_context_name(false);
-            $category->info       = 'Questions created for this quiz via Agent POC';
+            $category->info       = 'Questions created for this quiz via Teacher AI Assistance 2';
             $category->infoformat = FORMAT_HTML;
             $category->contextid  = $quizcontext->id;
             $category->parent     = $topcategory->id;

@@ -170,7 +170,7 @@ $functions = [
 ];
 
 $services = [
-    'Moodle Agent POC Service' => [
+    'Teacher AI Assistance 2 Service' => [
         'functions'       => array_keys($functions),
         'restrictedusers' => 0,
         'enabled'         => 1,
@@ -189,7 +189,7 @@ $functions['local_agentpoc_get_course_risk_evidence'] = [
     'ajax'        => true,
     'capabilities'=> 'local/agentpoc:view, moodle/course:view',
 ];
-$services['Moodle Agent POC Service']['functions'][] = 'local_agentpoc_get_course_risk_evidence';
+$services['Teacher AI Assistance 2 Service']['functions'][] = 'local_agentpoc_get_course_risk_evidence';
 
 
 // Ticket 24 — Moodle-native Competency materialization and readback.
@@ -222,5 +222,5 @@ $ticket24functions = [
 ];
 foreach ($ticket24functions as $name => $definition) {
     $functions[$name] = $definition;
-    $services['Moodle Agent POC Service']['functions'][] = $name;
+    $services['Teacher AI Assistance 2 Service']['functions'][] = $name;
 }

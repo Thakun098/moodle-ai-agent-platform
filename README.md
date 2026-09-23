@@ -1,4 +1,4 @@
-# AI Platform POC
+# Teacher AI Assistance 2
 
 ระบบ Proof of Concept สำหรับให้ AI วางแผนและสร้าง/แก้ไข Moodle Course ผ่านลำดับ:
 
@@ -107,7 +107,7 @@ $token
 
 สำหรับ Instructional Design flow ให้ตั้ง `INSTRUCTIONAL_DESIGN_SERVICE_KEY` ใน `.env` และตั้งค่าเดียวกันที่ Moodle:
 
-`Site administration → Plugins → Local plugins → Agent POC → Instructional Design service key`
+`Site administration → Plugins → Local plugins → Teacher AI Assistance 2 → Instructional Design service key`
 
 ถ้าใช้ Risk surfaces ให้ตั้ง `RISK_SERVICE_KEY` และ Moodle `Risk service key` ให้ตรงกันด้วย จากนั้น restart API หาก API รันอยู่แล้ว
 
@@ -258,7 +258,7 @@ apps/moodle-mcp-server/dist/index.js
 ตรวจสอบว่า API เปิดที่ port `3000` และ plugin ตั้งค่า AI Platform URL เป็น `http://host.docker.internal:3000` ที่ Moodle:
 
 ```text
-Site administration → Plugins → Local plugins → Agent POC
+Site administration → Plugins → Local plugins → Teacher AI Assistance 2
 ```
 
 ### `invalidtoken`

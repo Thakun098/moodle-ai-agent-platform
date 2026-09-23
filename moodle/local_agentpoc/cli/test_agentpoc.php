@@ -46,7 +46,7 @@ use local_agentpoc\external\update_assignment;
 use local_agentpoc\external\update_quiz;
 use local_agentpoc\external\update_quiz_question;
 
-cli_heading('Moodle Agent POC Plugin (local_agentpoc) — E2E Smoke Test');
+cli_heading('Teacher AI Assistance 2 (local_agentpoc) — E2E Smoke Test');
 
 try {
     // 1. Authenticate as Admin user for CLI execution.
@@ -69,7 +69,7 @@ try {
     $shortname = 'AGENTPOC-CLI-' . time();
     $course = create_course::execute(
         $targetcategory['id'],
-        'Agent POC CLI Smoke Test Course',
+        'Teacher AI Assistance 2 CLI Smoke Test Course',
         $shortname,
         '<p>Automated test course created via CLI smoke test</p>',
         'topics'

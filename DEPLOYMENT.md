@@ -1,6 +1,6 @@
-# Deployment Guide — Local POC
+# Teacher AI Assistance 2 — Deployment Guide
 
-คู่มือนี้เป็น source of truth สำหรับการ **bootstrap** และ **deploy/update** Moodle Agent POC ใน local development environment บน Windows
+คู่มือนี้เป็น source of truth สำหรับการ **bootstrap** และ **deploy/update** Teacher AI Assistance 2 ใน local development environment บน Windows
 
 > ขอบเขตนี้เป็น local POC deployment เท่านั้น ไม่ใช่ production deployment และไม่มี HA, production AuthN/AuthZ, rollback automation หรือ zero-downtime deployment
 
@@ -138,7 +138,7 @@ Set the result as `MOODLE_TOKEN` in `.env`.
 Then configure the Moodle plugin shared credentials at:
 
 ```text
-Site administration → Plugins → Local plugins → Agent POC
+Site administration → Plugins → Local plugins → Teacher AI Assistance 2
 ```
 
 - `Instructional Design service key` must equal `.env` `INSTRUCTIONAL_DESIGN_SERVICE_KEY`.

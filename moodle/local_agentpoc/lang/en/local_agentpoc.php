@@ -24,11 +24,11 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$string['pluginname'] = 'Moodle Agent POC Local Plugin';
-$string['agentpoc:view'] = 'View course structures, activities, and questions via Agent POC web services';
-$string['agentpoc:manage'] = 'Manage courses, sections, activities, and questions via Agent POC web services';
+$string['pluginname'] = 'Teacher AI Assistance 2';
+$string['agentpoc:view'] = 'View course structures, activities, and questions via Teacher AI Assistance 2 web services';
+$string['agentpoc:manage'] = 'Manage courses, sections, activities, and questions via Teacher AI Assistance 2 web services';
 $string['agentpoc:createcoursewithai'] = 'Create courses using AI Course Builder';
-$string['servicename'] = 'Moodle Agent POC Service';
+$string['servicename'] = 'Teacher AI Assistance 2 Service';
 
 // Navigation and Titles
 $string['createcoursewithai'] = 'Create course with AI';
