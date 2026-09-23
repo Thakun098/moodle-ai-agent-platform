@@ -6,7 +6,7 @@ This repository is a **throw-away Proof of Concept (POC)** for a future Moodle A
 
 The POC must prove that:
 
-1. An LLM running in Ollama can perform native tool calling.
+1. A configured model provider (Ollama, Groq, or an OpenAI-compatible Unsloth endpoint) can support the structured/tool-calling behavior required by the POC.
 2. The AI Platform can act as the Agent runtime and MCP client/host.
 3. The AI Platform can discover and invoke Moodle tools through an MCP server.
 4. Moodle can be changed through a Moodle-side plugin/API boundary without direct DB writes.
@@ -27,10 +27,11 @@ Before starting any task, read:
 2. `POC_BASELINE.md`
 3. `Implementation.md`
 4. `PLANNING_CONTRACT.md`
-5. `task.md`
+5. The current Ticket under `C:\moodle-prac\ai-platform-coordination\tickets\` when the work is Ticket-scoped
 6. `C:\moodle-prac\ai-platform-coordination\source-of-truth\README.md`
 7. Only the latest **relevant** daily SOC sections from `C:\moodle-prac\ai-platform-coordination\source-of-truth\soc\YYYY-MM-DD.md`
 8. For audit/re-audit work or remediation of an audit finding, only the latest **relevant** daily Audit sections from `C:\moodle-prac\ai-platform-coordination\source-of-truth\audit\YYYY-MM-DD.md`
+9. For bootstrap/deployment work, `DEPLOYMENT.md`
 
 Do not silently override frozen decisions. If a task would require changing one, record the proposed change in today's daily SOC file and stop before implementing the architecture change.
 
@@ -207,22 +208,22 @@ The first POC should use an explicit TypeScript Agent loop so tool selection, to
 
 ### LLM Runtime
 
-- Ollama
-- Initial Gemma 4 e2b-class baseline discussed for the POC
-- model name configurable through `OLLAMA_MODEL`
-- native tool calling where available
+- Provider selected through `MODEL_PROVIDER=ollama|groq|unsloth`
+- Ollama remains the local baseline; Groq and an OpenAI-compatible Unsloth endpoint are also supported
+- provider/model settings are configured through the corresponding environment variables
+- structured/native tool calling where available
 
 ### MCP
 
 - Official MCP TypeScript SDK where practical
 - AI Platform = MCP client/host
 - dedicated Moodle MCP Server
-- initial local transport: prefer stdio unless another transport is explicitly frozen
+- current local transport: stdio
 
 ### Moodle
 
 - Moodle 5.1.x
-- POC local plugin, suggested frankenstyle name: `local_agentpoc`
+- POC local plugin: `local_agentpoc`
 - manually created dedicated POC category
 - created POC courses default to hidden
 - no direct DB writes
@@ -243,7 +244,8 @@ The first POC should use an explicit TypeScript Agent loop so tool selection, to
 ├─ POC_BASELINE.md
 ├─ Implementation.md
 ├─ PLANNING_CONTRACT.md
-├─ task.md
+├─ DEPLOYMENT.md
+├─ task.md  # deprecated historical tracker; do not update for new work
 ├─ soc.md  # pointer only; canonical daily SOC lives in ai-platform-coordination/source-of-truth/soc/
 ├─ apps/
 │  ├─ api/
@@ -264,7 +266,7 @@ The first POC should use an explicit TypeScript Agent loop so tool selection, to
 │  ├─ contract/
 │  ├─ integration/
 │  └─ e2e/
-└─ docker-compose.yml
+└─ compose.yaml
 ```
 
 Keep package boundaries clear even though the POC is a modular monolith.
@@ -403,18 +405,21 @@ Technical verification and AI quality evaluation are separate.
 
 ---
 
-## Task Completion Protocol
+## Ticket Completion Protocol
 
-Every task must:
+`task.md` is deprecated and retained only as historical context. Do not update it for new work.
 
-1. Read its entry in `task.md`.
-2. Implement only the task scope.
-3. Run relevant tests.
-4. Mark `[x]` in `task.md` only when done.
-5. Append a completion record to `C:\moodle-prac\ai-platform-coordination\source-of-truth\soc\YYYY-MM-DD.md` for the current date.
-6. Record files changed, tests, decisions, limitations, and next work.
+Every Ticket/task must:
 
-A task is not complete until both `task.md` and the current daily SOC file are updated.
+1. For Ticket-scoped work, read the current Ticket under `C:\moodle-prac\ai-platform-coordination\tickets\`.
+2. Implement only the Ticket scope.
+3. Run relevant tests and validation.
+4. Update the Ticket status/evidence when implementation, review, or closure state changes.
+5. Append a completion/checkpoint record to `C:\moodle-prac\ai-platform-coordination\source-of-truth\soc\YYYY-MM-DD.md` for the current date.
+6. For audit/re-audit work, append findings/evidence to the current daily Audit file.
+7. Record files changed, tests, decisions, limitations, deployment state, and next work.
+
+A Ticket is not complete until its Ticket record and current daily SOC evidence are synchronized. Audit findings must remain visible until explicitly resolved, bypassed/accepted, or otherwise dispositioned.
 
 ---
 

@@ -659,8 +659,9 @@ Use repeated runs with frozen parameters for quality comparison.
 - [ ] Deterministic verification compares expected vs actual.
 - [ ] Technical metrics are captured.
 - [ ] AI quality is evaluated separately.
-- [ ] `task.md` reflects completed work.
+- [ ] Current Ticket status/evidence reflects completed work.
 - [ ] daily SOC files in `ai-platform-coordination/source-of-truth/soc/` contain completion records.
+- [ ] relevant daily Audit findings are resolved or explicitly dispositioned before closure.
 
 ---
 

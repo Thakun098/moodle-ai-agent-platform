@@ -8,7 +8,9 @@ Syllabus → AI Platform API → Ollama/Groq/Unsloth
                          → Moodle Web Service / local_agentpoc
 ```
 
-เอกสารนี้เน้นวิธีติดตั้งและรันระบบในเครื่องสำหรับ development เท่านั้น
+เอกสารนี้เน้น quick start สำหรับ local development เท่านั้น
+
+สำหรับขั้นตอน bootstrap/deploy/update ที่เป็น source of truth ให้ใช้ [`DEPLOYMENT.md`](DEPLOYMENT.md)
 
 ## สิ่งที่ต้องมี
 
@@ -17,7 +19,8 @@ Syllabus → AI Platform API → Ollama/Groq/Unsloth
 - pnpm `11.25.0`
 - Docker Desktop พร้อม Docker Compose v2
 - Ollama (ถ้าใช้ `MODEL_PROVIDER=ollama`)
-- Moodle 5.1.x ที่ติดตั้ง plugin `local_agentpoc` แล้ว
+- Moodle 5.1.x checkout ที่ `C:\moodle-prac\moodle`
+- plugin `local_agentpoc` ใช้ source จาก `ai-platform\moodle\local_agentpoc` และ deploy เข้า Moodle container แยกจาก Moodle core image
 
 ใน workspace นี้มี Moodle Compose สำหรับรัน Moodle แบบ local อยู่แล้ว โดย Compose จะใช้ Moodle checkout ที่อยู่ข้างโฟลเดอร์ `ai-platform`:
 
@@ -53,6 +56,8 @@ MOODLE_BASE_URL=http://localhost:8000
 MOODLE_TOKEN=<ใส่ Moodle Web Service token>
 MCP_SERVER_COMMAND=node
 MCP_SERVER_ARGS=["C:/moodle-prac/ai-platform/apps/moodle-mcp-server/dist/index.js"]
+INSTRUCTIONAL_DESIGN_SERVICE_KEY=<shared key used by Moodle plugin>
+RISK_SERVICE_KEY=<shared key used by Moodle plugin when Risk surfaces are used>
 ```
 
 ถ้าย้ายโปรเจกต์ไป path อื่น ให้แก้ path ใน `MCP_SERVER_ARGS` ให้ตรงกับตำแหน่งจริง โดยค่าต้องเป็น JSON array ของ string และห้าม commit `.env`
@@ -62,16 +67,24 @@ MCP_SERVER_ARGS=["C:/moodle-prac/ai-platform/apps/moodle-mcp-server/dist/index.j
 ```powershell
 docker compose up -d postgres
 docker compose ps
-pnpm exec tsx packages/agent-runtime/src/db/migrate.ts
+node --env-file=.env --import tsx packages/agent-runtime/src/db/migrate.ts
 ```
 
 PostgreSQL จะเปิดที่ `127.0.0.1:5432` และเปิดใช้งาน extension `pgvector` ให้โดยอัตโนมัติ
 
-### 3. รัน Moodle local instance
+### 3. รัน Moodle local instance และ deploy plugin
 
 ```powershell
 docker compose -f docker/moodle-poc/compose.yaml up -d --build
 docker compose -f docker/moodle-poc/compose.yaml ps
+```
+
+Moodle image ใช้ core จาก `C:\moodle-prac\moodle` แต่ **ไม่ได้ดึง plugin จาก `ai-platform\moodle\local_agentpoc` อัตโนมัติ** จึงต้อง deploy plugin เข้า running container:
+
+```powershell
+docker cp moodle/local_agentpoc/. moodle-agent-poc-web:/var/www/html/public/local/agentpoc/
+docker exec moodle-agent-poc-web php /var/www/html/admin/cli/upgrade.php --non-interactive
+docker exec moodle-agent-poc-web php /var/www/html/admin/cli/purge_caches.php
 ```
 
 Moodle จะเปิดที่ [http://localhost:8000](http://localhost:8000)
@@ -83,14 +96,20 @@ Username: admin
 Password: MoodleAgentPOC2026
 ```
 
-สร้างหรืออ่าน Web Service token สำหรับ plugin `local_agentpoc`:
+หลัง deploy plugin แล้ว สร้างหรืออ่าน Web Service token สำหรับ `local_agentpoc`:
 
 ```powershell
 $token = (docker compose -f docker/moodle-poc/compose.yaml exec -T web php /var/www/html/public/local/agentpoc/cli/create_token.php).Trim()
 $token
 ```
 
-นำค่าที่ได้ไปใส่ใน `.env` ที่ `MOODLE_TOKEN` แล้ว restart API หาก API รันอยู่แล้ว
+นำค่าที่ได้ไปใส่ใน `.env` ที่ `MOODLE_TOKEN`
+
+สำหรับ Instructional Design flow ให้ตั้ง `INSTRUCTIONAL_DESIGN_SERVICE_KEY` ใน `.env` และตั้งค่าเดียวกันที่ Moodle:
+
+`Site administration → Plugins → Local plugins → Agent POC → Instructional Design service key`
+
+ถ้าใช้ Risk surfaces ให้ตั้ง `RISK_SERVICE_KEY` และ Moodle `Risk service key` ให้ตรงกันด้วย จากนั้น restart API หาก API รันอยู่แล้ว
 
 > Moodle Compose เปิด `host.docker.internal:3000` ให้ container เรียก AI Platform ได้ ค่าเริ่มต้นของ plugin จึงใช้งานได้เมื่อ API รันที่ port `3000`
 
@@ -131,6 +150,18 @@ pnpm --filter @moodle-agent-poc/moodle-mcp-server start
 
 process นี้ใช้ stdout สำหรับ JSON-RPC และใช้ stderr สำหรับ log จึงอาจดูเหมือนไม่มี output เมื่อเปิดค้างไว้ใน terminal
 
+## Update environment ที่รันอยู่แล้ว
+
+สำหรับ incremental deployment ไม่ต้อง rebuild Moodle image ทุกครั้ง ถ้าเปลี่ยนเฉพาะ plugin/API:
+
+1. validate + `pnpm build`
+2. apply DB migrations ด้วย `node --env-file=.env --import tsx packages/agent-runtime/src/db/migrate.ts`
+3. ถ้า plugin เปลี่ยน ให้ `docker cp` จาก `moodle/local_agentpoc` แล้ว run Moodle upgrade + purge caches
+4. restart AI Platform API จาก build ใหม่
+5. ตรวจ `/health` ทั้งจาก host และจาก Moodle container
+
+คำสั่งเต็มและ deployment matrix อยู่ใน [`DEPLOYMENT.md`](DEPLOYMENT.md)
+
 ## ตรวจสอบว่า system พร้อมใช้งาน
 
 จาก terminal ใหม่:
@@ -160,7 +191,7 @@ Upload syllabus → Generate plan → Preview → Select category
 
 ```powershell
 pnpm typecheck
-pnpm test
+node --env-file=.env node_modules/vitest/vitest.mjs run
 pnpm build
 ```
 
@@ -193,7 +224,15 @@ docker compose down --volumes
 
 ### `DATABASE_URL environment variable is required`
 
-ตรวจสอบว่าไฟล์ `.env` อยู่ที่ `C:\moodle-prac\ai-platform\.env` และมี `DATABASE_URL` จากนั้น start API ใหม่
+ตรวจสอบว่าไฟล์ `.env` อยู่ที่ `C:\moodle-prac\ai-platform\.env` และมี `DATABASE_URL`
+
+สำหรับ migration ให้ใช้คำสั่งที่โหลด `.env` ชัดเจน:
+
+```powershell
+node --env-file=.env --import tsx packages/agent-runtime/src/db/migrate.ts
+```
+
+จากนั้น restart API หากค่าของ runtime environment เปลี่ยน
 
 ### `MODEL_NOT_FOUND` หรือ `OLLAMA_UNAVAILABLE`
 
@@ -238,6 +277,7 @@ packages/verification/       Read-back verification
 packages/moodle-client/      Moodle REST client
 moodle/local_agentpoc/       Moodle plugin source ในโปรเจกต์นี้
 db/migrations/               Drizzle migrations
+DEPLOYMENT.md                Fresh/incremental local deployment guide
 compose.yaml                 PostgreSQL + pgvector
 docker/moodle-poc/           Moodle local Compose
 ```
