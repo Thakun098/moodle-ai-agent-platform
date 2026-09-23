@@ -48,7 +48,7 @@ services:
       MOODLE_ADMIN_PASS: MoodleAgentPOC2026
       MOODLE_ADMIN_EMAIL: admin@example.com
       MOODLE_SITE_FULLNAME: MoodleAgentPOC
-      MOODLE_SITE_SHORTNAME: AgentPOC
+      MOODLE_SITE_SHORTNAME: Teacher AI Assistance 2
     command: ["/usr/local/bin/install-moodle-poc"]
     volumes:
       - moodle_data:/var/www/moodledata
