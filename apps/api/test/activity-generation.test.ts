@@ -132,7 +132,10 @@ describe("Per-Activity generation — ADR-0002", () => {
     intents.row.contextRevision = 3;
     intents.row.learnerContextRevision = 1;
     intents.row.intentRevision = 1;
-    intents.updateContextRevision = vi.fn().mockImplementation(async () => { events.push("context"); intents.row.contextRevision = 3; intents.row.intentRevision += 1; return intents.row; });
+    intents.updateContextRevision = vi.fn().mockImplementation(async (_id: string, contextRevision: number, learnerContextRevision: number) => {
+      if (intents.row.contextRevision === contextRevision && intents.row.learnerContextRevision === learnerContextRevision) return intents.row;
+      events.push("context"); intents.row.contextRevision = contextRevision; intents.row.learnerContextRevision = learnerContextRevision; intents.row.intentRevision += 1; return intents.row;
+    });
     intents.updateGenerationInstruction = vi.fn().mockImplementation(async (_id: string, instruction: string) => { events.push("instruction"); intents.row.generationInstruction = instruction; intents.row.intentRevision += 1; return intents.row; });
     const timeout = Object.assign(new Error("model timed out"), { code: "MODEL_TIMEOUT" });
     const model = { ping: vi.fn(), listModels: vi.fn(), chat: vi.fn().mockImplementation(async () => { events.push("model"); throw timeout; }) };

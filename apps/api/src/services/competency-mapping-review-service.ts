@@ -83,7 +83,7 @@ export async function reviewCompetencyMappings(
   runId: string,
   decision?: CompetencyMappingDecisionRequest,
 ): Promise<{ revision: number; mappings: CompetencyMappingReviewEntry[] }> {
-  return repo.review<CompetencyMappingReviewEntry>(runId, (sources, saved, revision) => {
+  return repo.review<CompetencyMappingReviewEntry>(runId, (sources, saved, revision, applyDecision) => {
     const derived = deriveCompetencyMappingReviewEntries(sources);
     const current = new Map(derived.map((candidate) => [key(candidate), candidate]));
     const previous = new Map(saved.map((candidate) => [key(candidate), candidate]));
@@ -104,8 +104,8 @@ export async function reviewCompetencyMappings(
       if (!current.has(key(old))) entries.push({ ...old, available: false, mapping: "STALE", evidence: "STALE" });
     }
     entries.sort((a, b) => key(a).localeCompare(key(b)));
-    if (decision) {
-      if (revision !== decision.expected_revision || competencyMappingSignature(entries) !== competencyMappingSignature(saved)) {
+    if (decision && applyDecision) {
+      if (revision !== decision.expected_revision) {
         throw Object.assign(new Error("Mapping sources or decisions changed. Reload before confirming."), { code: "MAPPING_STALE" });
       }
       const index = entries.findIndex((candidate) => candidate.activityId === decision.activity_id && candidate.competencyId === decision.competency_id);

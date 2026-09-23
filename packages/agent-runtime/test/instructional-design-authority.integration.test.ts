@@ -32,12 +32,13 @@ function plan(): AnyPlanEnvelope {
   };
 }
 
-function snapshot(name = "Competency A", capturedAt = "2026-09-16T00:00:00.000Z") {
+function snapshot(name = "Competency A", capturedAt = "2026-09-16T00:00:00.000Z", frameworkId = 7) {
   return {
     runId,
     planId,
     revision: 1,
     mappingReviewRevision: 3,
+    frameworkId,
     capturedAt,
     competencies: [{
       candidateId: "candidate-1",
@@ -136,7 +137,7 @@ describe("Instructional Design approval/execution authority", () => {
     const sameAuthority = await snapshotRepo.save(snapshot("Competency A", "2026-09-16T01:00:00.000Z") as any);
     expect(sameAuthority.capturedAt).toBe(first.capturedAt);
 
-    await expect(snapshotRepo.save(snapshot("Competency B", "2026-09-16T02:00:00.000Z") as any)).rejects.toMatchObject({
+    await expect(snapshotRepo.save(snapshot("Competency A", "2026-09-16T02:00:00.000Z", 8) as any)).rejects.toMatchObject({ code: "COMPETENCY_EXECUTION_SNAPSHOT_CONFLICT" });    await expect(snapshotRepo.save(snapshot("Competency B", "2026-09-16T02:00:00.000Z") as any)).rejects.toMatchObject({
       code: "COMPETENCY_EXECUTION_SNAPSHOT_CONFLICT",
     });
   });

@@ -243,6 +243,10 @@
 
     <!-- VIEW 4: Approve -->
     <div id="step-view-approve" class="step-view d-none">
+        <div class="alert alert-primary py-3 mb-4" id="final-plan-approval-semantics">
+            <div class="font-weight-bold mb-1">Final Plan Approval</div>
+            <div class="small">Approves the exact finalized CoursePlan revision for execution. This is separate from Outcome <strong>Reviewed</strong> state and <strong>CLO Approved</strong> authority.</div>
+        </div>
         <div class="row mb-4">
             <!-- Left Card: What will be created -->
             <div class="col-md-6">
@@ -347,7 +351,7 @@
                     <i class="fa fa-arrow-left mr-1"></i> {{#str}} backtoreview, local_agentpoc {{/str}}
                 </button>
                 <button type="button" class="btn btn-primary btn-lg" id="btn-approve-execute">
-                    <i class="fa fa-check-square-o mr-1"></i> {{#str}} approvecoursedraft, local_agentpoc {{/str}}
+                    <i class="fa fa-check-square-o mr-1"></i> Approve Final Plan &amp; Create Course
                 </button>
             </div>
         </div>
@@ -641,6 +645,57 @@
     }
 }
 
+#step-view-activities {
+    width: min(1760px, calc(100vw - 2rem));
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+}
+.activity-review-workbench {
+    display: flex;
+    flex-wrap: nowrap;
+}
+.activity-week-rail {
+    flex: 0 0 17%;
+    max-width: 17%;
+}
+.activity-week-workspace {
+    flex: 0 0 63%;
+    max-width: 63%;
+}
+.activity-review-inspector {
+    flex: 0 0 20%;
+    max-width: 20%;
+}
+.activity-review-tabs {
+    gap: 0.35rem;
+    border-bottom: 2px solid #0f6cbf;
+}
+.activity-review-tabs .nav-link {
+    border: 1px solid #b7c6d6;
+    border-bottom: 0;
+    border-radius: 0.45rem 0.45rem 0 0;
+    background: #edf3f8;
+    color: #24445f;
+    font-weight: 600;
+    padding: 0.65rem 1rem;
+    cursor: pointer;
+}
+.activity-review-tabs .nav-link:hover,
+.activity-review-tabs .nav-link:focus {
+    background: #dce9f4;
+    color: #123b5d;
+}
+.activity-review-tabs .nav-link.active {
+    background: #0f6cbf;
+    border-color: #0f6cbf;
+    color: #fff;
+    box-shadow: 0 -2px 0 rgba(15, 108, 191, 0.18);
+}
+.activity-review-tabs .nav-link.active .badge {
+    border: 1px solid rgba(255,255,255,0.75);
+}
+
 .activity-week-card {
     border: 1px solid #d9e2ec;
     border-radius: 0.5rem;
@@ -679,6 +734,27 @@
 .activity-status-dot.warning { background: #ffc107; }
 .activity-status-dot.creating { background: #0f6cbf; }
 .activity-summary-strip .h5 { line-height: 1.2; }
+@media (max-width: 991.98px) {
+    #step-view-activities {
+        width: 100%;
+        left: auto;
+        transform: none;
+    }
+    .activity-review-workbench {
+        flex-wrap: wrap;
+    }
+    .activity-week-rail,
+    .activity-week-workspace,
+    .activity-review-inspector {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    .activity-week-rail {
+        max-height: 280px;
+        overflow-y: auto;
+    }
+}
+
 @media (max-width: 767.98px) {
     .stepper-wrapper { padding-left: 0; padding-right: 0; }
     .step-name { font-size: 0.72rem; text-align: center; }

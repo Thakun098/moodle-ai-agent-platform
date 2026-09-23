@@ -56,7 +56,7 @@ export function registerCompetencyTools(server: McpServer, moodleClient: MoodleC
   server.registerTool('moodle_get_course_competencies', {
     description: 'Read Moodle-native Course Competencies and Activity↔Competency link rule outcomes.', inputSchema: GetCourseCompetenciesInputSchema, outputSchema: GetCourseCompetenciesOutputSchema,
   }, async (raw) => {
-    try { const a = GetCourseCompetenciesInputSchema.parse(raw); const r = await moodleClient.getCourseCompetencies(a.course_id); return formatMcpSuccess({ course_id: r.courseId, course_competencies: r.courseCompetencies.map((c) => ({ course_link_id: c.courseLinkId, competency_id: c.competencyId, framework_id: c.frameworkId, idnumber: c.idnumber, shortname: c.shortname })), activity_links: r.activityLinks.map((l) => ({ link_id: l.linkId, activity_id: l.activityId, competency_id: l.competencyId, rule_outcome: l.ruleOutcome })) }, `Read ${r.courseCompetencies.length} Course Competency(ies) and ${r.activityLinks.length} Activity link(s)`); }
+    try { const a = GetCourseCompetenciesInputSchema.parse(raw); const r = await moodleClient.getCourseCompetencies(a.course_id); return formatMcpSuccess({ course_id: r.courseId, course_competencies: r.courseCompetencies.map((c) => ({ course_link_id: c.courseLinkId, competency_id: c.competencyId, framework_id: c.frameworkId, idnumber: c.idnumber, shortname: c.shortname, description: c.description })), activity_links: r.activityLinks.map((l) => ({ link_id: l.linkId, activity_id: l.activityId, competency_id: l.competencyId, rule_outcome: l.ruleOutcome })) }, `Read ${r.courseCompetencies.length} Course Competency(ies) and ${r.activityLinks.length} Activity link(s)`); }
     catch (error) { return formatMcpError(error); }
   });
 }

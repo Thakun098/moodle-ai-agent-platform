@@ -33,14 +33,18 @@ function jsonSemanticallyEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(canonicalizeJson(a)) === JSON.stringify(canonicalizeJson(b));
 }
 
+function selectionIds(values: string[] | undefined): string[] {
+  return [...new Set(values ?? [])].sort();
+}
+
 function arraysEqual(a: unknown, b: unknown): boolean {
   return jsonSemanticallyEqual(Array.isArray(a) ? a : [], Array.isArray(b) ? b : []);
 }
 
 function semanticChanged(existing: ActivityIntentRecord, input: SemanticFields): boolean {
   return existing.purpose !== (input.purpose ?? "PRACTICE")
-    || !arraysEqual(existing.selectedObjectiveIdsJson, input.selectedObjectiveIdsJson ?? [])
-    || !arraysEqual(existing.selectedOutcomeIdsJson, input.selectedOutcomeIdsJson ?? [])
+    || !arraysEqual(selectionIds(existing.selectedObjectiveIdsJson), selectionIds(input.selectedObjectiveIdsJson))
+    || !arraysEqual(selectionIds(existing.selectedOutcomeIdsJson), selectionIds(input.selectedOutcomeIdsJson))
     || (existing.contextRevision ?? null) !== (input.contextRevision ?? null)
     || (existing.learnerContextRevision ?? null) !== (input.learnerContextRevision ?? null)
     || existing.learnerContextAcknowledged !== (input.learnerContextAcknowledged ?? false)
@@ -76,8 +80,8 @@ export class ActivityIntentRepository {
   } & SemanticFields): Promise<ActivityIntentRecord> {
     const semantic = {
       purpose: input.purpose ?? "PRACTICE" as ActivityPurpose,
-      selectedObjectiveIdsJson: input.selectedObjectiveIdsJson ?? [],
-      selectedOutcomeIdsJson: input.selectedOutcomeIdsJson ?? [],
+      selectedObjectiveIdsJson: selectionIds(input.selectedObjectiveIdsJson),
+      selectedOutcomeIdsJson: selectionIds(input.selectedOutcomeIdsJson),
       contextRevision: input.contextRevision ?? null,
       learnerContextRevision: input.learnerContextRevision ?? null,
       learnerContextAcknowledged: input.learnerContextAcknowledged ?? false,
@@ -119,6 +123,9 @@ export class ActivityIntentRepository {
         reviewRequired: false,
         shellConfirmedAt: null,
         contentJson: null,
+        contentProvenance: null,
+        activityRevision: 0,
+        sourceGenerationRevision: null,
         qualityReviewJson: null,
         generationMetadataJson: null,
         error: null,
@@ -138,6 +145,7 @@ export class ActivityIntentRepository {
       optionsJson: input.optionsJson,
       ...semantic,
       status: nextState.status,
+      ...(nextState.status === "stale" ? { attemptCount: 0 } : {}),
       error: nextState.error,
       updatedAt: new Date().toISOString(),
     }).where(eq(activityIntent.id, existing.id)).returning();
@@ -153,6 +161,7 @@ export class ActivityIntentRepository {
       contextRevision,
       learnerContextRevision,
       status: nextState.status,
+      ...(nextState.status === "stale" ? { attemptCount: 0 } : {}),
       error: nextState.error,
       updatedAt: new Date().toISOString(),
     }).where(eq(activityIntent.id, id)).returning();
@@ -167,6 +176,7 @@ export class ActivityIntentRepository {
       generationInstruction: instruction,
       ...(contextRevision !== undefined ? { contextRevision } : {}),
       status: nextState.status,
+      ...(nextState.status === "stale" ? { attemptCount: 0 } : {}),
       error: nextState.error,
       updatedAt: new Date().toISOString(),
     }).where(eq(activityIntent.id, id)).returning();
@@ -181,6 +191,7 @@ export class ActivityIntentRepository {
       if (row.status !== "generated" && row.status !== "shell" && row.status !== "creating") continue;
       const updated = await this.db.update(activityIntent).set({
         status: "stale",
+        attemptCount: 0,
         error: "Core Course Design Context changed. Regenerate this Activity before finalization.",
         updatedAt: new Date().toISOString(),
       }).where(and(eq(activityIntent.id, row.id), inArray(activityIntent.status, ["generated", "shell", "creating"]))).returning();
@@ -213,7 +224,7 @@ export class ActivityIntentRepository {
   }
 
   async markStaleForSection(runId: string, structureRevision: number, sectionRef: string): Promise<number> {
-    const rows = await this.db.update(activityIntent).set({ status: "stale", error: "Activity grounding source changed. Regenerate this Activity before finalization.", updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.runId, runId), eq(activityIntent.structureRevision, structureRevision), eq(activityIntent.sectionRef, sectionRef), inArray(activityIntent.status, ["generated", "shell", "creating"]))).returning();
+    const rows = await this.db.update(activityIntent).set({ status: "stale", attemptCount: 0, error: "Activity grounding source changed. Regenerate this Activity before finalization.", updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.runId, runId), eq(activityIntent.structureRevision, structureRevision), eq(activityIntent.sectionRef, sectionRef), inArray(activityIntent.status, ["generated", "shell", "creating"]))).returning();
     return rows.length;
   }
 
@@ -231,7 +242,7 @@ export class ActivityIntentRepository {
   }
 
   async markStale(id: string, error: string): Promise<boolean> {
-    const rows = await this.db.update(activityIntent).set({ status: "stale", error, updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.id, id), eq(activityIntent.status, "creating"))).returning();
+    const rows = await this.db.update(activityIntent).set({ status: "stale", attemptCount: 0, error, updatedAt: new Date().toISOString() }).where(and(eq(activityIntent.id, id), eq(activityIntent.status, "creating"))).returning();
     return rows.length === 1;
   }
 

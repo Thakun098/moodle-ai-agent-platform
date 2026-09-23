@@ -49,8 +49,222 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         coreContextRevision: null,
         coreContext: null,
         outcomeReviews: [],
-        selectedOutcomeReviewKey: null
+        selectedOutcomeReviewKey: null,
+        selectedWeekRef: new URL(window.location.href).searchParams.get('week_ref'),
+        selectedActivityWeekRef: new URL(window.location.href).searchParams.get('activity_week_ref'),
+        selectedActivityTabByWeek: {},
+        selectedQuizQuestionByActivity: {},
+        activityRenderVersion: 0,
+        outcomeAuthorityFeedback: null,
+        outcomeReviewNavScrollTop: 0,
+        activeDraftGuard: null,
+        draftSessions: {}
     };
+
+    function recoverySnapshotKey(surface, entityRef) {
+        return ['moodle-agent-draft', state.runId || 'no-run', surface, entityRef || 'root'].join(':');
+    }
+
+    function recoveryHost(surface) {
+        return surface === 'activity-content' ? $('#activity-structure-container') : $('#preview-sections-container');
+    }
+
+    function readRecoverySnapshot(surface, entityRef) {
+        try {
+            var raw = window.localStorage.getItem(recoverySnapshotKey(surface, entityRef));
+            return raw ? JSON.parse(raw) : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function beginDraftSession(surface, entityRef, baseRevision, mode) {
+        if (!state.runId) return {ok: false, reason: 'no-run'};
+        var revision = Number(baseRevision);
+        var snapshot = readRecoverySnapshot(surface, entityRef);
+        if (snapshot && snapshot.base_revision !== revision) {
+            return {ok: false, reason: 'conflict', snapshot: snapshot};
+        }
+        if (snapshot && mode !== 'restored') {
+            return {ok: false, reason: 'recovery-pending', snapshot: snapshot};
+        }
+        state.draftSessions[recoverySnapshotKey(surface, entityRef)] = {
+            base_revision: revision,
+            mode: mode || 'fresh'
+        };
+        return {ok: true, snapshot: snapshot};
+    }
+
+    function endDraftSession(surface, entityRef) {
+        delete state.draftSessions[recoverySnapshotKey(surface, entityRef)];
+    }
+
+    function writeRecoverySnapshot(surface, entityRef, baseRevision, payload) {
+        if (!state.runId) return false;
+        var key = recoverySnapshotKey(surface, entityRef);
+        var session = state.draftSessions[key];
+        if (!session || session.base_revision !== Number(baseRevision)) return false;
+        var existing = readRecoverySnapshot(surface, entityRef);
+        if (existing && existing.base_revision !== Number(baseRevision)) return false;
+        var snapshot = {
+            run_id: state.runId,
+            surface: surface,
+            entity_ref: entityRef || 'root',
+            base_revision: Number(baseRevision),
+            payload: payload,
+            saved_at: new Date().toISOString()
+        };
+        try {
+            window.localStorage.setItem(key, JSON.stringify(snapshot));
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    function removeRecoveryBanner(surface, entityRef) {
+        var $host = recoveryHost(surface);
+        if (!$host.length) return;
+        var bannerKey = recoverySnapshotKey(surface, entityRef);
+        $host.find('[data-recovery-key="' + bannerKey.replace(/"/g, '&quot;') + '"]').remove();
+    }
+
+    function discardRecoverySnapshot(surface, entityRef) {
+        endDraftSession(surface, entityRef);
+        try {
+            window.localStorage.removeItem(recoverySnapshotKey(surface, entityRef));
+        } catch (err) {
+            return false;
+        }
+        removeRecoveryBanner(surface, entityRef);
+        return true;
+    }
+
+    function hasRecoveryConflict(surface, entityRef, serverRevision) {
+        var snapshot = readRecoverySnapshot(surface, entityRef);
+        return Boolean(snapshot && snapshot.base_revision !== Number(serverRevision));
+    }
+
+    function clearRecoverySnapshotAfterSave(surface, entityRef) {
+        discardRecoverySnapshot(surface, entityRef);
+    }
+
+    function restoreRecoverySnapshot(surface, entityRef, snapshot, applyDraft) {
+        if (!snapshot || typeof applyDraft !== 'function') return false;
+        var session = beginDraftSession(surface, entityRef, snapshot.base_revision, 'restored');
+        if (!session.ok) return false;
+        applyDraft(snapshot.payload || {});
+        return true;
+    }
+
+    function showRecoveryBanner(surface, entityRef, serverRevision, applyDraft) {
+        var snapshot = readRecoverySnapshot(surface, entityRef);
+        if (!snapshot) return;
+        var $host = recoveryHost(surface);
+        if (!$host.length) return;
+        var bannerKey = recoverySnapshotKey(surface, entityRef);
+        if ($host.find('[data-recovery-key="' + bannerKey.replace(/"/g, '&quot;') + '"]').length) return;
+        var matching = snapshot.base_revision === Number(serverRevision);
+        var $alert = $('<div class="alert mb-3"></div>').attr('data-recovery-key', bannerKey).addClass(matching ? 'alert-info' : 'alert-warning');
+        $alert.append($('<div class="font-weight-bold mb-1"></div>').text(matching ? 'Recoverable draft available' : 'Draft conflict'));
+        $alert.append($('<div class="small mb-2"></div>').text(matching
+            ? 'A local recovery snapshot exists for this server revision. It will not be applied unless you choose Restore draft.'
+            : 'The server revision has advanced. Review the local recovery snapshot or discard it; it will not be applied or merged automatically.'));
+        if (matching) {
+            var $restore = $('<button type="button" class="btn btn-sm btn-primary mr-2"></button>').text('Restore draft');
+            $restore.on('click', function() {
+                if (restoreRecoverySnapshot(surface, entityRef, snapshot, applyDraft)) $alert.remove();
+            });
+            $alert.append($restore);
+        } else {
+            var $review = $('<button type="button" class="btn btn-sm btn-outline-secondary mr-2"></button>').text('Review draft');
+            $review.on('click', function() {
+                window.alert(JSON.stringify(snapshot.payload || {}, null, 2));
+            });
+            $alert.append($review);
+        }
+        var $discard = $('<button type="button" class="btn btn-sm btn-outline-danger"></button>').text('Discard');
+        $discard.on('click', function() {
+            discardRecoverySnapshot(surface, entityRef);
+            clearActiveDraftGuard(surface, entityRef);
+            $alert.remove();
+        });
+        $alert.append($discard);
+        $host.prepend($alert);
+    }
+
+    function setActiveDraftGuard(guard) {
+        state.activeDraftGuard = guard || null;
+    }
+
+    function clearActiveDraftGuard(surface, entityRef) {
+        if (!state.activeDraftGuard) return;
+        if (surface && state.activeDraftGuard.surface !== surface) return;
+        if (entityRef && state.activeDraftGuard.entityRef !== entityRef) return;
+        state.activeDraftGuard = null;
+    }
+
+    function guardedNavigate(navigate) {
+        var guard = state.activeDraftGuard;
+        if (!guard) {
+            navigate();
+            return;
+        }
+        guardDraftNavigation({
+            isDirty: guard.isDirty,
+            save: guard.save,
+            discard: function() {
+                if (typeof guard.discard === 'function') guard.discard();
+                discardRecoverySnapshot(guard.surface, guard.entityRef);
+                clearActiveDraftGuard(guard.surface, guard.entityRef);
+            },
+            navigate: navigate
+        });
+    }
+
+    function guardDraftNavigation(options) {
+        if (!options || !options.isDirty || !options.isDirty()) {
+            options.navigate();
+            return;
+        }
+        var $modal = $('<div class="modal fade draft-navigation-modal" tabindex="-1" role="dialog" aria-modal="true"></div>');
+        var $dialog = $('<div class="modal-dialog modal-dialog-centered" role="document"></div>');
+        var $content = $('<div class="modal-content"></div>');
+        var $body = $('<div class="modal-body"></div>').append($('<div class="font-weight-bold mb-2"></div>').text('Unsaved changes'));
+        $body.append($('<div class="small text-muted"></div>').text('Choose what to do with your working copy before navigation continues.'));
+        var $footer = $('<div class="modal-footer"></div>');
+        var $save = $('<button type="button" class="btn btn-primary"></button>').text('Save');
+        var $discard = $('<button type="button" class="btn btn-outline-danger"></button>').text('Discard');
+        var $cancel = $('<button type="button" class="btn btn-outline-secondary"></button>').text('Cancel');
+        function closeModal() {
+            $modal.modal('hide');
+            $modal.on('hidden.bs.modal', function() { $modal.remove(); });
+        }
+        $save.on('click', function() {
+            $save.prop('disabled', true);
+            Promise.resolve(options.save()).then(function() {
+                closeModal();
+                options.navigate();
+            }).catch(function(err) {
+                $save.prop('disabled', false);
+                showError('Could not save changes before navigation: ' + err.message, err.details);
+            });
+        });
+        $discard.on('click', function() {
+            if (typeof options.discard === 'function') options.discard();
+            closeModal();
+            options.navigate();
+        });
+        $cancel.on('click', function() {
+            closeModal();
+        });
+        $footer.append($save).append($discard).append($cancel);
+        $content.append($body).append($footer);
+        $dialog.append($content);
+        $modal.append($dialog);
+        $('body').append($modal);
+        $modal.modal({backdrop: 'static', keyboard: false, show: true});
+    }
 
     function showCoreContext(context) {
         state.coreContext = context || null;
@@ -422,6 +636,9 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
         var $row = $('<div class="row no-gutters"></div>');
         var $nav = $('<nav class="col-lg-3 outcome-review-nav border-right p-2" aria-label="Outcome navigator"></nav>');
+        $nav.on('scroll', function() {
+            state.outcomeReviewNavScrollTop = $nav.scrollTop();
+        });
         var $workspace = $('<section class="col-lg-6 outcome-review-focus p-3" aria-live="polite" aria-labelledby="outcome-review-selected-title" tabindex="-1"></section>');
         var $inspector = $('<aside class="col-lg-3 outcome-review-inspector border-left p-3"></aside>');
 
@@ -453,22 +670,67 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             .append($('<div></div>').append($('<div class="small text-muted"></div>').text(selected.item_type === 'LO' ? 'Learning Objective' : 'Course Learning Outcome')).append($('<h5 class="mb-0" id="outcome-review-selected-title"></h5>').text(title)))
             .append($('<span class="badge"></span>').addClass(presentation.badge).text(presentation.label)));
 
-        var editable = selected.status !== 'APPROVED';
-        var workingText = selected.draft_text !== null && selected.draft_text !== undefined ? selected.draft_text : (selected.authoritative_text || selected.source_text || '');
+        var isApprovedClo = selected.item_type === 'CLO' && selected.status === 'APPROVED';
+        var editable = selected.status !== 'APPROVED' || isApprovedClo;
+        var workingText = isApprovedClo
+            ? (selected.authoritative_text || selected.source_text || '')
+            : (selected.draft_text !== null && selected.draft_text !== undefined ? selected.draft_text : (selected.authoritative_text || selected.source_text || ''));
         var $text = $('<textarea class="form-control mb-3" rows="5" id="outcome-review-text"></textarea>').val(workingText).prop('disabled', !editable);
-        $workspace.append($('<label class="small font-weight-bold mb-1" for="outcome-review-text"></label>').text(editable ? 'Review wording' : 'Approved wording'));
+        $workspace.append($('<label class="small font-weight-bold mb-1" for="outcome-review-text"></label>').text(isApprovedClo ? 'Approved CLO wording' : 'Review wording'));
         $workspace.append($text);
-        if (editable) {
+        if (isApprovedClo) {
+            $workspace.append($('<div class="alert alert-warning py-2 mb-3" id="approved-clo-edit-warning"></div>')
+                .text('This wording is CLO Approved authority. Saving a change requires confirmation, invalidates the current CLO approval, and may make dependent items Stale. Nothing is regenerated automatically.'));
+        } else if (editable) {
             $workspace.append($('<div class="small text-muted mb-3"></div>').text('Changes above remain a review draft until Save review succeeds. Source provenance remains unchanged.'));
         }
 
         var $actions = $('<div class="d-flex flex-wrap align-items-center outcome-review-actions"></div>');
-        if (editable) {
+        if (isApprovedClo) {
+            var persistedApprovedText = String(selected.authoritative_text || selected.source_text || '').trim();
+            var $saveApprovedEdit = $('<button type="button" class="btn btn-warning mr-2 mb-2" id="outcome-review-save"></button>').text('Save approved CLO edit');
+            function approvedEditHasChange() {
+                var nextText = String($text.val() || '').trim();
+                return nextText !== '' && nextText !== persistedApprovedText;
+            }
+            function updateApprovedEditAvailability() {
+                $saveApprovedEdit.prop('disabled', !approvedEditHasChange());
+            }
+            $text.on('input', updateApprovedEditAvailability);
+            updateApprovedEditAvailability();
+            $saveApprovedEdit.on('click', function() {
+                if (!approvedEditHasChange()) return;
+                var confirmed = window.confirm('Saving this edit will invalidate the current CLO approval and may mark dependent Structure, Activities, and Competency decisions Stale. Any current Final Plan Approval will also no longer be current. No downstream content will regenerate automatically. Continue?');
+                if (!confirmed) return;
+                $saveApprovedEdit.prop('disabled', true).text('Saving authority change...');
+                callBff('edit_approved_learning_outcome', {
+                    run_id: state.runId,
+                    source_outcome_id: selected.item_id,
+                    teacher_text: String($text.val() || '').trim(),
+                    confirmed: true
+                }).then(function(result) {
+                    state.outcomeAuthorityFeedback = {
+                        item_id: selected.item_id,
+                        structure_stale: Boolean(result.stale && result.stale.structure_alignment),
+                        activity_count: result.stale && Number(result.stale.activity_count || 0),
+                        competency_candidate_count: result.stale && Number(result.stale.competency_candidate_count || 0)
+                    };
+                    return reloadInstructionalDesignAuthority();
+                }).then(function(result) {
+                    focusOutcomeReviewSelection();
+                    return result;
+                }).catch(function(err) {
+                    $saveApprovedEdit.prop('disabled', false).text('Save approved CLO edit');
+                    showError('Failed to save approved CLO edit: ' + err.message, err.details);
+                });
+            });
+            $actions.append($saveApprovedEdit);
+        } else if (editable) {
             var $status = $('<select class="custom-select custom-select-sm mb-3" id="outcome-review-status"></select>');
             $status.append($('<option value="PENDING_REVIEW">Pending review</option>'));
             $status.append($('<option value="REVIEWED">Reviewed</option>'));
             $status.append($('<option value="NEEDS_REVISION">Needs revision</option>'));
-            $status.val(selected.status === 'APPROVED' ? 'REVIEWED' : selected.status);
+            $status.val(selected.status);
             $workspace.append($('<label class="small font-weight-bold mb-1" for="outcome-review-status"></label>').text('Review decision'));
             $workspace.append($status);
 
@@ -525,6 +787,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                         payload.recommended_text = proposal ? proposal.recommended_text : selected.source_text;
                     }
                     callBff('approve_learning_outcome', payload).then(function(result) {
+                        state.outcomeAuthorityFeedback = null;
                         applyOutcomeApproval(result, selected.item_id);
                         return loadOutcomeReviews();
                     }).then(function(result) {
@@ -537,8 +800,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 });
                 $actions.append($approve).append($approveHint);
             }
-        } else {
-            $workspace.append($('<div class="alert alert-success py-2 mb-3"></div>').text('This CLO is approved. Editing approved authority is handled by the safe approved-outcome flow.'));
         }
 
         var currentIndex = items.findIndex(function(item) { return outcomeReviewKey(item) === state.selectedOutcomeReviewKey; });
@@ -557,11 +818,20 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         $inspector.append($('<div class="small text-uppercase text-muted font-weight-bold mb-2"></div>').text('Inspector'));
         $inspector.append($('<div class="font-weight-bold small mb-1"></div>').text('Authority'));
         if (selected.item_type === 'LO') {
-            $inspector.append($('<div class="small mb-3"></div>').text('Review state only. LO has no CLO-style authority approval.'));
+            $inspector.append($('<div class="small mb-3"></div>').text('Reviewed state only. LO has no CLO Approved authority and is separate from Final Plan Approval.'));
         } else if (selected.status === 'APPROVED') {
-            $inspector.append($('<div class="small mb-3 text-success"></div>').text('CLO Approved — global Course Learning Outcome authority.'));
+            $inspector.append($('<div class="small mb-3 text-success"></div>').text('CLO Approved — global Course Learning Outcome authority. This is not Final Plan Approval.'));
         } else {
-            $inspector.append($('<div class="small mb-3"></div>').text(selected.status === 'REVIEWED' ? 'Reviewed — ready for explicit CLO approval.' : 'Review decision is not authority approval.'));
+            $inspector.append($('<div class="small mb-3"></div>').text(selected.status === 'REVIEWED' ? 'Reviewed — ready for explicit CLO approval. Reviewed is not CLO Approved or Final Plan Approval.' : 'Review decision is not CLO Approved authority or Final Plan Approval.'));
+        }
+        if (state.outcomeAuthorityFeedback && state.outcomeAuthorityFeedback.item_id === selected.item_id) {
+            var feedback = state.outcomeAuthorityFeedback;
+            var staleParts = [];
+            if (feedback.structure_stale) staleParts.push('Structure alignment: Stale');
+            if (feedback.activity_count) staleParts.push(String(feedback.activity_count) + ' Activity item(s): Stale');
+            if (feedback.competency_candidate_count) staleParts.push(String(feedback.competency_candidate_count) + ' Competency candidate approval(s) withdrawn');
+            $inspector.append($('<div class="alert alert-warning py-2 small mb-3" id="outcome-authority-feedback"></div>')
+                .text('Previous CLO approval was invalidated. ' + (staleParts.join(' · ') || 'Downstream authority must be reviewed.') + '. Recovery remains Teacher-triggered; nothing was regenerated automatically.'));
         }
 
         $inspector.append($('<div class="font-weight-bold small mb-1"></div>').text('Provenance / source'));
@@ -586,6 +856,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
         $row.append($nav).append($workspace).append($inspector);
         $root.append($row);
+        $nav.scrollTop(state.outcomeReviewNavScrollTop || 0);
     }
 
     function loadOutcomeReviews() {
@@ -599,6 +870,28 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             renderOutcomeReviewWorkbench();
             updateStructureContinueState();
             return result;
+        });
+    }
+
+    function reloadInstructionalDesignAuthority() {
+        if (!state.runId) return Promise.resolve(null);
+        return callBff('get_instructional_design', {run_id: state.runId}).then(function(result) {
+            showCoreContext(result.core_context);
+            state.coreContextRevision = result.core_context.revision;
+            state.outcomeProposals = result.outcome_proposals || [];
+            state.outcomeCoverage = result.coverage || [];
+            var restored = result.structure_revision;
+            if (restored) {
+                state.structureRevision = restored.revision;
+                state.currentStructure = restored;
+                state.currentEnvelope = structurePreviewEnvelope(restored);
+                renderAlignmentReview(state.currentStructure);
+            }
+            return callBff('get_competency_candidates', {run_id: state.runId}).then(function(candidateResult) {
+                state.competencyCandidates = candidateResult.candidates || [];
+            }).catch(function() {}).then(function() {
+                return loadOutcomeReviews();
+            });
         });
     }
 
@@ -651,6 +944,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         }
         if ((state.outcomeCoverage || []).some(function(item) { return item.state === 'UNCOVERED'; })) {
             $button.prop('disabled', true).text('Repair Outcome coverage to continue');
+            return;
+        }
+        if (state.stagedMode && state.currentStructure && (state.currentStructure.content.sections || []).some(function(section) { return weekReviewStatus(section) === 'Pending review'; })) {
+            $button.prop('disabled', true).text('Mark every Week reviewed to continue');
             return;
         }
         $button.prop('disabled', false).text('Confirm structure');
@@ -821,6 +1118,22 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             $root.append($card);
         });
     }
+    function weekReviewEntry(section) {
+        var reviews = state.currentStructure && Array.isArray(state.currentStructure.week_reviews) ? state.currentStructure.week_reviews : [];
+        return reviews.find(function(review) { return review.section_ref === section.ref; }) || null;
+    }
+
+    function weekReviewStatus(section) {
+        var entry = weekReviewEntry(section);
+        if (section.alignment_status === 'STALE_ALIGNMENT' || currentAlignmentIsStale()) return 'Stale';
+        return entry ? entry.status : 'Pending review';
+    }
+
+    function weekStatusPresentation(status) {
+        var badges = {'Pending review': 'badge-secondary', 'Ready to configure': 'badge-info', 'In progress': 'badge-primary', 'Ready': 'badge-success', 'Stale': 'badge-warning'};
+        return {label: Object.prototype.hasOwnProperty.call(badges, status) ? status : 'Pending review', badge: badges[status] || 'badge-secondary'};
+    }
+
     function renderAlignmentReview(structure) {
         var $root = $('#instructional-design-review');
         if (!$root.length) return;
@@ -834,7 +1147,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         $root.append($heading);
         $root.append($('<div class="small text-muted mb-3"></div>').text('Sections are aligned to authorized Objective/Outcome IDs. Activity creation remains a separate Teacher-authorized step.'));
         var sections = structure.content && Array.isArray(structure.content.sections) ? structure.content.sections : [];
-        sections.forEach(function(section) {
+        sections.filter(function(section) { return !state.selectedWeekRef || section.ref === state.selectedWeekRef; }).forEach(function(section) {
             var $card = $('<div class="border rounded p-2 mb-2"></div>');
             $card.append($('<div class="font-weight-bold"></div>').text(section.title || section.ref));
             $card.append($('<div class="small"></div>').text('LO / Objectives: ' + (((section.aligned_objective_ids || []).map(objectiveDisplayLabel)).join(' | ') || 'None')));
@@ -843,14 +1156,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $card.append($("<span class=\"badge badge-danger mt-1\"></span>").text("REVIEW REQUIRED · no Outcome mapping"));
             }
             if (section.alignment_status === 'STALE_ALIGNMENT') {
-                $card.append($('<span class="badge badge-warning mt-1"></span>').text('STALE_ALIGNMENT · Outcome approval changed'));
+                $card.append($('<span class="badge badge-warning mt-1"></span>').text('Stale · Outcome authority changed'));
             }
             $root.append($card);
         });
         var isStale = sections.some(function(section) { return section.alignment_status === 'STALE_ALIGNMENT'; });
         if (isStale) {
             var $staleAlert = $('<div class="alert alert-warning d-flex justify-content-between align-items-center mb-3"></div>');
-            $staleAlert.append($('<span><i class="fa fa-exclamation-triangle mr-2"></i>Structure alignment is stale due to approved outcome changes.</span>'));
+            $staleAlert.append($('<span><i class="fa fa-exclamation-triangle mr-2"></i>Structure alignment is system-set Stale after an Outcome authority change. Revalidation recomputes alignment; Stale cannot be cleared manually.</span>'));
             var $revalidateBtn = $('<button type="button" class="btn btn-sm btn-outline-dark" id="btn-revalidate-alignment">Revalidate Alignment</button>');
             $revalidateBtn.on('click', function() {
                 $revalidateBtn.prop('disabled', true).text('Revalidating...');
@@ -898,8 +1211,38 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         var sections = (preview.content && preview.content.sections) ? preview.content.sections : (envelope && envelope.content && envelope.content.sections ? envelope.content.sections : []);
         var $container = $('#preview-sections-container');
         $container.empty();
-
-        sections.forEach(function(sec, idx) {
+        var $cards = $container;
+        if (state.stagedMode && sections.length) {
+            if (!sections.some(function(section) { return section.ref === state.selectedWeekRef; })) state.selectedWeekRef = sections[0].ref;
+            var $layout = $('<div class="row week-review-workbench"></div>');
+            var $rail = $('<nav class="col-md-4 mb-3 week-review-rail" aria-label="Week review"></nav>');
+            var $workspace = $('<div class="col-md-8 week-review-workspace"></div>');
+            sections.forEach(function(section) {
+                var presentation = weekStatusPresentation(weekReviewStatus(section));
+                var label = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled'));
+                var $week = $('<button type="button" class="list-group-item list-group-item-action text-left week-review-nav-item"></button>')
+                    .attr('data-week-ref', section.ref).attr('aria-current', section.ref === state.selectedWeekRef ? 'true' : 'false')
+                    .toggleClass('active', section.ref === state.selectedWeekRef)
+                    .append($('<span class="d-block font-weight-bold"></span>').text(label))
+                    .append($('<span class="badge mt-1"></span>').addClass(presentation.badge).text(presentation.label));
+                $week.on('click', function() {
+                    guardedNavigate(function() {
+                        state.selectedWeekRef = section.ref;
+                        var url = new URL(window.location.href);
+                        url.searchParams.set('week_ref', section.ref);
+                        window.history.replaceState(null, '', url.toString());
+                        renderPreview(state.currentEnvelope, state.currentEnvelope);
+                    });
+                });
+                $rail.append($week);
+            });
+            $layout.append($rail).append($workspace);
+            $container.append($layout);
+            $cards = $workspace;
+        }
+        var visibleSections = state.stagedMode ? sections.filter(function(section) { return section.ref === state.selectedWeekRef; }) : sections;
+        visibleSections.forEach(function(sec) {
+            var idx = sections.indexOf(sec);
             var secNum = idx + 1;
             var $secCard = $('<div class="card mb-3 border-light bg-light"></div>');
             var $secHeader = $('<div class="card-header bg-white d-flex justify-content-between align-items-center py-2"></div>');
@@ -907,7 +1250,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
             var $editBtn = $('<button type="button" class="btn btn-sm btn-link text-secondary p-0"><i class="fa fa-pencil mr-1"></i>Edit</button>');
             $editBtn.on('click', function() {
-                openEditSectionModal(idx);
+                guardedNavigate(function() { openEditSectionModal(idx); });
             });
             $secHeader.append($editBtn);
             var $deleteBtn = $('<button type="button" class="btn btn-sm btn-link text-danger p-0 ml-2"><i class="fa fa-trash mr-1"></i>Delete</button>');
@@ -947,10 +1290,40 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             }
 
             $secCard.append($secBody);
-            $container.append($secCard);
+            if (state.stagedMode && state.currentStructure) {
+                var status = weekReviewStatus(sec);
+                var $review = $('<button type="button" class="btn btn-sm btn-outline-primary mt-2 week-mark-reviewed"></button>').text('Mark Reviewed');
+                var outcomesReady = !(state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION' || (item.item_type === 'LO' && item.status !== 'REVIEWED'); }) && unapprovedSourceOutcomes().length === 0;
+                $review.prop('disabled', status !== 'Pending review' || !outcomesReady);
+                $review.on('click', function() {
+                    $review.prop('disabled', true);
+                    callBff('mark_week_reviewed', {run_id: state.runId, section_ref: sec.ref, revision: state.structureRevision}).then(function(result) {
+                        state.currentStructure = result.structure_revision;
+                        state.structureRevision = result.structure_revision.revision;
+                        state.currentEnvelope = structurePreviewEnvelope(state.currentStructure);
+                        renderPreview(state.currentEnvelope, state.currentEnvelope);
+                    }).catch(function(err) {
+                        $review.prop('disabled', false);
+                        showError('Failed to mark Week reviewed: ' + err.message, err.details);
+                    });
+                });
+                $secBody.append($review);
+            }
+            $cards.append($secCard);
         });
 
-        renderAlignmentReview({content: {sections: sections}});
+        showRecoveryBanner('course-identity', 'course', courseIdentityDraftRevision(), openEditCourseTitleModal);
+
+        if (state.stagedMode && state.selectedWeekRef) {
+            var recoveryIndex = sections.findIndex(function(section) { return section.ref === state.selectedWeekRef; });
+            if (recoveryIndex >= 0) {
+                showRecoveryBanner('structure-week', state.selectedWeekRef, state.structureRevision, function(payload) {
+                    openEditSectionModal(recoveryIndex, payload);
+                });
+            }
+        }
+
+        renderAlignmentReview(state.currentStructure || {content: {sections: sections}});
 
         // Warnings & Assumptions
         var $warnList = $('#preview-warnings-list');
@@ -968,10 +1341,53 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         }
     }
 
-    function openEditCourseTitleModal() {
+    function courseIdentityDraftRevision() {
+        if (state.stagedMode) return Number(state.structureRevision);
+        return Number(state.currentEnvelope && state.currentEnvelope.revision ? state.currentEnvelope.revision : state.revision);
+    }
+
+    function persistCourseIdentityDraft() {
+        writeRecoverySnapshot('course-identity', 'course', courseIdentityDraftRevision(), {
+            title: $('#input-edit-course-title').val(),
+            summary: $('#input-edit-course-summary').val()
+        });
+    }
+
+    function openEditCourseTitleModal(recoveredPayload) {
+        var draft = recoveredPayload || null;
+        var session = beginDraftSession('course-identity', 'course', courseIdentityDraftRevision(), draft ? 'restored' : 'fresh');
+        if (!session.ok) {
+            showRecoveryBanner('course-identity', 'course', courseIdentityDraftRevision(), openEditCourseTitleModal);
+            showError(session.reason === 'conflict'
+                ? 'Resolve the Draft conflict for the Course title before starting a new edit.'
+                : 'Restore or discard the recoverable Course title draft before starting a new edit.');
+            return;
+        }
         var course = state.currentEnvelope ? state.currentEnvelope.content.course : {};
-        $('#input-edit-course-title').val(course.title || $('#preview-course-title').text());
-        $('#input-edit-course-summary').val(course.summary || $('#preview-course-summary').text());
+        $('#input-edit-course-title').val(draft ? draft.title || '' : (course.title || $('#preview-course-title').text()));
+        $('#input-edit-course-summary').val(draft ? draft.summary || '' : (course.summary || $('#preview-course-summary').text()));
+        var courseDraftDirty = Boolean(draft);
+        $('#modal-edit-title input, #modal-edit-title textarea')
+            .off('.ticket05draft')
+            .on('input.ticket05draft change.ticket05draft', function() {
+                courseDraftDirty = true;
+                persistCourseIdentityDraft();
+            });
+        setActiveDraftGuard({
+            surface: 'course-identity',
+            entityRef: 'course',
+            isDirty: function() { return courseDraftDirty; },
+            save: function() {
+                if (!$('#input-edit-course-title').val().trim()) {
+                    return Promise.reject(new Error('Course title cannot be empty.'));
+                }
+                return saveCourseTitle();
+            },
+            discard: function() {
+                courseDraftDirty = false;
+                $('#modal-edit-title').modal('hide');
+            }
+        });
         $('#modal-edit-title').modal('show');
     }
 
@@ -981,12 +1397,11 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
         if (!newTitle) {
             alert('Course title cannot be empty.');
-            return;
+            return null;
         }
 
         $('#modal-edit-title').modal('hide');
 
-        // Clone envelope and update title
         var newEnvelope = JSON.parse(JSON.stringify(state.currentEnvelope));
         newEnvelope.title = newTitle;
         newEnvelope.content.course.title = newTitle;
@@ -1001,30 +1416,61 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             structure.summary = newSummary || structure.summary;
             structure.content.course.title = newTitle;
             contractHelpers.setOptionalString(structure.content.course, 'summary', newSummary);
-            saveStructureRevision(structure).catch(function(err) {
+            return saveStructureRevision(structure).then(function(result) {
+                clearRecoverySnapshotAfterSave('course-identity', 'course');
+                clearActiveDraftGuard('course-identity', 'course');
+                return result;
+            }).catch(function(err) {
                 showError('Failed to save revised course structure: ' + err.message, err.details);
+                throw err;
             });
-            return;
         }
 
-        // Post to save_revision -> creates Revision N+1
-        callBff('save_revision', {
+        return callBff('save_revision', {
             plan_id: state.planId,
             envelope: JSON.stringify(newEnvelope),
             summary: 'Updated course title and summary'
         }).then(function(res) {
+            clearRecoverySnapshotAfterSave('course-identity', 'course');
+            clearActiveDraftGuard('course-identity', 'course');
             applyPlanRevision(res.plan, res.preview);
+            return res;
         }).catch(function(err) {
             showError('Failed to save revised course title: ' + err.message, err.details);
+            throw err;
         });
     }
 
-    function openEditSectionModal(index) {
+    function persistStructureDraft(index) {
+        var sections = state.currentEnvelope && state.currentEnvelope.content ? state.currentEnvelope.content.sections || [] : [];
+        var sec = sections[index];
+        if (!sec) return;
+        var payload = {
+            title: $('#input-edit-section-title').val(),
+            summary: $('#input-edit-section-summary').val(),
+            aligned_objective_ids: $('#input-edit-section-objectives').val() || [],
+            aligned_outcome_ids: $('#input-edit-section-outcomes').val() || []
+        };
+        writeRecoverySnapshot('structure-week', sec.ref, state.structureRevision, payload);
+    }
+
+    function openEditSectionModal(index, recoveredPayload) {
         var sections = state.currentEnvelope.content.sections || [];
         var sec = sections[index] || {};
+        var draft = recoveredPayload || null;
+        var session = beginDraftSession('structure-week', sec.ref, state.structureRevision, draft ? 'restored' : 'fresh');
+        if (!session.ok) {
+            showRecoveryBanner('structure-week', sec.ref, state.structureRevision, function(payload) {
+                openEditSectionModal(index, payload);
+            });
+            showError(session.reason === 'conflict'
+                ? 'Resolve the Draft conflict for this Week before starting a new edit.'
+                : 'Restore or discard the recoverable Week draft before starting a new edit.');
+            return;
+        }
         $('#input-edit-section-index').val(index);
-        $('#input-edit-section-title').val(sec.title || '');
-        $('#input-edit-section-summary').val(sec.summary || '');
+        $('#input-edit-section-title').val(draft ? draft.title || '' : sec.title || '');
+        $('#input-edit-section-summary').val(draft ? draft.summary || '' : sec.summary || '');
         var objectives = state.coreContext && Array.isArray(state.coreContext.learning_objectives) ? state.coreContext.learning_objectives : [];
         var approvedOutcomes = state.coreContext && Array.isArray(state.coreContext.approved_learning_outcomes) ? state.coreContext.approved_learning_outcomes : [];
         var sourceOutcomes = state.coreContext && Array.isArray(state.coreContext.source_learning_outcomes) ? state.coreContext.source_learning_outcomes : [];
@@ -1034,8 +1480,33 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             approvedOutcomes.length ? approvedOutcomes : sourceOutcomes,
             approvedOutcomes.length ? 'outcome_id' : 'source_outcome_id',
             approvedOutcomes.length ? 'text' : 'source_text',
-            sec.aligned_outcome_ids || []
+            draft && Array.isArray(draft.aligned_outcome_ids) ? draft.aligned_outcome_ids : (sec.aligned_outcome_ids || [])
         );
+        if (draft && Array.isArray(draft.aligned_objective_ids)) {
+            $('#input-edit-section-objectives').val(draft.aligned_objective_ids);
+        }
+        var structureDraftDirty = Boolean(draft);
+        $('#modal-edit-section input, #modal-edit-section textarea, #modal-edit-section select')
+            .off('.ticket05draft')
+            .on('input.ticket05draft change.ticket05draft', function() {
+                structureDraftDirty = true;
+                persistStructureDraft(index);
+            });
+        setActiveDraftGuard({
+            surface: 'structure-week',
+            entityRef: sec.ref,
+            isDirty: function() { return structureDraftDirty; },
+            save: function() {
+                if (!$('#input-edit-section-title').val().trim()) {
+                    return Promise.reject(new Error('Section title cannot be empty.'));
+                }
+                return saveSection();
+            },
+            discard: function() {
+                structureDraftDirty = false;
+                $('#modal-edit-section').modal('hide');
+            }
+        });
         $('#modal-edit-section').modal('show');
     }
 
@@ -1048,14 +1519,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
         if (!newTitle) {
             alert('Section title cannot be empty.');
-            return;
+            return null;
         }
 
         $('#modal-edit-section').modal('hide');
 
         var newEnvelope = JSON.parse(JSON.stringify(state.currentEnvelope));
         if (!newEnvelope.content.sections[index]) {
-            return;
+            return null;
         }
         newEnvelope.content.sections[index].title = newTitle;
         newEnvelope.content.sections[index].aligned_objective_ids = newObjectiveIds;
@@ -1069,20 +1540,28 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             structure.content.sections[index].aligned_objective_ids = newObjectiveIds;
             structure.content.sections[index].aligned_outcome_ids = newOutcomeIds;
             structure.content.sections[index].alignment_status = 'CURRENT';
-            saveStructureRevision(structure).catch(function(err) {
+            return saveStructureRevision(structure).then(function(result) {
+                clearRecoverySnapshotAfterSave('structure-week', newEnvelope.content.sections[index].ref);
+                clearActiveDraftGuard('structure-week', newEnvelope.content.sections[index].ref);
+                return result;
+            }).catch(function(err) {
                 showError('Failed to save revised course structure section: ' + err.message, err.details);
+                throw err;
             });
-            return;
         }
 
-        callBff('save_revision', {
+        return callBff('save_revision', {
             plan_id: state.planId,
             envelope: JSON.stringify(newEnvelope),
             summary: 'Updated section ' + (index + 1) + ' title'
         }).then(function(res) {
+            clearRecoverySnapshotAfterSave('structure-week', newEnvelope.content.sections[index].ref);
+            clearActiveDraftGuard('structure-week', newEnvelope.content.sections[index].ref);
             applyPlanRevision(res.plan, res.preview);
+            return res;
         }).catch(function(err) {
             showError('Failed to save revised section: ' + err.message, err.details);
+            throw err;
         });
     }
 
@@ -1443,19 +1922,85 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         });
     }
 
+    function persistActivityDraft(activityRef, baseRevision, payload) {
+        writeRecoverySnapshot('activity-content', activityRef, baseRevision, payload);
+    }
+
     function renderActivityStructureStage() {
+        var renderVersion = ++state.activityRenderVersion;
         var $container = $('#activity-structure-container');
         $container.empty();
-        var $mappingControls = $('<div class="card card-body mb-3" id="activity-competency-mappings"></div>');
-        $container.append($mappingControls);
-        refreshCompetencyMappings($mappingControls, true);
-        state.activityIntents = {};
         var sections = (state.currentStructure && state.currentStructure.content && state.currentStructure.content.sections) || [];
+        if (!sections.length) return;
+        if (!state.selectedActivityWeekRef || !sections.some(function(section) { return section.ref === state.selectedActivityWeekRef; })) {
+            state.selectedActivityWeekRef = state.selectedWeekRef && sections.some(function(section) { return section.ref === state.selectedWeekRef; }) ? state.selectedWeekRef : sections[0].ref;
+        }
+        var $layout = $('<div class="row activity-review-workbench"></div>');
+        var $rail = $('<nav class="col-lg-3 mb-3 activity-week-rail" aria-label="Activity Week navigator"></nav>');
+        var $workspace = $('<section class="col-lg-6 mb-3 activity-week-workspace" aria-live="polite"></section>');
+        var $inspector = $('<aside class="col-lg-3 mb-3 activity-review-inspector"></aside>');
+        var $activityInspector = $('<div class="card card-body mb-3 activity-context-inspector"></div>');
+        var $mappingDetails = $('<details class="card card-body p-2 mb-3 activity-mapping-inspector"></details>');
+        $mappingDetails.append($('<summary class="small font-weight-bold" style="cursor:pointer;"></summary>').text('Competency mapping & evidence'));
+        var $mappingControls = $('<div class="mt-2" id="activity-competency-mappings"></div>');
+        $mappingDetails.append($mappingControls);
+        $inspector.append($activityInspector).append($mappingDetails);
+        sections.forEach(function(section) {
+            var intents = state.activityIntents[section.ref] || [];
+            var stale = intents.some(function(intent) { return intent.status === 'stale'; });
+            var ready = intents.length && intents.every(function(intent) { return intent.status === 'generated' || intent.status === 'shell'; });
+            var creating = intents.some(function(intent) { return intent.status === 'creating'; });
+            var status = stale ? 'Stale' : ready ? 'Ready' : creating ? 'In progress' : 'Pending review';
+            var statusBadge = status === 'Ready' ? 'badge-success' : status === 'In progress' ? 'badge-primary' : status === 'Stale' ? 'badge-warning' : 'badge-secondary';
+            var label = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled week'));
+            var $week = $('<button type="button" class="list-group-item list-group-item-action text-left activity-week-nav-item"></button>')
+                .attr('data-week-ref', section.ref).attr('aria-current', section.ref === state.selectedActivityWeekRef ? 'true' : 'false')
+                .toggleClass('active', section.ref === state.selectedActivityWeekRef)
+                .append($('<span class="d-block font-weight-bold"></span>').text(label))
+                .append($('<span class="badge mt-1"></span>').addClass(statusBadge).text(status));
+            $week.on('click', function() {
+                guardedNavigate(function() {
+                    state.selectedActivityWeekRef = section.ref;
+                    var url = new URL(window.location.href);
+                    url.searchParams.set('activity_week_ref', section.ref);
+                    window.history.replaceState(null, '', url.toString());
+                    renderActivityStructureStage();
+                    $('#activity-structure-container').find('.activity-week-nav-item').each(function(_index, element) {
+                        var $candidate = $(element);
+                        if ($candidate.attr('aria-current') === 'true') $candidate.trigger('focus');
+                    });
+                });
+            });
+            $rail.append($week);
+        });
+        $layout.append($rail).append($workspace).append($inspector);
+        $container.append($layout);
+        refreshCompetencyMappings($mappingControls, true);
         state.activityLoadingCount = sections.length;
         updateActivityFinalizeState();
+        sections.filter(function(section) { return section.ref !== state.selectedActivityWeekRef; }).forEach(function(backgroundSection) {
+            callBff('get_activity_intents', {run_id: state.runId, section_ref: backgroundSection.ref}).then(function(result) {
+                if (renderVersion !== state.activityRenderVersion) return;
+                state.activityIntents[backgroundSection.ref] = result.intents || [];
+                var intents = state.activityIntents[backgroundSection.ref];
+                var stale = intents.some(function(item) { return item.status === 'stale'; });
+                var ready = intents.length && intents.every(function(item) { return item.status === 'generated' || item.status === 'shell'; });
+                var creating = intents.some(function(item) { return item.status === 'creating'; });
+                var status = stale ? 'Stale' : ready ? 'Ready' : creating ? 'In progress' : 'Pending review';
+                var $badge = $rail.find('[data-week-ref="' + backgroundSection.ref + '"] .badge');
+                $badge.removeClass('badge-success badge-primary badge-warning badge-secondary')
+                    .addClass(status === 'Ready' ? 'badge-success' : status === 'In progress' ? 'badge-primary' : status === 'Stale' ? 'badge-warning' : 'badge-secondary').text(status);
+            }).catch(function(err) {
+                if (renderVersion === state.activityRenderVersion) showError('Failed to load Activity state for ' + (backgroundSection.title || backgroundSection.ref) + ': ' + err.message, err.details);
+            }).finally(function() {
+                if (renderVersion !== state.activityRenderVersion) return;
+                state.activityLoadingCount = Math.max(0, state.activityLoadingCount - 1);
+                updateActivityFinalizeState();
+            });
+        });
 
-        sections.forEach(function(section) {
-            var materialState = state.sectionMaterials[section.ref] || {snapshotId: null, filename: null, plannedResources: []};
+        sections.filter(function(section) { return section.ref === state.selectedActivityWeekRef; }).forEach(function(section) {
+            var materialState = state.sectionMaterials[section.ref] || {status: 'fallback', error: null, snapshotId: null, revision: 0, filename: null, plannedResources: []};
             state.sectionMaterials[section.ref] = materialState;
 
             var weekTitle = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' — ' + (section.title || 'Untitled week'));
@@ -1491,22 +2036,35 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             $publishResource.append($publishResourceInput).append($('<span class="custom-control-label"></span>').text('Include this file as a Moodle File Resource in the course'));
             var $materialControls = $('<div class="d-flex flex-wrap align-items-center"></div>');
             var $file = $('<input type="file" class="form-control-file mr-2 mb-2" style="max-width: 360px;" accept=".txt,.md,.markdown,.docx,.pdf,.pptx">');
-            var $upload = $('<button type="button" class="btn btn-outline-secondary btn-sm mb-2"></button>');
-            $materialControls.append($file).append($upload);
+            var $upload = $('<button type="button" class="btn btn-outline-secondary btn-sm mb-2 d-none"></button>');
+            $materialControls.append($file).append($upload)
+                .append($('<span class="small text-muted mb-2"></span>').text('Selecting a file saves automatically.'));
             $material.append($materialLabel).append($publishResource).append($materialControls);
-            $body.append($material);
 
-            var $panelsRow = $('<div class="row"></div>');
-            var $quizCol = $('<div class="col-lg-6 mb-3"></div>');
-            var $assignmentCol = $('<div class="col-lg-6 mb-3"></div>');
+            var activeTab = state.selectedActivityTabByWeek[section.ref] || 'material';
+            var $tabs = $('<div class="nav nav-tabs activity-review-tabs mb-3" role="tablist"></div>');
+            var $materialTab = $('<button type="button" class="nav-link" role="tab"></button>').attr('data-activity-tab', 'material').text('Material');
+            var $quizTab = $('<button type="button" class="nav-link" role="tab"></button>').attr('data-activity-tab', 'quiz').text('Quiz');
+            var $assignmentTab = $('<button type="button" class="nav-link" role="tab"></button>').attr('data-activity-tab', 'assignment').text('Assignment');
+            $tabs.append($materialTab).append($quizTab).append($assignmentTab);
+            var $materialPane = $('<div class="activity-tab-pane" data-activity-pane="material"></div>').append($material);
+            var $quizPane = $('<div class="activity-tab-pane" data-activity-pane="quiz"></div>');
+            var $assignmentPane = $('<div class="activity-tab-pane" data-activity-pane="assignment"></div>');
             var $quizPanel = $('<div class="activity-type-panel p-3"></div>');
             var $assignmentPanel = $('<div class="activity-type-panel p-3"></div>');
-            $quizCol.append($quizPanel);
-            $assignmentCol.append($assignmentPanel);
-            $panelsRow.append($quizCol).append($assignmentCol);
-            $body.append($panelsRow);
+            $quizPane.append($quizPanel);
+            $assignmentPane.append($assignmentPanel);
+            $body.append($tabs).append($materialPane).append($quizPane).append($assignmentPane);
+            [$materialTab, $quizTab, $assignmentTab].forEach(function($tab) {
+                $tab.on('click', function() {
+                    guardedNavigate(function() {
+                        state.selectedActivityTabByWeek[section.ref] = $tab.attr('data-activity-tab');
+                        renderPanels();
+                    });
+                });
+            });
             $card.append($body);
-            $container.append($card);
+            $workspace.append($card);
 
             var $quizCount = $('<input type="number" min="1" class="form-control form-control-sm" value="5">');
             var $quizType = $('<select class="form-control form-control-sm"><option value="multichoice">Multiple Choice</option><option value="truefalse">True / False</option><option value="shortanswer">Short Answer</option><option value="essay">Essay</option></select>');
@@ -1553,6 +2111,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             var $assignmentOverrideReason = $('<input type="text" class="form-control form-control-sm mt-1" placeholder="Reason for targeting an out-of-Section Outcome">');
             var $quizPrompt = null;
             var $assignmentPrompt = null;
+            var activeAdvanced = null;
+            var pendingIntentSave = Promise.resolve({ok: true});
 
             function fillMultiSelect($select, items, selected) {
                 $select.empty();
@@ -1633,6 +2193,75 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 return (state.activityIntents[section.ref] || []).find(function(intent) { return intent.activity_type === type; }) || null;
             }
 
+            function renderActivityInspector(type, intent) {
+                $activityInspector.empty();
+                var label = type === 'material' ? 'Material' : type === 'quiz' ? 'Quiz' : 'Assignment';
+                $activityInspector.append($('<h6 class="font-weight-bold mb-2"></h6>').text(label + ' review context'));
+                if (type === 'material') {
+                    var materialPresentation = materialState.status === 'failed'
+                        ? {label: 'Failed', badge: 'badge-danger'}
+                        : materialState.snapshotId ? {label: 'Ready', badge: 'badge-success'} : {label: 'Syllabus fallback', badge: 'badge-light'};
+                    $activityInspector.append($('<span class="badge mb-2"></span>').addClass(materialPresentation.badge).text(materialPresentation.label));
+                    $activityInspector.append($('<div class="small mb-1"></div>').text(materialState.snapshotId ? 'Source: sealed MaterialSnapshot' + (materialState.filename ? ' · ' + materialState.filename : '') : 'Source: sealed syllabus fallback'));
+                    $activityInspector.append($('<div class="small mb-1"></div>').text('Snapshot: ' + (materialState.snapshotId || 'No MaterialSnapshot') + (materialState.revision ? ' · revision ' + materialState.revision : '')));
+                    if (materialState.error) {
+                        $activityInspector.append($('<div class="alert alert-warning py-2 small mb-2"></div>').text((materialState.error.code || 'MATERIAL_OPERATION_FAILED') + ': ' + (materialState.error.message || 'Learning Material operation failed.')));
+                    }
+                    $activityInspector.append($('<div class="small text-muted"></div>').text("The same sealed grounding source is shared by this Week's Quiz and Assignment."));
+                    return;
+                }
+                if (!intent) {
+                    $activityInspector.append($('<div class="small text-muted"></div>').text('Select ' + label + ' for this Week to review its intent, grounding, alignment and provenance.'));
+                    return;
+                }
+                var presentation = activityStatusPresentation(intent);
+                $activityInspector.append($('<span class="badge mb-2"></span>').addClass(presentation.badge).text(presentation.label));
+                $activityInspector.append($('<div class="small mb-1"></div>').text('Intent: ' + (intent.purpose || 'Unspecified') + ' · revision ' + (intent.intent_revision || '—')));
+                $activityInspector.append($('<div class="small mb-1"></div>').text('Grounding: ' + (intent.grounding_mode || 'Pending') + (intent.material_snapshot_id ? ' · snapshot ' + intent.material_snapshot_id : '')));
+                $activityInspector.append($('<div class="small mb-1"></div>').text('LO: ' + ((intent.selected_objective_ids || []).map(objectiveDisplayLabel).join(' | ') || 'None')));
+                $activityInspector.append($('<div class="small mb-2"></div>').text('CLO: ' + ((intent.selected_outcome_ids || []).map(outcomeDisplayLabel).join(' | ') || 'None')));
+                var provenance = intent.content_provenance || (intent.activity ? 'AI_GENERATED' : null);
+                if (provenance) {
+                    var revision = Number(intent.activity_revision || 0);
+                    var sourceRevision = Number(intent.source_generation_revision || (provenance === 'AI_GENERATED' ? revision : 0));
+                    $activityInspector.append($('<div class="border-top pt-2 small mb-1"></div>').text('Provenance: ' + (provenance === 'TEACHER_EDITED' ? 'Teacher Edited · Activity revision ' + revision + ' · source AI revision ' + sourceRevision : 'AI Generated · Activity revision ' + revision)));
+                }
+                if (intent.generation_metadata) {
+                    $activityInspector.append($('<div class="small text-muted mb-2"></div>').text('Source: Intent revision ' + (intent.generation_metadata.activity_intent_revision || intent.intent_revision || '—') + ' · Context revision ' + (intent.generation_metadata.core_context_revision || '—')));
+                }
+                if (intent.quality_review) {
+                    var review = intent.quality_review;
+                    var $review = $('<details class="border rounded p-2 mb-2 activity-ai-review"></details>');
+                    $review.append($('<summary class="small font-weight-bold" style="cursor:pointer;"></summary>').text('AI self-review'));
+                    [['Outcome', review.outcome_alignment], ['Learner fit', review.learner_level_fit], ['Scope', review.scope_compliance], ['Purpose', review.purpose_fit]].forEach(function(check) {
+                        $review.append($('<span class="badge mr-1 mt-2"></span>').addClass(check[1] === 'PASS' ? 'badge-success' : 'badge-warning').text(check[0] + ': ' + (check[1] || '—')));
+                    });
+                    if (provenance === 'TEACHER_EDITED') $review.append($('<div class="small text-muted mt-2"></div>').text('Current Teacher edit was revalidated deterministically. No additional AI self-review call was made.'));
+                    if (Array.isArray(review.warnings) && review.warnings.length) $review.append($('<div class="small text-warning mt-2"></div>').text(review.warnings.join(' · ')));
+                    $activityInspector.append($review);
+                }
+                var refs = intent.activity && Array.isArray(intent.activity.source_refs) ? intent.activity.source_refs : [];
+                if (refs.length) {
+                    var $sources = $('<details class="border rounded p-2 mb-2 activity-source-review"></details>');
+                    $sources.append($('<summary class="small font-weight-bold" style="cursor:pointer;"></summary>').text('Source references (' + refs.length + ')'));
+                    refs.forEach(function(ref) { $sources.append($('<div class="small mt-1"></div>').text([ref.source, ref.page ? 'page ' + ref.page : '', ref.section || ''].filter(Boolean).join(' · '))); });
+                    $activityInspector.append($sources);
+                }
+                $activityInspector.append($('<div class="small text-muted"></div>').text('Competency mapping and evidence decisions remain in the collapsed panel below.'));
+            }
+
+            function applyActivityTab() {
+                activeTab = state.selectedActivityTabByWeek[section.ref] || activeTab || 'material';
+                [$materialTab, $quizTab, $assignmentTab].forEach(function($tab) {
+                    var selected = $tab.attr('data-activity-tab') === activeTab;
+                    $tab.toggleClass('active', selected).attr('aria-selected', selected ? 'true' : 'false');
+                });
+                [$materialPane, $quizPane, $assignmentPane].forEach(function($pane) {
+                    $pane.toggleClass('d-none', $pane.attr('data-activity-pane') !== activeTab);
+                });
+                renderActivityInspector(activeTab, activeTab === 'quiz' ? getIntent('quiz') : activeTab === 'assignment' ? getIntent('assignment') : null);
+            }
+
             function syncOptionInputs() {
                 var quizIntent = getIntent('quiz');
                 var assignmentIntent = getIntent('assignment');
@@ -1677,59 +2306,91 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
             function updateMaterialView() {
                 var creating = (state.activityIntents[section.ref] || []).some(function(intent) { return intent.status === 'creating'; });
-                if (materialState.filename) {
+                if (materialState.status === 'failed') {
+                    $materialLabel.html('<i class="fa fa-exclamation-triangle text-danger mr-1"></i> Material operation failed');
+                    if (materialState.snapshotId) $materialLabel.append($('<span class="small text-muted ml-2"></span>').text('Previous sealed revision remains available.'));
+                    $upload.removeClass('d-none').text(materialState.snapshotId ? 'Retry Save / Replace Material' : 'Retry Save');
+                } else if (materialState.filename) {
+                    $upload.addClass('d-none');
                     $materialLabel.html('<i class="fa fa-file-text-o text-success mr-1"></i> Current Material: ').append($('<strong></strong>').text(materialState.filename));
                     if (materialState.plannedResources && materialState.plannedResources.length) {
                         $materialLabel.append($('<span class="badge badge-success ml-2"></span>').text('File Resource Ready'));
                         $materialLabel.append($('<div class="small text-success mt-1"></div>').text('Planned title: ' + materialState.plannedResources[0].title));
                     }
                     $upload.text('Replace Material');
+                } else if (materialState.snapshotId) {
+                    $upload.addClass('d-none');
+                    $materialLabel.html('<i class="fa fa-file-text-o text-success mr-1"></i> Current sealed MaterialSnapshot: ').append($('<code></code>').text(materialState.snapshotId));
+                    $upload.text('Replace Material');
                 } else {
+                    $upload.addClass('d-none');
                     $materialLabel.html('<i class="fa fa-info-circle text-muted mr-1"></i> No Material uploaded — syllabus fallback will be used.');
-                    $upload.text('Upload Material');
+                    $upload.text('Save Material');
                 }
                 $publishResourceInput.prop('checked', materialState.includeResource !== false);
                 $publishResourceInput.prop('disabled', !materialState.filename || creating);
                 $upload.prop('disabled', creating);
             }
 
+            function applyMaterialReadback(result) {
+                result = result || {};
+                var snapshot = result.snapshot || null;
+                materialState.status = result.status || (snapshot ? 'ready' : 'fallback');
+                materialState.error = result.error || null;
+                if (snapshot) {
+                    materialState.snapshotId = snapshot.persisted_id || snapshot.id || null;
+                    materialState.revision = Number(snapshot.revision || 0);
+                    materialState.filename = snapshot.files && snapshot.files[0] ? snapshot.files[0].filename || null : null;
+                    materialState.plannedResources = result.planned_resources || [];
+                } else {
+                    materialState.snapshotId = null;
+                    materialState.revision = 0;
+                    materialState.filename = null;
+                    materialState.plannedResources = [];
+                }
+            }
+
+            function selectedQuestionIndex(intent) {
+                var questions = intent && intent.activity && Array.isArray(intent.activity.questions) ? intent.activity.questions : [];
+                var key = intent ? intent.activity_ref : '';
+                var index = Number(state.selectedQuizQuestionByActivity[key] || 0);
+                if (!Number.isSafeInteger(index) || index < 0 || index >= questions.length) index = 0;
+                state.selectedQuizQuestionByActivity[key] = index;
+                return index;
+            }
+
+            function appendQuestionNavigator(intent, $target) {
+                var questions = intent && intent.activity && Array.isArray(intent.activity.questions) ? intent.activity.questions : [];
+                if (!questions.length) return;
+                var selected = selectedQuestionIndex(intent);
+                var $nav = $('<div class="btn-group btn-group-sm mb-2 quiz-question-navigator" role="tablist" aria-label="Quiz questions"></div>');
+                questions.forEach(function(_question, index) {
+                    var $button = $('<button type="button" class="btn btn-outline-secondary quiz-question-nav-item" role="tab"></button>')
+                        .text('Q' + (index + 1)).attr('aria-selected', index === selected ? 'true' : 'false').toggleClass('active', index === selected);
+                    $button.on('click', function() {
+                        guardedNavigate(function() {
+                            state.selectedQuizQuestionByActivity[intent.activity_ref] = index;
+                            renderPanels();
+                            $quizPanel.find('.quiz-question-nav-item').each(function(_index, element) {
+                                var $candidate = $(element);
+                                if ($candidate.attr('aria-selected') === 'true') $candidate.trigger('focus');
+                            });
+                        });
+                    });
+                    $nav.append($button);
+                });
+                $target.append($nav);
+            }
+
             function renderGeneratedPreview(intent, $panel) {
                 if (!intent || !intent.activity) return;
                 var $preview = $('<div class="bg-light border rounded p-2 mb-3 small"></div>');
-                var provenance = intent.content_provenance || 'AI_GENERATED';
                 var activityRevision = Number(intent.activity_revision || 0);
-                var sourceGenerationRevision = Number(intent.source_generation_revision || (provenance === 'AI_GENERATED' ? activityRevision : 0));
-                var provenanceLabel = provenance === 'TEACHER_EDITED'
-                    ? 'Teacher Edited · Activity revision ' + activityRevision + ' · source AI revision ' + sourceGenerationRevision
-                    : 'AI Generated' + (activityRevision > 0 ? ' · Activity revision ' + activityRevision : '');
                 var $previewTitle = $('<div class="d-flex flex-wrap justify-content-between align-items-center mb-1"></div>');
                 $previewTitle.append($('<div class="font-weight-bold"></div>').text(intent.status === 'shell' ? 'Empty Activity Shell Preview' : 'Generated Activity Preview'));
-                $previewTitle.append($('<span class="badge"></span>').addClass(provenance === 'TEACHER_EDITED' ? 'badge-info' : 'badge-secondary').text(provenanceLabel));
                 $preview.append($previewTitle);
                 if (intent.review_required) {
                     $preview.append($('<div class="alert alert-warning py-1 px-2 mb-2"></div>').text('AI-expanded source content — Teacher review required before approval.'));
-                }
-                if (intent.quality_review) {
-                    var review = intent.quality_review;
-                    var $review = $('<div class="border rounded p-2 mb-2"></div>');
-                    $review.append($('<div class="font-weight-bold mb-1"></div>').text(provenance === 'TEACHER_EDITED' ? 'Source AI self-review (before Teacher edit)' : 'AI self-review (Teacher review required)'));
-                    [['Outcome alignment', review.outcome_alignment], ['Learner-level fit', review.learner_level_fit], ['Scope compliance', review.scope_compliance], ['Purpose fit', review.purpose_fit]].forEach(function(check) {
-                        var status = check[1] === 'PASS' ? 'badge-success' : 'badge-warning';
-                        $review.append($('<span class="badge mr-1"></span>').addClass(status).text(check[0] + ': ' + check[1]));
-                    });
-                    if (provenance === 'TEACHER_EDITED') {
-                        $review.append($('<div class="small text-muted mt-2"></div>').text('Current Teacher edit was revalidated deterministically. No additional AI self-review call was made.'));
-                    }
-                    if (Array.isArray(review.warnings) && review.warnings.length) {
-                        var $reviewWarnings = $('<ul class="small mb-0 mt-2 pl-4"></ul>');
-                        review.warnings.forEach(function(warning) { $reviewWarnings.append($('<li></li>').text(warning)); });
-                        $review.append($reviewWarnings);
-                    }
-                    $preview.append($review);
-                }
-                if (intent.generation_metadata) {
-                    var metadata = intent.generation_metadata;
-                    $preview.append($('<div class="small text-muted mb-2"></div>').text('Source generation: Intent revision ' + (metadata.activity_intent_revision || intent.intent_revision || 'unknown') + ', Context revision ' + (metadata.core_context_revision || 'unknown')));
                 }
                 if (intent.activity.type === 'assignment') {
                     if (intent.activity.description) $preview.append($('<div class="mb-1"></div>').text(intent.activity.description));
@@ -1740,7 +2401,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                         $preview.append($instructions);
                     }
                 } else if (intent.activity.type === 'quiz') {
-                    renderQuizActivityPreview(intent.activity, $preview);
+                    var previewQuestions = intent.activity.questions || [];
+                    appendQuestionNavigator(intent, $preview);
+                    var previewIndex = selectedQuestionIndex(intent);
+                    if (previewQuestions[previewIndex]) {
+                        var $questionDetail = $('<div class="quiz-question-detail"></div>');
+                        renderCanonicalQuestionPreview(previewQuestions[previewIndex], previewIndex, $questionDetail);
+                        $preview.append($questionDetail);
+                    }
                 }
 
                 if (intent.status === 'generated') {
@@ -1757,8 +2425,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                         $editor.append($('<label class="small font-weight-bold mb-1"></label>').text('Instructions · one item per line')).append(assignmentInstructions);
                         $editor.append($('<div class="small text-muted mb-2"></div>').text('Learning Objectives, grade, source references, Purpose and target LO/CLO remain controlled by the current Activity Intent.'));
                     } else {
+                        var editorSelectedIndex = selectedQuestionIndex(intent);
                         (intent.activity.questions || []).forEach(function(question, questionIndex) {
-                            var $questionCard = $('<div class="border rounded p-2 mb-2"></div>');
+                            if (questionIndex !== editorSelectedIndex) return;
+                            var $questionCard = $('<div class="border rounded p-2 mb-2 quiz-question-editor-detail"></div>');
                             $questionCard.append($('<div class="small font-weight-bold mb-1"></div>').text('Question ' + (questionIndex + 1) + ' · ' + question.type));
                             var $questionText = $('<textarea class="form-control form-control-sm mb-2" rows="2"></textarea>').val(question.question || '');
                             $questionCard.append($questionText);
@@ -1784,18 +2454,18 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                                 editor.feedback = $('<textarea class="form-control form-control-sm mb-2" rows="2"></textarea>').val(question.feedback || '');
                                 $questionCard.append($('<label class="small mb-0"></label>').text('Feedback')).append(editor.feedback);
                             }
-                            questionEditors.push(editor);
+                            questionEditors[questionIndex] = editor;
                             $editor.append($questionCard);
                         });
                         $editor.append($('<div class="small text-muted mb-2"></div>').text('Question type/count, default marks, refs, source references, Purpose and target LO/CLO remain deterministic.'));
                     }
                     var $saveEdit = $('<button type="button" class="btn btn-sm btn-primary mr-2"></button>').text('Save Teacher Edit');
                     var $cancelEdit = $('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text('Cancel');
-                    $editor.append($saveEdit).append($cancelEdit);
-                    $editToggle.on('click', function() { $editor.toggleClass('d-none'); });
-                    $cancelEdit.on('click', function() { $editor.addClass('d-none'); });
-                    $saveEdit.on('click', function() {
-                        var edited = JSON.parse(JSON.stringify(intent.activity));
+                    var activityDraftDirty = false;
+                    var recoveredActivityDraft = null;
+
+                    function collectEditedActivity() {
+                        var edited = JSON.parse(JSON.stringify(recoveredActivityDraft || intent.activity));
                         edited.title = $title.val().trim();
                         edited.description = $description.val().trim();
                         if (edited.type === 'assignment') {
@@ -1803,9 +2473,12 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                         } else {
                             (edited.questions || []).forEach(function(question, index) {
                                 var editor = questionEditors[index];
+                                if (!editor) return;
                                 question.question = editor.question.val().trim();
                                 if (question.type === 'multichoice') {
-                                    (question.choices || []).forEach(function(choice, choiceIndex) { choice.text = editor.choices[choiceIndex].input.val().trim(); });
+                                    (question.choices || []).forEach(function(choice, choiceIndex) {
+                                        if (editor.choices[choiceIndex]) choice.text = editor.choices[choiceIndex].input.val().trim();
+                                    });
                                     question.correct_choice_refs = [editor.correct.val()];
                                 } else if (question.type === 'shortanswer') {
                                     question.accepted_answers = editor.accepted.val().split(/\r?\n/).map(function(item) { return item.trim(); }).filter(Boolean);
@@ -1815,23 +2488,106 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                                 if (editor.feedback) question.feedback = editor.feedback.val();
                             });
                         }
+                        return edited;
+                    }
+
+                    function applyActivityDraft(payload) {
+                        if (!payload || payload.type !== intent.activity.type) return;
+                        recoveredActivityDraft = JSON.parse(JSON.stringify(payload));
+                        $title.val(payload.title || '');
+                        $description.val(payload.description || '');
+                        if (payload.type === 'assignment') {
+                            assignmentInstructions.val((payload.instructions || []).join('\n'));
+                        } else {
+                            (payload.questions || []).forEach(function(question, index) {
+                                var editor = questionEditors[index];
+                                if (!editor) return;
+                                editor.question.val(question.question || '');
+                                if (question.type === 'multichoice') {
+                                    (question.choices || []).forEach(function(choice, choiceIndex) {
+                                        if (editor.choices[choiceIndex]) editor.choices[choiceIndex].input.val(choice.text || '');
+                                    });
+                                    if (editor.correct) editor.correct.val((question.correct_choice_refs || [])[0] || '');
+                                } else if (question.type === 'shortanswer' && editor.accepted) {
+                                    editor.accepted.val((question.accepted_answers || []).join('\n'));
+                                } else if (question.type === 'essay' && editor.grading) {
+                                    editor.grading.val((question.grading_guidance || []).join('\n'));
+                                }
+                                if (editor.feedback) editor.feedback.val(question.feedback || '');
+                            });
+                        }
+                        activityDraftDirty = true;
+                        $editor.removeClass('d-none');
+                    }
+
+                    function saveActivityDraft() {
+                        var edited = collectEditedActivity();
                         $saveEdit.prop('disabled', true).text('Validating & Saving...');
-                        callBff('save_activity_edit', {
+                        return callBff('save_activity_edit', {
                             run_id: state.runId,
                             section_ref: section.ref,
                             activity_ref: intent.activity_ref,
                             activity: edited,
                             expected_activity_revision: activityRevision
                         }).then(function(result) {
+                            clearRecoverySnapshotAfterSave('activity-content', intent.activity_ref);
+                            clearActiveDraftGuard('activity-content', intent.activity_ref);
+                            activityDraftDirty = false;
                             var list = state.activityIntents[section.ref] || [];
                             var index = list.findIndex(function(item) { return item.activity_ref === result.activity_ref; });
                             if (index >= 0) list[index] = result;
                             else list.push(result);
                             syncOptionInputs();
                             renderPanels();
+                            return result;
                         }).catch(function(err) {
                             $saveEdit.prop('disabled', false).text('Save Teacher Edit');
                             showError('Teacher Activity edit was rejected: ' + err.message, err.details);
+                            throw err;
+                        });
+                    }
+
+                    $editor.append($saveEdit).append($cancelEdit);
+                    $editToggle.on('click', function() {
+                        guardedNavigate(function() {
+                            var session = beginDraftSession('activity-content', intent.activity_ref, activityRevision, 'fresh');
+                            if (!session.ok) {
+                                showRecoveryBanner('activity-content', intent.activity_ref, activityRevision, applyActivityDraft);
+                                showError(session.reason === 'conflict'
+                                    ? 'Resolve the Draft conflict for this Activity before starting a new edit.'
+                                    : 'Restore or discard the recoverable Activity draft before starting a new edit.');
+                                return;
+                            }
+                            $editor.toggleClass('d-none');
+                        });
+                    });
+                    $cancelEdit.on('click', function() { $editor.addClass('d-none'); });
+                    $editor.find('input, textarea, select').on('input.ticket05draft change.ticket05draft', function() {
+                        activityDraftDirty = true;
+                        persistActivityDraft(intent.activity_ref, activityRevision, collectEditedActivity());
+                        setActiveDraftGuard({
+                            surface: 'activity-content',
+                            entityRef: intent.activity_ref,
+                            isDirty: function() { return activityDraftDirty; },
+                            save: saveActivityDraft,
+                            discard: function() {
+                                activityDraftDirty = false;
+                                $editor.addClass('d-none');
+                            }
+                        });
+                    });
+                    $saveEdit.on('click', saveActivityDraft);
+                    showRecoveryBanner('activity-content', intent.activity_ref, activityRevision, function(payload) {
+                        applyActivityDraft(payload);
+                        setActiveDraftGuard({
+                            surface: 'activity-content',
+                            entityRef: intent.activity_ref,
+                            isDirty: function() { return activityDraftDirty; },
+                            save: saveActivityDraft,
+                            discard: function() {
+                                activityDraftDirty = false;
+                                $editor.addClass('d-none');
+                            }
                         });
                     });
                     $preview.append($editToggle).append($editor);
@@ -1880,30 +2636,62 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 });
             }
 
+            function replaceActivityFromReadback(activity) {
+                if (!activity || !activity.activity_ref) return;
+                var list = state.activityIntents[section.ref] || [];
+                var index = list.findIndex(function(item) { return item.activity_ref === activity.activity_ref; });
+                if (index >= 0) list[index] = activity;
+                else list.push(activity);
+            }
+
+            function readBackActivity(activityRef) {
+                return callBff('get_activity_status', {
+                    run_id: state.runId,
+                    section_ref: section.ref,
+                    activity_ref: activityRef
+                }).then(function(result) {
+                    replaceActivityFromReadback(result);
+                    syncOptionInputs();
+                    renderPanels();
+                    return result;
+                });
+            }
+
             function generateSelectedActivity(type, instruction, $button) {
                 $button.prop('disabled', true).html('<i class="fa fa-spinner fa-spin mr-1"></i> Creating...');
                 $('#btn-activity-finalize').prop('disabled', true);
-                return persistSelection(type === 'quiz' ? {quiz: instruction} : {assignment: instruction}).then(function() {
-                    var current = getIntent(type);
-                    if (!current) throw new Error(type + ' is no longer selected.');
+                var current = getIntent(type);
+                if (!current) return Promise.reject(new Error(type + ' is no longer selected.'));
+                var recovery = ['failed', 'timed_out', 'stale', 'insufficient_evidence'].indexOf(current.status) !== -1;
+                var prepare = recovery
+                    ? pendingIntentSave.then(function(saveResult) {
+                        if (saveResult && saveResult.ok === false) throw saveResult.error || new Error('The latest Activity Intent could not be saved.');
+                        var prepared = getIntent(type);
+                        if (!prepared) throw new Error(type + ' is no longer selected.');
+                        return prepared;
+                    })
+                    : persistSelection(type === 'quiz' ? {quiz: instruction} : {assignment: instruction}).then(function() {
+                        var prepared = getIntent(type);
+                        if (!prepared) throw new Error(type + ' is no longer selected.');
+                        return prepared;
+                    });
+                var targetRef = current.activity_ref;
+                return prepare.then(function(prepared) {
+                    targetRef = prepared.activity_ref;
                     return callBff('generate_activity', {
                         run_id: state.runId,
                         section_ref: section.ref,
-                        activity_ref: current.activity_ref,
+                        activity_ref: prepared.activity_ref,
                         generation_instruction: instruction
                     });
-                }).then(function(result) {
-                    var list = state.activityIntents[section.ref] || [];
-                    var index = list.findIndex(function(item) { return item.activity_ref === result.activity_ref; });
-                    if (index >= 0) list[index] = result;
-                    else list.push(result);
-                    syncOptionInputs();
-                    renderPanels();
+                }).then(function() {
+                    return readBackActivity(targetRef).catch(function(err) {
+                        showError((type === 'quiz' ? 'Quiz' : 'Assignment') + ' generation completed, but authoritative status read-back failed: ' + err.message, err.details);
+                        renderPanels();
+                    });
                 }).catch(function(err) {
                     showError((type === 'quiz' ? 'Quiz' : 'Assignment') + ' generation failed: ' + err.message, err.details);
-                    return callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref}).then(function(result) {
-                        state.activityIntents[section.ref] = result.intents || [];
-                        syncOptionInputs();
+                    return readBackActivity(targetRef).catch(function() {
                         renderPanels();
                     });
                 });
@@ -1973,14 +2761,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     $assignmentGrade.prop('disabled', terminal);
                 }
                 $advanced.append($advancedBody);
-                $panel.append($advanced);
+                if (activeTab === type) activeAdvanced = $advanced;
 
                 renderGeneratedPreview(intent, $panel);
 
                 var $actions = $('<div class="d-flex flex-wrap align-items-center"></div>');
                 var canGenerate = ['selected', 'failed', 'timed_out', 'insufficient_evidence', 'stale'].indexOf(intent.status) !== -1 && intent.attempt_count < intent.max_attempts;
                 var $generate = $('<button type="button" class="btn btn-outline-primary btn-sm mr-2"></button>');
-                $generate.text(intent.attempt_count > 0 ? 'Retry Generate' : ('Generate ' + label)).prop('disabled', !canGenerate);
+                $generate.text(intent.status === 'stale' ? 'Regenerate Activity' : intent.attempt_count > 0 ? 'Retry Generate' : ('Generate ' + label)).prop('disabled', !canGenerate);
                 if (intent.status === 'generated') $generate.text('Generated').removeClass('btn-outline-primary').addClass('btn-success');
                 if (intent.status === 'shell') $generate.text('Empty Shell').removeClass('btn-outline-primary').addClass('btn-success');
                 if (intent.status === 'creating') $generate.html('<i class="fa fa-spinner fa-spin mr-1"></i> Creating...').prop('disabled', true);
@@ -2010,6 +2798,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
             function renderPanels() {
                 var intents = state.activityIntents[section.ref] || [];
+                activeTab = state.selectedActivityTabByWeek[section.ref] || activeTab || 'material';
+                activeAdvanced = null;
                 var quizIntent = getIntent('quiz');
                 var assignmentIntent = getIntent('assignment');
                 $quiz.prop('checked', Boolean(quizIntent));
@@ -2017,6 +2807,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $quiz.prop('disabled', Boolean(quizIntent && quizIntent.status === 'creating'));
                 $assignment.prop('disabled', Boolean(assignmentIntent && assignmentIntent.status === 'creating'));
                 updateMaterialView();
+                var materialPresentation = materialState.status === 'failed'
+                    ? {label: 'Failed', badge: 'badge-danger'}
+                    : materialState.snapshotId ? {label: 'Ready', badge: 'badge-success'} : {label: 'Syllabus fallback', badge: 'badge-light'};
+                var quizPresentation = activityStatusPresentation(quizIntent);
+                var assignmentPresentation = activityStatusPresentation(assignmentIntent);
+                $materialTab.empty().append(document.createTextNode('Material ')).append($('<span class="badge ml-1"></span>').addClass(materialPresentation.badge).text(materialPresentation.label));
+                $quizTab.empty().append(document.createTextNode('Quiz ')).append($('<span class="badge ml-1"></span>').addClass(quizPresentation.badge).text(quizPresentation.label));
+                $assignmentTab.empty().append(document.createTextNode('Assignment ')).append($('<span class="badge ml-1"></span>').addClass(assignmentPresentation.badge).text(assignmentPresentation.label));
                 renderPanel('quiz', $quizPanel);
                 renderPanel('assignment', $assignmentPanel);
                 if (!intents.length) {
@@ -2024,6 +2822,16 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 } else {
                     $material.removeClass('text-muted');
                 }
+                applyActivityTab();
+                if (activeAdvanced) $activityInspector.append(activeAdvanced);
+                var weekStale = intents.some(function(item) { return item.status === 'stale'; });
+                var weekReady = intents.length && intents.every(function(item) { return item.status === 'generated' || item.status === 'shell'; });
+                var weekCreating = intents.some(function(item) { return item.status === 'creating'; });
+                var weekStatus = weekStale ? 'Stale' : weekReady ? 'Ready' : weekCreating ? 'In progress' : 'Pending review';
+                var $weekBadge = $rail.find('[data-week-ref="' + section.ref + '"] .badge');
+                $weekBadge.removeClass('badge-success badge-primary badge-warning badge-secondary')
+                    .addClass(weekStatus === 'Ready' ? 'badge-success' : weekStatus === 'In progress' ? 'badge-primary' : weekStatus === 'Stale' ? 'badge-warning' : 'badge-secondary')
+                    .text(weekStatus);
                 updateActivityFinalizeState();
             }
 
@@ -2032,16 +2840,22 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             });
 
             function saveSelection() {
-                persistSelection().then(function() {
+                var operation = persistSelection().then(function() {
                     renderPanels();
+                    return {ok: true};
                 }).catch(function(err) {
                     showError('Failed to update Activity selection: ' + err.message, err.details);
                     return callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref}).then(function(result) {
                         state.activityIntents[section.ref] = result.intents || [];
                         syncOptionInputs();
                         renderPanels();
+                        return {ok: false, error: err};
+                    }).catch(function() {
+                        return {ok: false, error: err};
                     });
                 });
+                pendingIntentSave = operation;
+                return operation;
             }
 
             $quiz.on('change', saveSelection);
@@ -2064,6 +2878,53 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 });
             });
 
+            function saveSelectedMaterial(file) {
+                if (!file) {
+                    showError('Choose a Learning Material file for ' + weekTitle + '.');
+                    return Promise.resolve();
+                }
+                var materialSizeError = fileSizeValidationError(file, MAX_MATERIAL_FILE_BYTES, 'Learning Material');
+                if (materialSizeError) {
+                    showError(materialSizeError);
+                    updateMaterialView();
+                    return Promise.resolve();
+                }
+                clearError();
+                $upload.prop('disabled', true).removeClass('d-none').html('<i class="fa fa-spinner fa-spin mr-1"></i> Saving...');
+                var formData = new FormData();
+                formData.append('material_file', file);
+                formData.append('run_id', state.runId);
+                formData.append('section_ref', section.ref);
+                formData.append('structure_revision', state.structureRevision);
+                return callBff('upload_section_material', formData, true).then(function() {
+                    return callBff('seal_section_material', {run_id: state.runId, section_ref: section.ref, structure_revision: state.structureRevision});
+                }).then(function(result) {
+                    materialState.status = result.status || 'ready';
+                    materialState.error = null;
+                    materialState.snapshotId = (result.snapshot && (result.snapshot.persisted_id || result.snapshot.id)) || result.id;
+                    materialState.revision = Number(result.snapshot && result.snapshot.revision || materialState.revision || 0);
+                    materialState.filename = file.name;
+                    materialState.plannedResources = result.planned_resources || [];
+                    renderPanels();
+                    return callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref}).then(function(activityResult) {
+                        state.activityIntents[section.ref] = activityResult.intents || [];
+                        syncOptionInputs();
+                        renderPanels();
+                    }).catch(function(err) {
+                        showError('Learning Material saved, but Activity status refresh failed: ' + err.message, err.details);
+                        renderPanels();
+                    });
+                }).catch(function(err) {
+                    showError('Learning Material save failed: ' + err.message, err.details);
+                    return callBff('get_section_material_snapshot', {run_id: state.runId, section_ref: section.ref}).then(function(result) {
+                        applyMaterialReadback(result);
+                        renderPanels();
+                    }).catch(function() {
+                        updateMaterialView();
+                    });
+                });
+            }
+
             $file.on('change', function() {
                 var file = this.files && this.files[0];
                 if (!file) return;
@@ -2074,52 +2935,36 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     updateMaterialView();
                     return;
                 }
-                clearError();
+                saveSelectedMaterial(file);
             });
 
             $upload.on('click', function() {
                 var file = $file[0].files && $file[0].files[0];
-                if (!file) {
-                    showError('Choose a Learning Material file for ' + weekTitle + '.');
-                    return;
-                }
-                var materialSizeError = fileSizeValidationError(file, MAX_MATERIAL_FILE_BYTES, 'Learning Material');
-                if (materialSizeError) {
-                    showError(materialSizeError);
-                    return;
-                }
-                $upload.prop('disabled', true).html('<i class="fa fa-spinner fa-spin mr-1"></i> Uploading...');
-                var formData = new FormData();
-                formData.append('material_file', file);
-                formData.append('run_id', state.runId);
-                formData.append('section_ref', section.ref);
-                formData.append('structure_revision', state.structureRevision);
-                callBff('upload_section_material', formData, true).then(function() {
-                    return callBff('seal_section_material', {run_id: state.runId, section_ref: section.ref, structure_revision: state.structureRevision});
-                }).then(function(result) {
-                    materialState.snapshotId = (result.snapshot && (result.snapshot.persisted_id || result.snapshot.id)) || result.id;
-                    materialState.filename = file.name;
-                    materialState.plannedResources = result.planned_resources || [];
-                    return callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref});
-                }).then(function(result) {
-                    state.activityIntents[section.ref] = result.intents || [];
-                    syncOptionInputs();
-                    renderPanels();
-                }).catch(function(err) {
-                    updateMaterialView();
-                    showError('Learning Material upload failed: ' + err.message, err.details);
-                });
+                saveSelectedMaterial(file);
             });
 
-            callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref}).then(function(result) {
+            applyActivityTab();
+
+            var activityRead = callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref}).then(function(result) {
+                if (renderVersion !== state.activityRenderVersion) return;
                 state.activityIntents[section.ref] = result.intents || [];
-                state.activityLoadingCount = Math.max(0, state.activityLoadingCount - 1);
                 syncOptionInputs();
                 renderPanels();
             }).catch(function(err) {
-                state.activityLoadingCount = Math.max(0, state.activityLoadingCount - 1);
+                if (renderVersion === state.activityRenderVersion) showError('Failed to load Quiz/Assignment state: ' + err.message, err.details);
+            });
+            var materialRead = callBff('get_section_material_snapshot', {run_id: state.runId, section_ref: section.ref}).then(function(result) {
+                if (renderVersion !== state.activityRenderVersion) return;
+                applyMaterialReadback(result);
                 renderPanels();
-                showError('Failed to load Activity Structure: ' + err.message, err.details);
+            }).catch(function(err) {
+                if (renderVersion === state.activityRenderVersion) showError('Failed to load Material state: ' + err.message, err.details);
+            });
+            Promise.allSettled([activityRead, materialRead]).then(function() {
+                if (renderVersion !== state.activityRenderVersion) return;
+                state.activityLoadingCount = Math.max(0, state.activityLoadingCount - 1);
+                syncOptionInputs();
+                renderPanels();
             });
         });
     }
@@ -2144,6 +2989,11 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         if (currentAlignmentIsStale()) {
             showError('Revalidate Outcome alignment before confirming the Course Structure.');
             renderAlignmentReview(state.currentStructure);
+            return;
+        }
+        if ((state.currentStructure.content.sections || []).some(function(section) { return weekReviewStatus(section) !== 'Ready to configure'; })) {
+            showError('Mark every current Week reviewed before confirming the Course Structure.');
+            updateStructureContinueState();
             return;
         }
         $('#btn-review-continue').prop('disabled', true).text('Confirming structure...');
@@ -2320,21 +3170,21 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
             // Review View Navigation & Actions
             $('#btn-review-back').on('click', function() {
-                setStep(1);
+                guardedNavigate(function() { setStep(1); });
             });
 
             $('#btn-review-regenerate').on('click', function() {
-                if (confirm('Regenerate course plan? Any unsaved edits will be discarded.')) {
-                    startUploadAndPlan();
+                if (confirm('Regenerate course plan?')) {
+                    guardedNavigate(startUploadAndPlan);
                 }
             });
 
-            $('#btn-review-continue').on('click', confirmStructureAndShowActivities);
-            $('#btn-activity-back').on('click', function() { setStep(2); });
-            $('#btn-activity-finalize').on('click', finalizeStagedCourse);
+            $('#btn-review-continue').on('click', function() { guardedNavigate(confirmStructureAndShowActivities); });
+            $('#btn-activity-back').on('click', function() { guardedNavigate(function() { setStep(2); }); });
+            $('#btn-activity-finalize').on('click', function() { guardedNavigate(finalizeStagedCourse); });
 
             // Editing modals
-            $('#btn-edit-course-title').on('click', openEditCourseTitleModal);
+            $('#btn-edit-course-title').on('click', function() { guardedNavigate(openEditCourseTitleModal); });
             $('#btn-save-course-title').on('click', saveCourseTitle);
             $('#btn-save-section').on('click', saveSection);
             $('#btn-add-section').on('click', addSection);
@@ -2343,8 +3193,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
             // Approve View Actions
             $('#btn-approve-back').on('click', function() {
-                setStep(3);
-                renderActivityStructureStage();
+                guardedNavigate(function() {
+                    setStep(3);
+                    renderActivityStructureStage();
+                });
             });
 
             $('#ack-ai-expanded-content').on('change', function() {
@@ -2361,6 +3213,16 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             $('#btn-error-retry').on('click', function() {
                 clearError();
             });
+
+            if (!window.ticket05DraftUnloadBound && typeof window.addEventListener === 'function') {
+                window.ticket05DraftUnloadBound = true;
+                window.addEventListener('beforeunload', function(event) {
+                    if (state.activeDraftGuard && state.activeDraftGuard.isDirty && state.activeDraftGuard.isDirty()) {
+                        event.preventDefault();
+                        event.returnValue = '';
+                    }
+                });
+            }
 
             // A reload restores semantic state from the server; the URL carries only its run identifier.
             var contextRunId = new URL(window.location.href).searchParams.get('context_run_id');

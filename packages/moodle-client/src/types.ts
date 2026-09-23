@@ -242,7 +242,7 @@ export interface MoodleCourseCompetencyLink { courseId: number; competencyId: nu
 export interface MoodleActivityCompetencyLink { linkId: number; activityId: number; competencyId: number; ruleOutcome: number; }
 export interface MoodleCourseCompetencyReadback {
   courseId: number;
-  courseCompetencies: Array<{ courseLinkId: number; competencyId: number; frameworkId: number; idnumber: string; shortname: string }>;
+  courseCompetencies: Array<{ courseLinkId: number; competencyId: number; frameworkId: number; idnumber: string; shortname: string; description: string }>;
   activityLinks: Array<{ linkId: number; activityId: number; competencyId: number; ruleOutcome: number }>;
 }
 

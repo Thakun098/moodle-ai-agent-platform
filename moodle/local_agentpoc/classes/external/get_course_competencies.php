@@ -38,6 +38,7 @@ final class get_course_competencies extends external_api {
                 'framework_id' => (int)$competency->get('competencyframeworkid'),
                 'idnumber' => (string)$competency->get('idnumber'),
                 'shortname' => (string)$competency->get('shortname'),
+                'description' => (string)$competency->get('description'),
             ];
         }
 
@@ -67,6 +68,7 @@ final class get_course_competencies extends external_api {
                 'framework_id' => new external_value(PARAM_INT, 'Framework ID'),
                 'idnumber' => new external_value(PARAM_RAW, 'Competency idnumber'),
                 'shortname' => new external_value(PARAM_TEXT, 'Competency shortname'),
+                'description' => new external_value(PARAM_RAW, 'Competency description'),
             ])),
             'activity_links' => new external_multiple_structure(new external_single_structure([
                 'link_id' => new external_value(PARAM_INT, 'Activity competency relation ID'),

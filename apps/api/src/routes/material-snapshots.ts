@@ -3,6 +3,7 @@ import {
   ActivityIntentRepository,
   getDatabase,
   MaterialSnapshotRepository,
+  MaterialSectionStateRepository,
   type MaterialSnapshotRecord,
   CourseStructureRevisionRepository,
   RunRepository,
@@ -23,6 +24,7 @@ export interface MaterialSnapshotRoutesOptions {
   snapshotRepo?: MaterialSnapshotRepository | undefined;
   structureRevisionRepo?: CourseStructureRevisionRepository | undefined;
   activityIntentRepo?: ActivityIntentRepository | undefined;
+  materialStateRepo?: MaterialSectionStateRepository | undefined;
 }
 
 function serializeSnapshot(snapshot: MaterialSnapshot) {
@@ -93,6 +95,44 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
   const getSnapshotRepo = () => options.snapshotRepo ?? new MaterialSnapshotRepository(getDatabase());
   const getStructureRepo = () => options.structureRevisionRepo ?? new CourseStructureRevisionRepository(getDatabase());
   const getActivityIntentRepo = () => options.activityIntentRepo ?? new ActivityIntentRepository(getDatabase());
+  const getMaterialStateRepo = () => options.materialStateRepo ?? new MaterialSectionStateRepository(getDatabase());
+
+  fastify.get<{ Params: { runId: string; sectionRef: string } }>(
+    "/api/runs/:runId/sections/:sectionRef/material-snapshots/latest",
+    async (request, reply) => {
+      const { runId, sectionRef } = request.params;
+      const run = await getRunRepo().getRun(runId);
+      if (!run) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: `Run ${runId} not found`, details: null, request_id: request.id } });
+        return;
+      }
+      const sealedStructure = await getStructureRepo().getSealedRevision(runId);
+      if (!sealedStructure) {
+        reply.status(409).send({ error: { code: "STRUCTURE_NOT_SEALED", message: "MaterialSnapshot read-back requires a sealed Course Structure.", details: null, request_id: request.id } });
+        return;
+      }
+      const sections = Array.isArray(sealedStructure.contentJson.sections) ? sealedStructure.contentJson.sections as Array<Record<string, unknown>> : [];
+      if (!sections.some((section) => section.ref === sectionRef)) {
+        reply.status(404).send({ error: { code: "SECTION_NOT_FOUND", message: `Section "${sectionRef}" is not part of the sealed Course Structure.`, details: null, request_id: request.id } });
+        return;
+      }
+      const [latestRecord, materialState] = await Promise.all([
+        getSnapshotRepo().getLatestSnapshot(runId, sealedStructure.revision, sectionRef),
+        getMaterialStateRepo().getState(runId, sealedStructure.revision, sectionRef),
+      ]);
+      const latest = latestRecord ? toMaterialSnapshot(latestRecord) : null;
+      const status = materialState?.status ?? (latest ? "ready" : "fallback");
+      reply.send({
+        run_id: runId,
+        section_ref: sectionRef,
+        structure_revision: sealedStructure.revision,
+        status,
+        snapshot: latest ? { ...serializeSnapshot(latest), persisted_id: latest.id } : null,
+        planned_resources: latest ? plannedResources(latest) : [],
+        error: status === "failed" ? { code: materialState?.errorCode ?? "MATERIAL_OPERATION_FAILED", message: materialState?.errorMessage ?? "Learning Material operation failed." } : null,
+      });
+    },
+  );
 
   fastify.post<{ Params: { runId: string; sectionRef: string } }>(
     "/api/runs/:runId/sections/:sectionRef/material-snapshots",
@@ -103,6 +143,10 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
         reply.status(404).send({ error: { code: "NOT_FOUND", message: `Run ${runId} not found`, details: null, request_id: request.id } });
         return;
       }
+      const sealedStructure = await getStructureRepo().getSealedRevision(runId);
+      const knownSections = sealedStructure && Array.isArray(sealedStructure.contentJson.sections) ? sealedStructure.contentJson.sections as Array<Record<string, unknown>> : [];
+      const knownSection = knownSections.some((section) => section.ref === sectionRef);
+      try {
       const parts = request.parts();
       const uploads: Array<{ content: Buffer; filename: string; mediaType: string }> = [];
       const fields: Record<string, string> = {};
@@ -121,7 +165,6 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
       if (!Number.isSafeInteger(structureRevision) || structureRevision < 1 || !Number.isSafeInteger(moodleUserId) || moodleUserId < 1) {
         throw new MaterialIngestionError("MATERIAL_EXTRACTION_FAILED", "structure_revision and moodle_user_id must be positive integers.", { section_ref: sectionRef });
       }
-      const sealedStructure = await getStructureRepo().getSealedRevision(runId);
       if (!sealedStructure || sealedStructure.revision !== structureRevision) {
         throw new MaterialIngestionError("MATERIAL_EXTRACTION_FAILED", "MaterialSnapshot must use the currently sealed Course Structure revision.", { requested_structure_revision: structureRevision, sealed_structure_revision: sealedStructure?.revision ?? null, section_ref: sectionRef });
       }
@@ -179,7 +222,8 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
       if (latest) {
         const current = toMaterialSnapshot(latest);
         if (current.normalizedTextHash === snapshot.normalizedTextHash && snapshotContentSignature(current) === snapshotContentSignature(snapshot)) {
-          reply.send({ run_id: runId, section_ref: sectionRef, snapshot: { ...serializeSnapshot(current), persisted_id: current.id, reused: true }, planned_resources: plannedResources(current) });
+          await getMaterialStateRepo().markReady({ runId, structureRevision, sectionRef, snapshotId: current.id, snapshotRevision: current.revision });
+          reply.send({ run_id: runId, section_ref: sectionRef, status: "ready", snapshot: { ...serializeSnapshot(current), persisted_id: current.id, reused: true }, planned_resources: plannedResources(current), error: null });
           return;
         }
       }
@@ -198,8 +242,19 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
         createdByMoodleUserId: snapshot.createdByMoodleUserId,
         createdAt: snapshot.createdAt,
       });
+      await getMaterialStateRepo().markReady({ runId, structureRevision, sectionRef, snapshotId: record.id, snapshotRevision: snapshot.revision });
       await getActivityIntentRepo().markStaleForSection(runId, structureRevision, sectionRef);
-      reply.status(201).send({ run_id: runId, section_ref: sectionRef, snapshot: { ...serializeSnapshot(snapshot), persisted_id: record.id }, planned_resources: plannedResources(snapshot) });
+      reply.status(201).send({ run_id: runId, section_ref: sectionRef, status: "ready", snapshot: { ...serializeSnapshot(snapshot), persisted_id: record.id }, planned_resources: plannedResources(snapshot), error: null });
+      } catch (error) {
+        if (error instanceof MaterialIngestionError && sealedStructure && knownSection) {
+          try {
+            await getMaterialStateRepo().markFailed({ runId, structureRevision: sealedStructure.revision, sectionRef, errorCode: error.code, errorMessage: error.message });
+          } catch (stateError) {
+            request.log.error({ err: stateError }, "Failed to persist Material section failure state");
+          }
+        }
+        throw error;
+      }
     },
   );
 };

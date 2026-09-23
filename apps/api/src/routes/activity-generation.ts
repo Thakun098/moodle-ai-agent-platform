@@ -185,11 +185,8 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
     const coreContext = typeof (getRunRepo() as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
       ? await (getRunRepo() as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<any> }).getCoreCourseDesignContext(runId)
       : null;
-    if (coreContext && typeof (repo as { markStaleForContext?: unknown }).markStaleForContext === "function") {
-      await repo.markStaleForContext(runId, sealed.revision, coreContext.revision);
-      if (typeof (repo as { updateContextRevision?: unknown }).updateContextRevision === "function") {
-        selected = await repo.updateContextRevision(selected.id, coreContext.revision, coreContext.learner_context.revision) ?? selected;
-      }
+    if (coreContext && typeof (repo as { updateContextRevision?: unknown }).updateContextRevision === "function") {
+      selected = await repo.updateContextRevision(selected.id, coreContext.revision, coreContext.learner_context.revision) ?? selected;
     }
     let generationInstruction: string | undefined;
     try {

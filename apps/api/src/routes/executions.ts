@@ -189,7 +189,7 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
           repositories,
           options: { ...executionOptions, moodleBaseUrl: options.config.moodleBaseUrl, courseFormat },
           competencySnapshot,
-          competencyFrameworkId: options.config.moodleCompetencyFrameworkId,
+          competencyFrameworkId: competencySnapshot?.frameworkId ?? undefined,
           beforeMutation: async () => {
             await assertCompetencyExecutionSnapshotCurrent(competencySnapshot!, {
               candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase()),

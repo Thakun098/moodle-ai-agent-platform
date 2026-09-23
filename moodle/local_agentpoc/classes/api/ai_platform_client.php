@@ -297,6 +297,14 @@ class ai_platform_client {
         ]);
     }
 
+    /** Records explicit Teacher review for one current Week without approving a CLO. */
+    public function mark_week_reviewed(string $runid, string $sectionref, int $revision, int $moodleuserid): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/course-structure/weeks/' . urlencode($sectionref) . '/review', [
+            'revision' => $revision,
+            'moodle_user_id' => $moodleuserid,
+        ]);
+    }
+
     /** Seals an exact Course Structure revision; this is not official Plan approval. */
     public function seal_structure(string $runid, int $revision, int $moodleuserid): array {
         return $this->request('POST', '/api/runs/' . urlencode($runid) . '/course-structure/seal', [
@@ -333,6 +341,16 @@ class ai_platform_client {
         }
         $payload['material_metadata'] = json_encode($metadata);
         return $this->request('POST', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/material-snapshots', $payload);
+    }
+
+    /** Reads authoritative status for one Activity Intent. */
+    public function get_activity_status(string $runid, string $sectionref, string $activityref): array {
+        return $this->request('GET', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/activities/' . urlencode($activityref) . '/status');
+    }
+
+    /** Reads the latest authoritative MaterialSnapshot for one sealed section. */
+    public function get_latest_material_snapshot(string $runid, string $sectionref): array {
+        return $this->request('GET', '/api/runs/' . urlencode($runid) . '/sections/' . urlencode($sectionref) . '/material-snapshots/latest');
     }
 
     /** Generates activities independently for one sealed section. */
@@ -537,6 +555,11 @@ class ai_platform_client {
     /** Persists a Teacher approval/edit of one source Outcome. */
     public function approve_learning_outcome(string $runid, array $payload): array {
         return $this->request('POST', '/api/runs/' . urlencode($runid) . '/outcomes/approve', $payload, $this->instructional_design_headers());
+    }
+
+    /** Safely edits an already-approved CLO by withdrawing obsolete authority first. */
+    public function edit_approved_learning_outcome(string $runid, array $payload): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/outcomes/edit-approved', $payload, $this->instructional_design_headers());
     }
 
     /** Reads persisted Competency Candidate lifecycle state. */

@@ -41,4 +41,29 @@ describe("UX/UI Ticket 01 Outcome Review Workbench", () => {
     expect(bff).toContain("case 'save_outcome_review':");
     expect(client).toContain("/outcome-reviews");
   });
+
+  it("keeps approved-CLO editing explicit and distinguishes outcome authority from Final Plan Approval", () => {
+    const template = readFileSync("moodle/local_agentpoc/templates/course_builder.mustache", "utf8");
+    const js = readFileSync("moodle/local_agentpoc/amd/src/course_builder.js", "utf8");
+    const bff = readFileSync("moodle/local_agentpoc/ajax.php", "utf8");
+    const client = readFileSync("moodle/local_agentpoc/classes/api/ai_platform_client.php", "utf8");
+
+    expect(js).toContain("Save approved CLO edit");
+    expect(js).toContain("window.confirm('Saving this edit will invalidate the current CLO approval");
+    expect(js).toContain("callBff('edit_approved_learning_outcome'");
+    expect(js).toContain("reloadInstructionalDesignAuthority()");
+    expect(js).toContain("Stale cannot be cleared manually");
+    const approvedEditFlow = js.slice(js.indexOf("callBff('edit_approved_learning_outcome'"), js.indexOf("} else if (editable)", js.indexOf("callBff('edit_approved_learning_outcome'")));
+    expect(approvedEditFlow).not.toContain("generate_activity");
+    expect(approvedEditFlow).not.toContain("generate_section_activities");
+    expect(approvedEditFlow).not.toContain("rebase_structure_alignment");
+    expect(bff).toContain("case 'edit_approved_learning_outcome':");
+    expect(bff).toContain("required_param('confirmed', PARAM_BOOL)");
+    expect(bff).toContain("invalid_parameter_exception('Approved CLO edit requires explicit confirmation.')");
+    expect(client).toContain("/outcomes/edit-approved");
+    expect(template).toContain("Final Plan Approval");
+    expect(template).toContain("Approve Final Plan &amp; Create Course");
+    expect(template).toContain("separate from Outcome <strong>Reviewed</strong> state and <strong>CLO Approved</strong> authority");
+  });
+
 });

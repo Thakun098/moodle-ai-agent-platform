@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   CourseStructureRevisionRepository,
+  OutcomeReviewRepository,
+  projectWeekReviews,
   getDatabase,
   RunRepository,
   type CourseStructureRevisionRecord,
@@ -32,6 +34,7 @@ export interface CourseStructureRoutesOptions {
   config: AppConfig;
   runRepo?: RunRepository | undefined;
   structureRevisionRepo?: CourseStructureRevisionRepository | undefined;
+  outcomeReviewRepo?: OutcomeReviewRepository | undefined;
   structurePlanner?: CourseStructurePlanner | undefined;
 }
 
@@ -45,6 +48,7 @@ function serializeRevision(record: CourseStructureRevisionRecord | CourseStructu
       summary: record.summary,
       content: record.contentJson,
       teacher_constraints: record.teacherConstraintsJson,
+      week_reviews: projectWeekReviews(record),
       validation_status: record.validationStatus,
       validation_errors: record.validationErrors ?? null,
       sealed_at: record.sealedAt ?? null,
@@ -93,6 +97,7 @@ function editedStructureBody(body: unknown): { title: string; summary: string; c
 export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOptions> = async (fastify, options) => {
   const getRunRepo = () => options.runRepo ?? new RunRepository(getDatabase());
   const getStructureRepo = () => options.structureRevisionRepo ?? new CourseStructureRevisionRepository(getDatabase());
+  const getOutcomeReviewRepo = () => options.outcomeReviewRepo ?? new OutcomeReviewRepository(getDatabase());
   const getPlanner = () => options.structurePlanner ?? new CourseStructurePlanner(createConfiguredModelClient(options.config));
 
   fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/course-structure", async (request, reply) => {
@@ -308,6 +313,25 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
       createdAt: revision.createdAt,
     });
     reply.status(201).send({ run_id: runId, status: run.status, structure_revision: serializeRevision(record), ...(alignmentCoverage ? { coverage: alignmentCoverage } : {}) });
+  });
+
+  fastify.post<{ Params: { runId: string; sectionRef: string } }>("/api/runs/:runId/course-structure/weeks/:sectionRef/review", async (request, reply) => {
+    const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+    const revision = parseRevision(body.revision);
+    const moodleUserId = parseRevision(body.moodle_user_id);
+    const runRepo = getRunRepo();
+    const context = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
+      ? await (runRepo as typeof runRepo & { getCoreCourseDesignContext: (id: string) => Promise<CoreCourseDesignContext | null> }).getCoreCourseDesignContext(request.params.runId)
+      : null;
+    if (!context) throw Object.assign(new Error("Review and approve Outcomes before reviewing a Week."), { code: "OUTCOME_REVIEW_REQUIRED", statusCode: 409 });
+    assertRequiredOutcomeApprovals(context);
+    const reviews = await getOutcomeReviewRepo().list(request.params.runId);
+    const reviewedLoIds = new Set(reviews.filter((item) => item.itemType === "LO" && item.status === "REVIEWED").map((item) => item.itemId));
+    if (context.learning_objectives.some((objective) => !reviewedLoIds.has(objective.objective_id))) {
+      throw Object.assign(new Error("Review every Learning Objective before reviewing a Week."), { code: "OUTCOME_REVIEW_REQUIRED", statusCode: 409 });
+    }
+    const updated = await getStructureRepo().markWeekReviewed({ runId: request.params.runId, revision, sectionRef: request.params.sectionRef, moodleUserId });
+    reply.send({ run_id: request.params.runId, structure_revision: serializeRevision(updated) });
   });
 
   fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/course-structure/seal", async (request, reply) => {

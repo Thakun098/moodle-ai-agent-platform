@@ -53,7 +53,8 @@ export class CourseExecutor {
   constructor(private readonly config: CourseExecutionConfig) {}
 
   async execute(): Promise<CourseExecutionResult> {
-    const { runId, planEnvelope, target, mcpClientManager, repositories, options = {}, competencySnapshot, competencyFrameworkId } = this.config;
+    const { runId, planEnvelope, target, mcpClientManager, repositories, options = {}, competencySnapshot } = this.config;
+    const competencyFrameworkId = competencySnapshot?.frameworkId ?? undefined;
     const planId = planEnvelope.plan_id;
     const revision = planEnvelope.revision;
     const moodleBaseUrl = options.moodleBaseUrl || "http://localhost:8000";

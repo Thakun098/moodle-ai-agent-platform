@@ -114,7 +114,7 @@ describe("Phase 14 course verifier", () => {
 
 describe("Ticket 24 native Competency verification", () => {
   const snapshot = {
-    runId: "run-v", planId: "plan-v", revision: 1, mappingReviewRevision: 4, capturedAt: "2026-09-16T00:00:00.000Z",
+    runId: "run-v", planId: "plan-v", revision: 1, mappingReviewRevision: 4, frameworkId: 7, capturedAt: "2026-09-16T00:00:00.000Z",
     competencies: [{ candidateId: "competency-1", competencyRevision: 2, name: "Design classes", description: "Design", outcomeIds: ["o1"], idnumber: "AGENTPOC-C1" }],
     mappings: [{ activityIntentId: "intent-1", activityRef: "assignment-01", competencyId: "competency-1", intentRevision: 1, activityRevision: 1, competencyRevision: 2, evidence: "CONFIRMED" as const }],
   };
@@ -126,14 +126,14 @@ describe("Ticket 24 native Competency verification", () => {
     return r;
   }
 
-  function competencyManager(ruleOutcome: number, includeCompetency = true) {
+  function competencyManager(ruleOutcome: number, includeCompetency = true, description = "Design", extraCompetencies: any[] = [], extraLinks: any[] = []) {
     const base = manager();
     const original = base.callTool;
     base.callTool = vi.fn(async (name: string, args: any) => {
       if (name === "moodle_get_course_competencies") return { status: "success", data: {
         course_id: 10,
-        course_competencies: includeCompetency ? [{ course_link_id: 901, competency_id: 90, framework_id: 7, idnumber: "AGENTPOC-C1", shortname: "Design classes" }] : [],
-        activity_links: includeCompetency ? [{ link_id: 902, activity_id: 30, competency_id: 90, rule_outcome: ruleOutcome }] : [],
+        course_competencies: includeCompetency ? [{ course_link_id: 901, competency_id: 90, framework_id: 7, idnumber: "AGENTPOC-C1", shortname: "Design classes", description }, ...extraCompetencies] : extraCompetencies,
+        activity_links: includeCompetency ? [{ link_id: 902, activity_id: 30, competency_id: 90, rule_outcome: ruleOutcome }, ...extraLinks] : extraLinks,
       } };
       return original(name, args);
     });
@@ -141,12 +141,32 @@ describe("Ticket 24 native Competency verification", () => {
   }
 
   it("passes only when native Course Competency identity and evidence rule exactly match the approved snapshot", async () => {
-    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(1), repositories: competencyRepos(), competencySnapshot: snapshot, competencyFrameworkId: 7 });
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(1), repositories: competencyRepos(), competencySnapshot: snapshot, competencyFrameworkId: 8 });
     expect(result.passed).toBe(true);
   });
 
+  it("rejects changed native Competency description even when identity and links still match", async () => {
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(1, true, "Different description"), repositories: competencyRepos(), competencySnapshot: snapshot, competencyFrameworkId: 8 });
+    expect(result.passed).toBe(false);
+    if (!result.passed) expect(result.issues.some((entry) => entry.path === "/competencies/course")).toBe(true);
+  });
+
+  it("rejects extra Course Competencies and activity links even outside the pinned framework", async () => {
+    const extra = { course_link_id: 903, competency_id: 91, framework_id: 8, idnumber: "OTHER", shortname: "Extra", description: "Extra" };
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(1, true, "Design", [extra], [{ link_id: 904, activity_id: 30, competency_id: 91, rule_outcome: 0 }]), repositories: competencyRepos(), competencySnapshot: snapshot, competencyFrameworkId: 8 });
+    expect(result.passed).toBe(false);
+    if (!result.passed) expect(result.issues.some((entry) => entry.path === "/competencies/course" || entry.path === "/competencies/activity-links")).toBe(true);
+  });
+
+  it("verifies explicit empty authority and rejects any native Course Competency", async () => {
+    const empty = { ...snapshot, competencies: [], mappings: [] };
+    const extra = { course_link_id: 903, competency_id: 91, framework_id: 8, idnumber: "OTHER", shortname: "Extra", description: "Extra" };
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(1, false, "Design", [extra]), repositories: competencyRepos(), competencySnapshot: empty, competencyFrameworkId: 7 });
+    expect(result.passed).toBe(false);
+    if (!result.passed) expect(result.issues.some((entry) => entry.path === "/competencies/course")).toBe(true);
+  });
   it("fails when Moodle readback silently changes evidence behavior", async () => {
-    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(0), repositories: competencyRepos(), competencySnapshot: snapshot, competencyFrameworkId: 7 });
+    const result = await verifyCoursePlan({ runId: "run-v", categoryId: 1, planEnvelope: plan, mcpClientManager: competencyManager(0), repositories: competencyRepos(), competencySnapshot: snapshot, competencyFrameworkId: 8 });
     expect(result.passed).toBe(false);
     if (!result.passed) expect(result.issues.some((entry) => entry.path === "/competencies/activity-links")).toBe(true);
   });

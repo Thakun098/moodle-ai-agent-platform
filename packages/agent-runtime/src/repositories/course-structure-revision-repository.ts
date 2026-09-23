@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import type { AppDatabase } from "../db/connection.js";
+import { pocRun } from "../db/schema/runs.js";
 import {
   courseStructureRevision,
   type CourseStructureRevisionRecord,
@@ -19,6 +20,36 @@ export interface SaveCourseStructureRevisionInput {
   validationStatus: CourseStructureValidationStatus;
   validationErrors?: unknown;
   createdAt?: string;
+}
+
+export type WeekReviewStatus = "Pending review" | "Ready to configure" | "Stale";
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]));
+  return value;
+}
+
+function weekSignature(section: Record<string, unknown>, contextRevision: unknown): string {
+  return createHash("sha256").update(JSON.stringify(canonical({
+    ref: section.ref, position: section.position, title: section.title, summary: section.summary,
+    source_refs: section.source_refs, aligned_objective_ids: section.aligned_objective_ids,
+    aligned_outcome_ids: section.aligned_outcome_ids, contextRevision,
+  }))).digest("hex");
+}
+
+export function projectWeekReviews(record: CourseStructureRevisionRecord): Array<{ section_ref: string; status: WeekReviewStatus; reviewed_at: string | null }> {
+  const content = record.contentJson as Record<string, unknown>;
+  const constraints = record.teacherConstraintsJson as Record<string, unknown>;
+  const reviews = constraints.week_reviews && typeof constraints.week_reviews === "object" ? constraints.week_reviews as Record<string, { signature?: string; reviewed_at?: string }> : {};
+  const sections = Array.isArray(content.sections) ? content.sections as Record<string, unknown>[] : [];
+  return sections.map((section) => {
+    const sectionRef = String(section.ref ?? "");
+    const review = reviews[sectionRef];
+    const stale = constraints.alignment_state === "STALE_ALIGNMENT" || section.alignment_status === "STALE_ALIGNMENT"
+      || Boolean(review && review.signature !== weekSignature(section, constraints.alignment_context_revision));
+    return { section_ref: sectionRef, status: stale ? "Stale" : review ? "Ready to configure" : "Pending review", reviewed_at: review?.reviewed_at ?? null };
+  });
 }
 
 export class CourseStructureRevisionRepository {
@@ -79,6 +110,30 @@ export class CourseStructureRevisionRepository {
       .from(courseStructureRevision)
       .where(eq(courseStructureRevision.runId, runId))
       .orderBy(desc(courseStructureRevision.revision));
+  }
+
+  /** Explicit Teacher review of one current Week; never changes CLO approval authority. */
+  async markWeekReviewed(input: { runId: string; revision: number; sectionRef: string; moodleUserId: number }): Promise<CourseStructureRevisionRecord> {
+    return this.db.transaction(async (tx) => {
+      const [run] = await tx.select().from(pocRun).where(eq(pocRun.runId, input.runId)).for("update");
+      if (!run) throw Object.assign(new Error("Run not found."), { code: "NOT_FOUND", statusCode: 404 });
+      if (!["pending", "planning"].includes(run.status)) throw Object.assign(new Error("Week review is unavailable after Course execution authority is published."), { code: "WEEK_REVIEW_STATE_INVALID", statusCode: 409 });
+      const [latest] = await tx.select().from(courseStructureRevision).where(eq(courseStructureRevision.runId, input.runId)).orderBy(desc(courseStructureRevision.revision)).limit(1).for("update");
+      if (!latest || latest.revision !== input.revision) throw Object.assign(new Error("Course Structure revision changed. Reload before reviewing this Week."), { code: "WEEK_REVIEW_REVISION_STALE", statusCode: 409 });
+      if (latest.sealedAt || latest.validationStatus !== "valid") throw Object.assign(new Error("Only a valid, unsealed Course Structure can be reviewed."), { code: "WEEK_REVIEW_STATE_INVALID", statusCode: 409 });
+      const content = latest.contentJson as Record<string, unknown>;
+      const section = (Array.isArray(content.sections) ? content.sections as Record<string, unknown>[] : []).find((item) => item.ref === input.sectionRef);
+      if (!section) throw Object.assign(new Error("Week not found in this Structure revision."), { code: "WEEK_NOT_FOUND", statusCode: 404 });
+      const constraints = latest.teacherConstraintsJson as Record<string, unknown>;
+      if (constraints.alignment_state === "STALE_ALIGNMENT" || section.alignment_status === "STALE_ALIGNMENT") throw Object.assign(new Error("Revalidate stale Outcome alignment before reviewing this Week."), { code: "WEEK_ALIGNMENT_STALE", statusCode: 409 });
+      const prior = constraints.week_reviews && typeof constraints.week_reviews === "object" ? constraints.week_reviews as Record<string, unknown> : {};
+      const signature = weekSignature(section, constraints.alignment_context_revision);
+      const existing = prior[input.sectionRef] as { signature?: string } | undefined;
+      if (existing?.signature === signature) return latest;
+      const [updated] = await tx.update(courseStructureRevision).set({ teacherConstraintsJson: { ...constraints, week_reviews: { ...prior, [input.sectionRef]: { signature, reviewed_at: new Date().toISOString(), reviewed_by_moodle_user_id: input.moodleUserId } } } }).where(eq(courseStructureRevision.id, latest.id)).returning();
+      if (!updated) throw new Error("Failed to persist Week review.");
+      return updated;
+    });
   }
 
   async unsealRevisions(runId: string): Promise<void> {

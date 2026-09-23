@@ -236,6 +236,49 @@ export function assertOutcomeCoverage(
   }
 }
 
+export interface ApprovedOutcomeInvalidationResult {
+  context: CoreCourseDesignContext;
+  invalidatedOutcomes: CoreCourseDesignContext["approved_learning_outcomes"];
+}
+
+/** Withdraws current CLO authority while preserving immutable syllabus source wording. */
+export function invalidateApprovedLearningOutcome(
+  context: CoreCourseDesignContext,
+  sourceOutcomeId: string,
+): ApprovedOutcomeInvalidationResult {
+  const invalidatedOutcomes = context.approved_learning_outcomes.filter((outcome) =>
+    outcome.source_outcome_ids.includes(sourceOutcomeId),
+  );
+  if (invalidatedOutcomes.length === 0) {
+    throw new PlanningError("OUTCOME_INVALID", "The selected source Learning Outcome is not currently approved.");
+  }
+
+  const approvedLearningOutcomes = context.approved_learning_outcomes.filter((outcome) =>
+    !outcome.source_outcome_ids.includes(sourceOutcomeId),
+  );
+  const approvedSourceIds = new Set(approvedLearningOutcomes.flatMap((outcome) => outcome.source_outcome_ids));
+  const requiresApprovedOutcomes = context.source_learning_outcomes.some((source) => !approvedSourceIds.has(source.source_outcome_id));
+  const missingInformation = requiresApprovedOutcomes && !context.missing_information.some((item) => item.code === "APPROVED_OUTCOMES_REQUIRED")
+    ? context.missing_information.concat([{
+      code: "APPROVED_OUTCOMES_REQUIRED",
+      field: "approved_learning_outcomes",
+      message: "Teacher-approved Outcomes are required for Outcome-based Activity generation and Competency derivation.",
+      severity: "BLOCKING" as const,
+      applies_to_stage: ["ACTIVITY_GENERATION", "DERIVE_COMPETENCIES"] as const,
+    }])
+    : context.missing_information;
+
+  return {
+    invalidatedOutcomes,
+    context: {
+      ...context,
+      revision: context.revision + 1,
+      approved_learning_outcomes: approvedLearningOutcomes,
+      missing_information: missingInformation,
+    },
+  };
+}
+
 export function approveLearningOutcome(
   context: CoreCourseDesignContext,
   input: OutcomeApprovalInput,

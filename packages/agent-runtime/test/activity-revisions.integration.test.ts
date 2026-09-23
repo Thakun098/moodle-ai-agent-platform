@@ -102,6 +102,25 @@ describe("Ticket 22 Activity revision persistence", () => {
     expect(history[2]?.contentJson).toMatchObject({ description: "Regenerated AI content" });
   });
 
+  it("starts a fresh bounded attempt cycle when a previously generated Activity becomes stale", async () => {
+    const base = {
+      id: intentId, runId, structureRevision: 1, sectionRef: "section-01", activityRef: "assignment-01", activityType: "assignment" as const,
+      maxAttempts: 2, optionsJson: { title: "Assignment", grade: 100 }, purpose: "FORMATIVE" as const,
+      selectedObjectiveIdsJson: ["objective-1"], selectedOutcomeIdsJson: ["outcome-1"], contextRevision: 3, learnerContextRevision: 2, learnerContextAcknowledged: true,
+    };
+    const selected = await intentRepo.select(base);
+    expect((await intentRepo.beginAttempt(selected.id))?.attemptCount).toBe(1);
+    await intentRepo.failAttempt(selected.id, false, "temporary provider failure");
+    expect((await intentRepo.beginAttempt(selected.id))?.attemptCount).toBe(2);
+    expect(await intentRepo.complete(selected.id, { contentJson: { title: "Generated on final attempt" }, groundingMode: "SYLLABUS_SCOPED_AI", reviewRequired: true })).toBe(true);
+    expect(await intentRepo.get(selected.id)).toMatchObject({ status: "generated", attemptCount: 2 });
+
+    const stale = await intentRepo.select({ ...base, purpose: "SUMMATIVE" as const });
+    expect(stale).toMatchObject({ status: "stale", attemptCount: 0 });
+    const restarted = await intentRepo.beginAttempt(selected.id);
+    expect(restarted).toMatchObject({ status: "creating", attemptCount: 1 });
+  });
+
   it("rejects stale edit CAS and preserves the last valid Activity revision", async () => {
     const seeded = await revisionRepo.recordGeneratedFromIntent(await generatedIntent());
     await revisionRepo.saveTeacherEdit({ activityIntentId: intentId, contentJson: { ...(seeded.contentJson as Record<string, unknown>), description: "Valid Teacher edit" }, expectedActivityRevision: 1 });
@@ -109,5 +128,29 @@ describe("Ticket 22 Activity revision persistence", () => {
     const current = await intentRepo.get(intentId);
     expect(current).toMatchObject({ activityRevision: 2, contentProvenance: "TEACHER_EDITED", contentJson: expect.objectContaining({ description: "Valid Teacher edit" }) });
     expect(await revisionRepo.list(intentId)).toHaveLength(2);
+  });
+  it("treats reordered selections as a no-op without staling generated content", async () => {
+    const base = { id: intentId, runId, structureRevision: 1, sectionRef: "section-01", activityRef: "assignment-01", activityType: "assignment" as const, maxAttempts: 2, optionsJson: {}, purpose: "FORMATIVE" as const, contextRevision: 3, learnerContextRevision: 2, learnerContextAcknowledged: true };
+    await intentRepo.select({ ...base, selectedObjectiveIdsJson: ["objective-b", "objective-a"], selectedOutcomeIdsJson: ["outcome-b", "outcome-a"] });
+    await intentRepo.beginAttempt(intentId);
+    await intentRepo.complete(intentId, { contentJson: { title: "Generated" }, groundingMode: "MATERIAL_GROUNDED", reviewRequired: false });
+    const before = await intentRepo.get(intentId);
+    const after = await intentRepo.select({ ...base, selectedObjectiveIdsJson: ["objective-a", "objective-b"], selectedOutcomeIdsJson: ["outcome-a", "outcome-b"] });
+    expect(after).toMatchObject({ status: "generated", intentRevision: before!.intentRevision, contentJson: before!.contentJson });
+  });
+
+  it("clears current provenance on remove and reselect while retaining immutable history", async () => {
+    const generated = await generatedIntent();
+    expect(generated).toMatchObject({ activityRevision: 1, contentProvenance: "AI_GENERATED", sourceGenerationRevision: 1 });
+    expect(await intentRepo.remove(intentId)).toBe(true);
+    const reselected = await intentRepo.select({ id: intentId, runId, structureRevision: 1, sectionRef: "section-01", activityRef: "assignment-01", activityType: "assignment", maxAttempts: 2,
+      optionsJson: { title: "Assignment", grade: 100 }, purpose: "FORMATIVE", selectedObjectiveIdsJson: ["objective-1"], selectedOutcomeIdsJson: ["outcome-1"],
+      contextRevision: 3, learnerContextRevision: 2, learnerContextAcknowledged: true });
+    expect(reselected).toMatchObject({ status: "selected", contentJson: null, contentProvenance: null, activityRevision: 0, sourceGenerationRevision: null });
+    expect((await revisionRepo.list(intentId)).map((revision) => revision.revision)).toEqual([1]);
+    await intentRepo.beginAttempt(intentId);
+    expect(await intentRepo.complete(intentId, { contentJson: { title: "Regenerated" }, groundingMode: "MATERIAL_GROUNDED", reviewRequired: false })).toBe(true);
+    expect(await intentRepo.get(intentId)).toMatchObject({ status: "generated", activityRevision: 2, contentProvenance: "AI_GENERATED", sourceGenerationRevision: 2 });
+    expect((await revisionRepo.list(intentId)).map((revision) => revision.revision)).toEqual([1, 2]);
   });
 });

@@ -236,8 +236,8 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
     }
   }
 
-  if (config.competencySnapshot && config.competencySnapshot.competencies.length > 0) {
-    if (!Number.isSafeInteger(config.competencyFrameworkId) || Number(config.competencyFrameworkId) <= 0) {
+  if (config.competencySnapshot) {
+    if (config.competencySnapshot.competencies.length > 0 && (!Number.isSafeInteger(config.competencySnapshot.frameworkId) || Number(config.competencySnapshot.frameworkId) <= 0)) {
       issues.push(issue("missing", "/competencies/framework", "Configured Competency Framework is required for native Competency verification"));
     } else {
       try {
@@ -246,9 +246,9 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
         for (const competency of config.competencySnapshot.competencies) {
           const nativeId = await repositories.mappingRepo.findMoodleIdByLocalRef(runId, plan.plan_id, plan.revision, `competency:${competency.candidateId}`);
           if (!nativeId) { issues.push(issue("missing", `/competencies/${competency.candidateId}/mapping`, "Native Competency execution mapping is missing")); continue; }
-          expectedCompetencies.push({ competency_id: nativeId, framework_id: config.competencyFrameworkId, idnumber: competency.idnumber, shortname: competency.name });
+          expectedCompetencies.push({ competency_id: nativeId, framework_id: config.competencySnapshot.frameworkId, idnumber: competency.idnumber, shortname: competency.name, description: competency.description });
         }
-        const actualCompetencies = (Array.isArray(readback?.course_competencies) ? readback.course_competencies : []).filter((item: any) => Number(item.framework_id) === config.competencyFrameworkId).map((item: any) => ({ competency_id: Number(item.competency_id), framework_id: Number(item.framework_id), idnumber: String(item.idnumber), shortname: String(item.shortname) })).sort((a: any,b: any)=>a.competency_id-b.competency_id);
+        const actualCompetencies = (Array.isArray(readback?.course_competencies) ? readback.course_competencies : []).map((item: any) => ({ competency_id: Number(item.competency_id), framework_id: Number(item.framework_id), idnumber: String(item.idnumber), shortname: String(item.shortname), description: String(item.description) })).sort((a: any,b: any)=>a.competency_id-b.competency_id);
         expectedCompetencies.sort((a,b)=>a.competency_id-b.competency_id);
         if (JSON.stringify(actualCompetencies) !== JSON.stringify(expectedCompetencies)) issues.push(issue("mismatch", "/competencies/course", "Moodle Course Competencies do not exactly match the approved execution snapshot", expectedCompetencies, actualCompetencies));
 
@@ -259,8 +259,7 @@ export async function verifyCoursePlan(config: VerifyCourseConfig): Promise<Veri
           if (!activityId || !competencyId) { issues.push(issue("missing", `/competencies/activity-links/${mapping.activityRef}`, "Native Activity or Competency identity is missing")); continue; }
           expectedLinks.push({ activity_id: activityId, competency_id: competencyId, rule_outcome: mapping.evidence === "CONFIRMED" ? 1 : 0 });
         }
-        const expectedCompetencyIds = new Set(expectedCompetencies.map((item) => item.competency_id));
-        const actualLinks = (Array.isArray(readback?.activity_links) ? readback.activity_links : []).filter((item: any) => expectedCompetencyIds.has(Number(item.competency_id))).map((item: any) => ({ activity_id: Number(item.activity_id), competency_id: Number(item.competency_id), rule_outcome: Number(item.rule_outcome) })).sort((a: any,b: any)=>a.activity_id-b.activity_id || a.competency_id-b.competency_id);
+        const actualLinks = (Array.isArray(readback?.activity_links) ? readback.activity_links : []).map((item: any) => ({ activity_id: Number(item.activity_id), competency_id: Number(item.competency_id), rule_outcome: Number(item.rule_outcome) })).sort((a: any,b: any)=>a.activity_id-b.activity_id || a.competency_id-b.competency_id);
         expectedLinks.sort((a,b)=>a.activity_id-b.activity_id || a.competency_id-b.competency_id);
         if (JSON.stringify(actualLinks) !== JSON.stringify(expectedLinks)) issues.push(issue("mismatch", "/competencies/activity-links", "Moodle Activity Competency links/evidence behavior do not exactly match the approved execution snapshot", expectedLinks, actualLinks));
       } catch (err) {

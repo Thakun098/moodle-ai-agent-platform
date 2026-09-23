@@ -280,7 +280,7 @@ export const CourseCompetencyLinkDataSchema = z.object({ course_id: z.number(), 
 export const ActivityCompetencyLinkDataSchema = z.object({ link_id: z.number(), activity_id: z.number(), competency_id: z.number(), rule_outcome: z.number() }).strict();
 export const CourseCompetencyReadbackDataSchema = z.object({
   course_id: z.number(),
-  course_competencies: z.array(z.object({ course_link_id: z.number(), competency_id: z.number(), framework_id: z.number(), idnumber: z.string(), shortname: z.string() }).strict()),
+  course_competencies: z.array(z.object({ course_link_id: z.number(), competency_id: z.number(), framework_id: z.number(), idnumber: z.string(), shortname: z.string(), description: z.string() }).strict()),
   activity_links: z.array(ActivityCompetencyLinkDataSchema),
 }).strict();
 export const ListCompetencyFrameworksOutputSchema = createSuccessEnvelopeSchema(ListCompetencyFrameworksDataSchema);

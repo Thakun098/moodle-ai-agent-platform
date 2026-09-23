@@ -67,8 +67,9 @@ assert.match(lang, /Generate Course Structure/, "Step 1 CTA generates Course Str
 assert.match(lang, /These notes shape Course Structure only/, "Step 1 hint excludes implicit activities");
 assert.doesNotMatch(source, /No planned activities/, "Step 2 no longer renders planned-activity messaging");
 assert.doesNotMatch(source, /Planned Quiz|Planned Assignment/, "Step 2 has no implicit planned activities");
-assert.match(source, /Approve source as-is/, "every unapproved source Outcome has an as-is approval action");
-assert.match(source, /use_source_as_is:\s*true/, "source as-is approval is sent explicitly through the BFF");
+assert.match(source, /selected.item_type === 'CLO' && selected.status === 'REVIEWED'/, "CLO approval is available only after explicit review");
+assert.match(source, /Approve CLO/, "reviewed CLO exposes one explicit authority approval action");
+assert.match(source, /payload.use_source_as_is = true/, "source as-is approval is sent explicitly through the BFF after review");
 assert.match(source, /unapprovedSourceOutcomes/, "Structure Continue is gated by pending source Outcome approval");
 assert.match(source, /REVIEW REQUIRED · no Outcome mapping/, "missing model Outcome mappings are surfaced for Teacher review");
 assert.match(template, /input-edit-section-objectives/, "Section editor exposes authorized Objective mappings");
@@ -114,8 +115,9 @@ assert.match(source, /quality_review/, "structured AI self-review is rendered fo
 assert.match(source, /Outcome alignment/, "self-review PASS/WARN dimensions are visible");
 assert.match(source, /generation_metadata/, "generation lineage metadata is visible in Activity preview");
 
-// Ticket 01 — canonical QuizPlan review renderer.
-assert.match(source, /renderQuizActivityPreview\(intent\.activity, \$preview\)/, "Activity preview uses the shared Quiz renderer");
+// Ticket 04 — selected-question canonical QuizPlan review renderer.
+assert.match(source, /appendQuestionNavigator\(intent, \$preview\)/, "Activity preview exposes the selected-question navigator");
+assert.match(source, /renderCanonicalQuestionPreview\(previewQuestions\[previewIndex\], previewIndex, \$questionDetail\)/, "Activity preview uses the canonical renderer for one selected question");
 assert.match(source, /question\.question/, "Quiz renderer reads the canonical question field");
 assert.doesNotMatch(source, /question\.question_text \|\| question\.text \|\| question\.name/, "Quiz renderer does not fall back to legacy question fields");
 assert.match(source, /correct_choice_refs/, "Multiple-choice preview marks the canonical correct choice");

@@ -62,6 +62,7 @@ export interface BuildAppOptions {
   readonly structureRevisionRepo?: CourseStructureRevisionRepository | undefined;
   readonly structurePlanner?: CourseStructurePlanner | undefined;
   readonly snapshotRepo?: import("@moodle-agent-poc/agent-runtime").MaterialSnapshotRepository | undefined;
+  readonly materialStateRepo?: import("@moodle-agent-poc/agent-runtime").MaterialSectionStateRepository | undefined;
   readonly draftRepo?: SectionActivityDraftRepository | undefined;
   readonly activityIntentRepo?: ActivityIntentRepository | undefined;
   readonly activityRevisionRepo?: ActivityRevisionRepository | undefined;
@@ -81,7 +82,7 @@ export interface BuildAppOptions {
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const {
     config, fastifyOptions, runRepo, planRepo, modelClient, coursePlanner, assignmentPlanner, quizPlanner,
-    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, draftRepo, activityIntentRepo, activityRevisionRepo, candidateRepo, outcomeReviewRepo, competencyReviewRepo, competencySnapshotRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo, riskDashboardRepo, riskInsightService,
+    planRevisionHelper, structureRevisionRepo, structurePlanner, snapshotRepo, materialStateRepo, draftRepo, activityIntentRepo, activityRevisionRepo, candidateRepo, outcomeReviewRepo, competencyReviewRepo, competencySnapshotRepo, mcpClientManager, mappingRepo, toolCallRepo, idempotencyRepo, verificationRepo, riskDashboardRepo, riskInsightService,
   } = options;
 
   const defaultLoggerOptions = {
@@ -104,9 +105,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(competencyMappingRoutes, { config, ...(competencyReviewRepo ? { reviewRepo: competencyReviewRepo } : {}) });
   app.register(runsRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(planRepo ? { planRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(competencyReviewRepo ? { competencyReviewRepo } : {}), ...(competencySnapshotRepo ? { competencySnapshotRepo } : {}), ...(mcpClientManager ? { mcpClientManager } : {}) });
   app.register(courseStructureRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(structurePlanner ? { structurePlanner } : {}) });
-  app.register(instructionalDesignRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(outcomeReviewRepo ? { reviewRepo: outcomeReviewRepo } : {}), enforceOutcomeReview: true, ...(modelClient ? { modelClient } : {}) });
+  app.register(instructionalDesignRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(candidateRepo ? { candidateRepo } : {}), ...(outcomeReviewRepo ? { reviewRepo: outcomeReviewRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), enforceOutcomeReview: true, ...(modelClient ? { modelClient } : {}) });
   app.register(outcomeReviewRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(outcomeReviewRepo ? { reviewRepo: outcomeReviewRepo } : {}) });
-  app.register(materialSnapshotRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
+  app.register(materialSnapshotRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(materialStateRepo ? { materialStateRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
   app.register(activityIntentRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}) });
   app.register(activityGenerationRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}), ...(modelClient ? { modelClient } : {}) });
   app.register(activityEditRoutes, { config, ...(runRepo ? { runRepo } : {}), ...(structureRevisionRepo ? { structureRevisionRepo } : {}), ...(activityIntentRepo ? { activityIntentRepo } : {}), ...(activityRevisionRepo ? { activityRevisionRepo } : {}), ...(snapshotRepo ? { snapshotRepo } : {}) });

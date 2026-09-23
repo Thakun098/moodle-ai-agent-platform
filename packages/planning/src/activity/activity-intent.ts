@@ -28,7 +28,7 @@ function strings(values: readonly string[] | undefined, field: string): string[]
   if (!Array.isArray(values) || !values.every((value) => typeof value === "string" && value.trim() !== "")) {
     throw new PlanningError("ACTIVITY_INTENT_INVALID", `${field} must contain non-empty strings.`);
   }
-  return [...new Set(values.map((value) => value.trim()))];
+  return [...new Set(values.map((value) => value.trim()))].sort();
 }
 
 function approvedOutcomeForId(context: CoreCourseDesignContext, id: string) {
@@ -72,7 +72,7 @@ export function validateActivityIntent(
   if (outOfSectionOutcomeIds.length > 0 && !(override?.acknowledged === true && typeof override.reason === "string" && override.reason.trim() !== "")) {
     throw new PlanningError("ACTIVITY_INTENT_ALIGNMENT_OVERRIDE_REQUIRED", "Selecting an Outcome outside the Section requires an explicit Teacher override.", { out_of_section_outcome_ids: [...new Set(outOfSectionOutcomeIds)], section_ref: section.ref });
   }
-  const distinctOutcomeIds = [...new Set(normalizedOutcomeIds)];
+  const distinctOutcomeIds = [...new Set(normalizedOutcomeIds)].sort();
   if (input.purpose === "PRACTICE" && objectiveIds.length === 0 && distinctOutcomeIds.length === 0) {
     throw new PlanningError("ACTIVITY_INTENT_ALIGNMENT_REQUIRED", "PRACTICE requires at least one selected Objective or Outcome.");
   }

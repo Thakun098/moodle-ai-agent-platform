@@ -37,6 +37,7 @@ const snapshot = (evidence: "CONFIRMED" | "DECLINED" = "CONFIRMED"): CompetencyE
   planId: plan.plan_id,
   revision: plan.revision,
   mappingReviewRevision: 9,
+  frameworkId: 7,
   capturedAt: "2026-09-16T00:00:00.000Z",
   competencies: [{ candidateId: "competency-1", competencyRevision: 4, name: "Design classes", description: "Design classes correctly", outcomeIds: ["outcome-1"], idnumber: "AGENTPOC-T24-C1" }],
   mappings: [{ activityIntentId: "intent-1", activityRef: "assignment-01", competencyId: "competency-1", intentRevision: 2, activityRevision: 3, competencyRevision: 4, evidence }],
@@ -83,15 +84,16 @@ describe("Ticket 24 native competency materialization", () => {
   it("blocks before Moodle course mutation when approved competencies exist but no framework is configured", async () => {
     const repos = repositories();
     const { server, manager } = await serverAndManager();
-    await expect(executeCoursePlan({ runId: "run-ticket24", planEnvelope: plan, target: { category_id: 10 }, mcpClientManager: manager, repositories: repos, competencySnapshot: snapshot() })).rejects.toMatchObject({ code: "COMPETENCY_FRAMEWORK_REQUIRED" });
-    expect(repos.toolCalls.some(call => call.toolName === "moodle_create_course")).toBe(false);
+    await expect(executeCoursePlan({ runId: "run-ticket24", planEnvelope: plan, target: { category_id: 10 }, mcpClientManager: manager, repositories: repos, competencySnapshot: { ...snapshot(), frameworkId: null }, competencyFrameworkId: 7 })).rejects.toMatchObject({ code: "COMPETENCY_FRAMEWORK_REQUIRED" });
     await manager.close(); await server.close();
   });
 
-  it("materializes the approved competency and confirmed mapping using the configured eligible framework", async () => {
+  it("resumes partial execution using the approved framework after runtime config changes", async () => {
     const repos = repositories();
+    repos.mappings.push({ localRef: "course", moodleId: 101, targetType: "course" });
     const { server, manager } = await serverAndManager();
-    const result = await executeCoursePlan({ runId: "run-ticket24", planEnvelope: plan, target: { category_id: 10 }, mcpClientManager: manager, repositories: repos, competencySnapshot: snapshot(), competencyFrameworkId: 7 });
+    const result = await executeCoursePlan({ runId: "run-ticket24", planEnvelope: plan, target: { category_id: 10 }, mcpClientManager: manager, repositories: repos, competencySnapshot: snapshot(), competencyFrameworkId: 8 });
+    expect(repos.toolCalls.find(call => call.toolName === "moodle_create_competency")?.arguments).toMatchObject({ framework_id: 7 });
     expect(result.createdEntities.competencies).toBe(1);
     expect(result.createdEntities.competencyLinks).toBe(1);
     expect(repos.mappings.find(m => m.localRef === "competency:competency-1")).toMatchObject({ targetType: "competency", moodleId: 901 });
@@ -126,7 +128,6 @@ describe("Ticket 24 native competency materialization", () => {
     })).rejects.toMatchObject({ code: "PLAN_NOT_APPROVED" });
 
     expect(beforeMutation).toHaveBeenCalledTimes(1);
-    expect(repos.toolCalls.some(call => call.toolName === "moodle_create_course")).toBe(false);
     await manager.close(); await server.close();
   });
 

@@ -1,5 +1,5 @@
 import type { CompetencyCandidateDecision, CoreCourseDesignContext } from "@moodle-agent-poc/contracts";
-import { CompetencyCandidateRepository, CourseStructureRevisionRepository, getDatabase, OutcomeReviewRepository, RunRepository, type CompetencyCandidateRecord, type ModelClient } from "@moodle-agent-poc/agent-runtime";
+import { ActivityIntentRepository, CompetencyCandidateRepository, CourseStructureRevisionRepository, projectWeekReviews, getDatabase, OutcomeReviewRepository, RunRepository, type CompetencyCandidateRecord, type ModelClient } from "@moodle-agent-poc/agent-runtime";
 import {
   approveLearningOutcome,
   assertOutcomeCoverage,
@@ -13,6 +13,7 @@ import {
 } from "@moodle-agent-poc/planning";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
+import { editApprovedOutcome } from "../services/approved-outcome-edit-service.js";
 import { beginInstructionalDesignMutation } from "../services/instructional-design-run-lifecycle-service.js";
 
 export interface InstructionalDesignRoutesOptions {
@@ -21,6 +22,7 @@ export interface InstructionalDesignRoutesOptions {
   structureRevisionRepo?: CourseStructureRevisionRepository;
   candidateRepo?: CompetencyCandidateRepository;
   reviewRepo?: OutcomeReviewRepository;
+  activityIntentRepo?: ActivityIntentRepository;
   enforceOutcomeReview?: boolean;
   modelClient?: ModelClient;
 }
@@ -29,7 +31,7 @@ function serializeStructureRevision(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   const record = value as Record<string, unknown>;
   if (!("contentJson" in record)) return value;
-  return { id: record.id, run_id: record.runId, revision: record.revision, title: record.title, summary: record.summary, content: record.contentJson, teacher_constraints: record.teacherConstraintsJson, validation_status: record.validationStatus, validation_errors: record.validationErrors ?? null, sealed_at: record.sealedAt ?? null, sealed_by_moodle_user_id: record.sealedByMoodleUserId ?? null, created_at: record.createdAt };
+  return { id: record.id, run_id: record.runId, revision: record.revision, title: record.title, summary: record.summary, content: record.contentJson, teacher_constraints: record.teacherConstraintsJson, week_reviews: projectWeekReviews(record as any), validation_status: record.validationStatus, validation_errors: record.validationErrors ?? null, sealed_at: record.sealedAt ?? null, sealed_by_moodle_user_id: record.sealedByMoodleUserId ?? null, created_at: record.createdAt };
 }
 
 function serializeCompetencyCandidate(record: CompetencyCandidateRecord): Record<string, unknown> {
@@ -204,6 +206,43 @@ export const instructionalDesignRoutes: FastifyPluginAsync<InstructionalDesignRo
       await (structureRepo as CourseStructureRevisionRepository & { markAlignmentStale: (runId: string, revision: number) => Promise<void> }).markAlignmentStale(request.params.runId, updated.revision);
     }
     return { run_id: request.params.runId, core_context: updated, alignment_status: "STALE_ALIGNMENT" };
+  });
+
+  fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/outcomes/edit-approved", async (request, reply) => {
+    if (!authorize(request, options.config, reply)) return;
+    const body = request.body && typeof request.body === "object" ? request.body as Record<string, unknown> : {};
+    const result = await editApprovedOutcome({
+      runRepo: getRunRepo(),
+      structureRevisionRepo: getStructureRepo(),
+      candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase()),
+      reviewRepo: options.reviewRepo ?? new OutcomeReviewRepository(getDatabase()),
+      activityIntentRepo: options.activityIntentRepo ?? new ActivityIntentRepository(getDatabase()),
+    }, {
+      runId: request.params.runId,
+      sourceOutcomeId: typeof body.source_outcome_id === "string" ? body.source_outcome_id : "",
+      teacherText: typeof body.teacher_text === "string" ? body.teacher_text : "",
+      confirmed: body.confirmed === true,
+      ...(typeof body.teacher_id === "number" ? { teacherId: body.teacher_id } : {}),
+    });
+
+    return {
+      run_id: request.params.runId,
+      core_context: result.context,
+      review: {
+        item_type: result.review.itemType, item_id: result.review.itemId, status: result.review.status, draft_text: result.review.draftText,
+        updated_by_moodle_user_id: result.review.updatedByMoodleUserId, updated_at: result.review.updatedAt,
+      },
+      invalidated_clo_approval: {
+        outcome_id: result.invalidatedOutcomeIds[0] ?? null,
+        outcome_ids: result.invalidatedOutcomeIds,
+        source_outcome_id: typeof body.source_outcome_id === "string" ? body.source_outcome_id.trim() : "",
+      },
+      stale: {
+        structure_alignment: result.stale.structureAlignment,
+        activity_count: result.stale.activityCount,
+        competency_candidate_count: result.stale.competencyCandidateCount,
+      },
+    };
   });
 
   fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/course-structure/coverage-overrides", async (request, reply) => {

@@ -340,6 +340,7 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
       runId,
       planId: plan_id,
       revision: revNum,
+      frameworkId: options.config.moodleCompetencyFrameworkId ?? null,
       dependencies: {
         candidateRepo: injectedCandidateRepo ?? new CompetencyCandidateRepository(db!),
         activityIntentRepo: injectedActivityIntentRepo ?? new ActivityIntentRepository(db!),

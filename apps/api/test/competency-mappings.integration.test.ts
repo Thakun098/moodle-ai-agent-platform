@@ -75,6 +75,19 @@ describe("Ticket 23 persisted Teacher decisions through the API", () => {
       view = (await app.inject({ method: "GET", url: base, headers })).json();
       expect(view.mappings.find((p: any) => p.activityId === ids[1]).mapping).toBe("STALE");
       expect(modelFetch).not.toHaveBeenCalled();
+            const reviewBeforeDrift = (await app.inject({ method: "GET", url: base, headers })).json();
+      await client.pool.query("UPDATE poc_competency_candidate SET revision = revision + 1 WHERE run_id = $1", [runId]);
+      const staleDecision = await submit(ids[1]!, "mapping", "CONFIRMED", reviewBeforeDrift.revision);
+      expect(staleDecision.statusCode).toBe(409);      await client.pool.query("UPDATE poc_run SET status = 'completed', approved_plan_id = $2, approved_revision = 1, approved_at = NOW() WHERE run_id = $1", [runId, randomUUID()]);
+      // Simulate source drift after completion so GET must project STALE without writing.
+      await client.pool.query("UPDATE poc_competency_candidate SET revision = revision + 1 WHERE run_id = $1", [runId]);
+      const beforeCompletedRead = (await client.pool.query("SELECT revision, decisions FROM poc_competency_mapping_review WHERE run_id = $1", [runId])).rows;
+      const runBefore = (await client.pool.query("SELECT approved_plan_id, approved_revision, status FROM poc_run WHERE run_id = $1", [runId])).rows;
+      const read = await app.inject({ method: "GET", url: base, headers });
+      expect(read.statusCode).toBe(200);
+      expect(read.json().mappings.some((entry: any) => entry.mapping === "STALE")).toBe(true);
+      expect((await client.pool.query("SELECT revision, decisions FROM poc_competency_mapping_review WHERE run_id = $1", [runId])).rows).toEqual(beforeCompletedRead);
+      expect((await client.pool.query("SELECT approved_plan_id, approved_revision, status FROM poc_run WHERE run_id = $1", [runId])).rows).toEqual(runBefore);
     } finally { vi.unstubAllGlobals(); }
   });
 });

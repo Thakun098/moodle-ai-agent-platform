@@ -23,6 +23,7 @@ export interface CompetencyExecutionSnapshot {
   planId: string;
   revision: number;
   mappingReviewRevision: number;
+  frameworkId: number | null;
   capturedAt: string;
   competencies: CompetencyExecutionDefinition[];
   mappings: CompetencyExecutionMapping[];

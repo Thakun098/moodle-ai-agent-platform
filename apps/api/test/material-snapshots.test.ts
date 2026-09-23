@@ -29,12 +29,14 @@ describe("MaterialSnapshot API", () => {
       }),
     };
     const activityIntentRepo = { markStaleForSection: vi.fn().mockResolvedValue(2) };
+    const materialStateRepo = { getState: vi.fn().mockResolvedValue(null), markReady: vi.fn().mockResolvedValue({}), markFailed: vi.fn().mockResolvedValue({}) };
     const app = buildApp({
       config,
       runRepo: { getRun: vi.fn().mockResolvedValue({ runId: "run-1" }) } as any,
       structureRevisionRepo: { getSealedRevision: vi.fn().mockResolvedValue({ revision: 1, contentJson: { sections: [{ ref: "section-01" }] } }) } as any,
       snapshotRepo: snapshotRepo as any,
       activityIntentRepo: activityIntentRepo as any,
+      materialStateRepo: materialStateRepo as any,
       fastifyOptions: { logger: false },
     });
     const duplicateUpload = multipart([
@@ -47,6 +49,7 @@ describe("MaterialSnapshot API", () => {
     expect(snapshotRepo.saveSnapshot).toHaveBeenCalledWith(expect.objectContaining({ files: [expect.objectContaining({ moodleMaterialId: 10 })] }));
     expect(snapshotRepo.saveSnapshot.mock.calls[0]?.[0]?.files).toHaveLength(1);
     expect(activityIntentRepo.markStaleForSection).toHaveBeenCalledWith("run-1", 1, "section-01");
+    expect(materialStateRepo.markReady).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-1", structureRevision: 1, sectionRef: "section-01", snapshotRevision: 1 }));
 
     snapshotRepo.saveSnapshot.mockClear();
     activityIntentRepo.markStaleForSection.mockClear();
@@ -60,6 +63,74 @@ describe("MaterialSnapshot API", () => {
     await app.close();
   });
 
+  it("reads back the latest authoritative MaterialSnapshot for reload without mutating state", async () => {
+    const latest = {
+      id: "snapshot-7", runId: "run-1", structureRevision: 1, sectionRef: "section-01", revision: 7,
+      filesJson: [{ filename: "week-1.txt", sha256: "b".repeat(64), mediaType: "text/plain", byteSize: 20, extractionStatus: "success", extractedText: "BFS", extractor: "plain", moodleMaterialId: 10, useForGrounding: true, publishToCourse: true }],
+      extractorVersion: "materials.v1", normalizedText: "BFS", normalizedTextHash: "c".repeat(64), estimatedTokens: 3, createdByMoodleUserId: 42, createdAt: "2026-09-21T00:00:00Z",
+    };
+    const snapshotRepo = { getLatestSnapshot: vi.fn().mockResolvedValue(latest), saveSnapshot: vi.fn() };
+    const app = buildApp({
+      config,
+      runRepo: { getRun: vi.fn().mockResolvedValue({ runId: "run-1" }) } as any,
+      structureRevisionRepo: { getSealedRevision: vi.fn().mockResolvedValue({ revision: 1, contentJson: { sections: [{ ref: "section-01" }] } }) } as any,
+      snapshotRepo: snapshotRepo as any, activityIntentRepo: { markStaleForSection: vi.fn() } as any,
+      materialStateRepo: { getState: vi.fn().mockResolvedValue({ status: "ready", snapshotId: "snapshot-7", snapshotRevision: 7, errorCode: null, errorMessage: null }), markReady: vi.fn(), markFailed: vi.fn() } as any,
+      fastifyOptions: { logger: false },
+    });
+    const response = await app.inject({ method: "GET", url: "/api/runs/run-1/sections/section-01/material-snapshots/latest" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ run_id: "run-1", section_ref: "section-01", snapshot: { id: "snapshot-7", revision: 7, files: [{ filename: "week-1.txt" }] } });
+    expect(snapshotRepo.saveSnapshot).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+
+
+  it("reads back authoritative Material failure state distinctly from fallback", async () => {
+    const snapshotRepo = { getLatestSnapshot: vi.fn().mockResolvedValue(null), saveSnapshot: vi.fn() };
+    const materialStateRepo = {
+      getState: vi.fn().mockResolvedValue({ status: "failed", snapshotId: null, snapshotRevision: null, errorCode: "MATERIAL_EXTRACTION_FAILED", errorMessage: "No readable text" }),
+      markReady: vi.fn(), markFailed: vi.fn(),
+    };
+    const app = buildApp({
+      config,
+      runRepo: { getRun: vi.fn().mockResolvedValue({ runId: "run-1" }) } as any,
+      structureRevisionRepo: { getSealedRevision: vi.fn().mockResolvedValue({ revision: 1, contentJson: { sections: [{ ref: "section-01" }] } }) } as any,
+      snapshotRepo: snapshotRepo as any,
+      activityIntentRepo: { markStaleForSection: vi.fn() } as any,
+      materialStateRepo: materialStateRepo as any,
+      fastifyOptions: { logger: false },
+    });
+    const response = await app.inject({ method: "GET", url: "/api/runs/run-1/sections/section-01/material-snapshots/latest" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ status: "failed", snapshot: null, error: { code: "MATERIAL_EXTRACTION_FAILED", message: "No readable text" } });
+    await app.close();
+  });
+
+  it("persists a failed Material operation so reload can recover the failure state", async () => {
+    const snapshotRepo = { getLatestSnapshot: vi.fn().mockResolvedValue(null), saveSnapshot: vi.fn() };
+    const materialStateRepo = { getState: vi.fn().mockResolvedValue(null), markReady: vi.fn(), markFailed: vi.fn().mockResolvedValue({ status: "failed" }) };
+    const app = buildApp({
+      config,
+      runRepo: { getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning" }) } as any,
+      structureRevisionRepo: { getSealedRevision: vi.fn().mockResolvedValue({ revision: 1, contentJson: { sections: [{ ref: "section-01" }] } }) } as any,
+      snapshotRepo: snapshotRepo as any,
+      activityIntentRepo: { markStaleForSection: vi.fn() } as any,
+      materialStateRepo: materialStateRepo as any,
+      fastifyOptions: { logger: false },
+    });
+    const upload = multipart([{ name: "empty.txt", content: "", materialId: 10 }]);
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/material-snapshots", ...upload });
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe("MATERIAL_EXTRACTION_FAILED");
+    expect(materialStateRepo.markFailed).toHaveBeenCalledWith(expect.objectContaining({
+      runId: "run-1", structureRevision: 1, sectionRef: "section-01", errorCode: "MATERIAL_EXTRACTION_FAILED",
+    }));
+    expect(snapshotRepo.saveSnapshot).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("blocks a changed MaterialSnapshot after execution authority is frozen", async () => {
     const snapshotRepo = { getLatestSnapshot: vi.fn().mockResolvedValue(null), saveSnapshot: vi.fn() };
     const activityIntentRepo = { markStaleForSection: vi.fn() };
@@ -67,7 +138,9 @@ describe("MaterialSnapshot API", () => {
       config,
       runRepo: { getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "completed" }) } as any,
       structureRevisionRepo: { getSealedRevision: vi.fn().mockResolvedValue({ revision: 1, contentJson: { sections: [{ ref: "section-01" }] } }) } as any,
-      snapshotRepo: snapshotRepo as any, activityIntentRepo: activityIntentRepo as any, fastifyOptions: { logger: false },
+      snapshotRepo: snapshotRepo as any, activityIntentRepo: activityIntentRepo as any,
+      materialStateRepo: { getState: vi.fn().mockResolvedValue(null), markReady: vi.fn(), markFailed: vi.fn() } as any,
+      fastifyOptions: { logger: false },
     });
     const upload = multipart([{ name: "week-1.txt", content: "Changed authority.", materialId: 10 }]);
     const response = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/material-snapshots", ...upload });

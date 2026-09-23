@@ -152,6 +152,22 @@ try {
             ]);
             break;
 
+        case 'edit_approved_learning_outcome':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $sourceoutcomeid = required_param('source_outcome_id', PARAM_ALPHANUMEXT);
+            $teachertext = required_param('teacher_text', PARAM_TEXT);
+            $confirmed = required_param('confirmed', PARAM_BOOL);
+            if (!$confirmed) {
+                throw new \invalid_parameter_exception('Approved CLO edit requires explicit confirmation.');
+            }
+            $response['data'] = $client->edit_approved_learning_outcome($runid, [
+                'source_outcome_id' => $sourceoutcomeid,
+                'teacher_text' => $teachertext,
+                'confirmed' => true,
+                'teacher_id' => (int)$USER->id,
+            ]);
+            break;
+
         case 'approve_learning_outcome':
             $runid = required_param('run_id', PARAM_ALPHANUMEXT);
             $sourceoutcomeid = required_param('source_outcome_id', PARAM_ALPHANUMEXT);
@@ -281,6 +297,19 @@ try {
             $response['data'] = $client->save_activity_edit($runid, $sectionref, $activityref, $activity, $expectedrevision, (int)$USER->id);
             break;
 
+        case 'get_activity_status':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
+            $activityref = required_param('activity_ref', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_activity_status($runid, $sectionref, $activityref);
+            break;
+
+        case 'get_section_material_snapshot':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_latest_material_snapshot($runid, $sectionref);
+            break;
+
         case 'generate_activity':
             $runid = required_param('run_id', PARAM_ALPHANUMEXT);
             $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
@@ -304,6 +333,13 @@ try {
                 throw new \moodle_exception('invalidparameter', 'debug', '', 'Invalid structure JSON');
             }
             $response['data'] = $client->save_structure_revision($runid, $structure);
+            break;
+
+        case 'mark_week_reviewed':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);
+            $revision = required_param('revision', PARAM_INT);
+            $response['data'] = $client->mark_week_reviewed($runid, $sectionref, $revision, (int)$USER->id);
             break;
 
         case 'seal_structure':

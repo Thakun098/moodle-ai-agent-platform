@@ -6,6 +6,7 @@ export * from "./execution-mapping-repository.js";
 export * from "./verification-repository.js";
 export * from "./course-structure-revision-repository.js";
 export * from "./material-snapshot-repository.js";
+export * from "./material-section-state-repository.js";
 export * from "./section-activity-draft-repository.js";
 export * from "./idempotency-repository.js";
 export * from "./activity-intent-repository.js";

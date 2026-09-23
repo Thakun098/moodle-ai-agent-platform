@@ -7,6 +7,7 @@ export * from "./verifications.js";
 export * from "./idempotency.js";
 export * from "./course-structure-revisions.js";
 export * from "./material-snapshots.js";
+export * from "./material-section-states.js";
 export * from "./section-activity-drafts.js";
 export * from "./activity-intents.js";
 export * from "./activity-revisions.js";

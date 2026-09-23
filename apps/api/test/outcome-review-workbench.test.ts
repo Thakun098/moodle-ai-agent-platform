@@ -4,6 +4,7 @@ import type { CoreCourseDesignContext } from "@moodle-agent-poc/contracts";
 import { outcomeReviewRoutes } from "../src/routes/outcome-reviews.js";
 import { instructionalDesignRoutes } from "../src/routes/instructional-design.js";
 import { loadConfig } from "../src/config/config-loader.js";
+import { registerErrorHandler } from "../src/plugins/error-handler.js";
 
 const sourceRef = {
   source: "syllabus" as const,
@@ -198,6 +199,185 @@ describe("UX/UI Ticket 01 outcome review API", () => {
     expect(allowed.statusCode).toBe(200);
     expect(runRepo.saveCoreCourseDesignContextRevision).toHaveBeenCalledTimes(1);
 
+    await app.close();
+  });
+
+  it("safely edits an approved CLO by withdrawing authority and staling existing dependents", async () => {
+    const current = context();
+    current.approved_learning_outcomes.push({
+      outcome_id: "outcome-1", text: "Use loops", source_outcome_ids: ["source-outcome-1"], source_refs: [sourceRef],
+      approval_origin: "SOURCE_AS_IS", approved_by_teacher: true, revision: 1,
+    });
+    const savedContexts: CoreCourseDesignContext[] = [];
+    const runRepo = {
+      getRun: vi.fn().mockResolvedValue({ runId: "run-review", status: "planning" }),
+      getCoreCourseDesignContext: vi.fn().mockImplementation(async () => savedContexts.at(-1) ?? current),
+      saveCoreCourseDesignContextRevision: vi.fn().mockImplementation(async (value: CoreCourseDesignContext) => { savedContexts.push(value); }),
+      beginInstructionalDesignMutation: vi.fn().mockResolvedValue({ runId: "run-review", status: "planning" }),
+    };
+    const reviewRepo = {
+      upsert: vi.fn().mockImplementation(async (value: any) => ({ ...value, updatedAt: "2026-09-17T20:00:00.000Z" })),
+    };
+    const candidateRepo = { invalidateApprovedForOutcome: vi.fn().mockResolvedValue(2) };
+    const structureRepo = {
+      getLatestRevision: vi.fn().mockResolvedValue({ revision: 4 }),
+      getSealedRevision: vi.fn().mockResolvedValue({ revision: 4 }),
+      markAlignmentStale: vi.fn().mockResolvedValue(undefined),
+    };
+    const activityIntentRepo = { markStaleForContext: vi.fn().mockResolvedValue(3) };
+    const config = loadConfig({ DATABASE_URL: "postgresql://unused/unused", OLLAMA_MODEL: "test", INSTRUCTIONAL_DESIGN_SERVICE_KEY: "test-key" });
+    const headers = { "x-agentpoc-instructional-design-key": "test-key" };
+    const app = Fastify({ logger: false });
+    app.register(instructionalDesignRoutes, {
+      config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, candidateRepo: candidateRepo as any,
+      reviewRepo: reviewRepo as any, activityIntentRepo: activityIntentRepo as any, enforceOutcomeReview: true,
+    } as any);
+    await app.ready();
+
+    const edited = await app.inject({
+      method: "POST", url: "/api/runs/run-review/outcomes/edit-approved", headers,
+      payload: { source_outcome_id: "source-outcome-1", teacher_text: "Apply loops to repeated tasks", confirmed: true, teacher_id: 7 },
+    });
+
+    expect(edited.statusCode).toBe(200);
+    expect(runRepo.beginInstructionalDesignMutation).toHaveBeenCalledWith("run-review");
+    expect(savedContexts).toHaveLength(1);
+    expect(savedContexts[0]?.revision).toBe(2);
+    expect(savedContexts[0]?.approved_learning_outcomes).toHaveLength(0);
+    expect(savedContexts[0]?.missing_information).toEqual(expect.arrayContaining([expect.objectContaining({ code: "APPROVED_OUTCOMES_REQUIRED", severity: "BLOCKING" })]));
+    expect(reviewRepo.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      runId: "run-review", itemType: "CLO", itemId: "source-outcome-1", status: "REVIEWED", draftText: "Apply loops to repeated tasks", updatedByMoodleUserId: "7",
+    }));
+    expect(candidateRepo.invalidateApprovedForOutcome).toHaveBeenCalledWith("run-review", "outcome-1");
+    expect(structureRepo.markAlignmentStale).toHaveBeenCalledWith("run-review", 2);
+    expect(activityIntentRepo.markStaleForContext).toHaveBeenCalledWith("run-review", 4, 2);
+    expect(edited.json()).toMatchObject({
+      run_id: "run-review",
+      core_context: { revision: 2, approved_learning_outcomes: [] },
+      review: { item_type: "CLO", item_id: "source-outcome-1", status: "REVIEWED", draft_text: "Apply loops to repeated tasks" },
+      stale: { structure_alignment: true, activity_count: 3, competency_candidate_count: 2 },
+    });
+    await app.close();
+  });
+
+
+  it("rejects approved-edit safety flow for non-approved or unchanged CLOs before mutation", async () => {
+    const current = context();
+    const runRepo = {
+      getRun: vi.fn().mockResolvedValue({ runId: "run-review", status: "planning" }),
+      getCoreCourseDesignContext: vi.fn().mockResolvedValue(current),
+      saveCoreCourseDesignContextRevision: vi.fn(),
+      beginInstructionalDesignMutation: vi.fn(),
+    };
+    const config = loadConfig({ DATABASE_URL: "postgresql://unused/unused", OLLAMA_MODEL: "test", INSTRUCTIONAL_DESIGN_SERVICE_KEY: "test-key" });
+    const headers = { "x-agentpoc-instructional-design-key": "test-key" };
+    const app = Fastify({ logger: false });
+    registerErrorHandler(app);
+    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: {} as any, candidateRepo: {} as any, reviewRepo: {} as any, activityIntentRepo: {} as any, enforceOutcomeReview: true });
+    await app.ready();
+
+    const unconfirmed = await app.inject({
+      method: "POST", url: "/api/runs/run-review/outcomes/edit-approved", headers,
+      payload: { source_outcome_id: "source-outcome-1", teacher_text: "Changed wording" },
+    });
+    expect(unconfirmed.statusCode).toBe(422);
+    expect(unconfirmed.json().error.code).toBe("APPROVED_OUTCOME_EDIT_CONFIRMATION_REQUIRED");
+    expect(runRepo.beginInstructionalDesignMutation).not.toHaveBeenCalled();
+
+    const notApproved = await app.inject({
+      method: "POST", url: "/api/runs/run-review/outcomes/edit-approved", headers,
+      payload: { source_outcome_id: "source-outcome-1", teacher_text: "Changed wording", confirmed: true },
+    });
+    expect(notApproved.statusCode).toBe(409);
+    expect(notApproved.json().error.code).toBe("OUTCOME_NOT_APPROVED");
+    expect(runRepo.beginInstructionalDesignMutation).not.toHaveBeenCalled();
+
+    current.approved_learning_outcomes.push({
+      outcome_id: "outcome-1", text: "Use loops", source_outcome_ids: ["source-outcome-1"], source_refs: [sourceRef],
+      approval_origin: "SOURCE_AS_IS", approved_by_teacher: true, revision: 1,
+    });
+    const unchanged = await app.inject({
+      method: "POST", url: "/api/runs/run-review/outcomes/edit-approved", headers,
+      payload: { source_outcome_id: "source-outcome-1", teacher_text: "  Use loops  ", confirmed: true },
+    });
+    expect(unchanged.statusCode).toBe(422);
+    expect(unchanged.json().error.code).toBe("APPROVED_OUTCOME_EDIT_NO_CHANGE");
+    expect(runRepo.beginInstructionalDesignMutation).not.toHaveBeenCalled();
+    expect(runRepo.saveCoreCourseDesignContextRevision).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+
+  it("keeps the old CLO authority current and allows retry when downstream stale propagation fails", async () => {
+    const current = context();
+    current.approved_learning_outcomes.push({
+      outcome_id: "outcome-1", text: "Use loops", source_outcome_ids: ["source-outcome-1"], source_refs: [sourceRef],
+      approval_origin: "SOURCE_AS_IS", approved_by_teacher: true, revision: 1,
+    });
+    const savedContexts: CoreCourseDesignContext[] = [];
+    const runRepo = {
+      getRun: vi.fn().mockResolvedValue({ runId: "run-review", status: "planning" }),
+      getCoreCourseDesignContext: vi.fn().mockImplementation(async () => savedContexts.at(-1) ?? current),
+      saveCoreCourseDesignContextRevision: vi.fn().mockImplementation(async (value: CoreCourseDesignContext) => { savedContexts.push(value); }),
+      beginInstructionalDesignMutation: vi.fn().mockResolvedValue({ runId: "run-review", status: "planning" }),
+    };
+    const reviewRepo = { upsert: vi.fn().mockImplementation(async (value: any) => ({ ...value, updatedAt: "2026-09-17T20:00:00.000Z" })) };
+    const candidateRepo = { invalidateApprovedForOutcome: vi.fn().mockResolvedValue(1) };
+    const structureRepo = {
+      getLatestRevision: vi.fn().mockResolvedValue({ revision: 4 }),
+      getSealedRevision: vi.fn().mockResolvedValue({ revision: 4 }),
+      markAlignmentStale: vi.fn().mockRejectedValueOnce(new Error("structure stale write failed")).mockResolvedValue(undefined),
+    };
+    const activityIntentRepo = { markStaleForContext: vi.fn().mockResolvedValue(1) };
+    const config = loadConfig({ DATABASE_URL: "postgresql://unused/unused", OLLAMA_MODEL: "test", INSTRUCTIONAL_DESIGN_SERVICE_KEY: "test-key" });
+    const headers = { "x-agentpoc-instructional-design-key": "test-key" };
+    const app = Fastify({ logger: false });
+    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, candidateRepo: candidateRepo as any, reviewRepo: reviewRepo as any, activityIntentRepo: activityIntentRepo as any, enforceOutcomeReview: true });
+    await app.ready();
+
+    const payload = { source_outcome_id: "source-outcome-1", teacher_text: "Apply loops safely", confirmed: true, teacher_id: 7 };
+    const failed = await app.inject({ method: "POST", url: "/api/runs/run-review/outcomes/edit-approved", headers, payload });
+    expect(failed.statusCode).toBe(500);
+    expect(savedContexts).toHaveLength(0);
+    expect((await runRepo.getCoreCourseDesignContext()).approved_learning_outcomes).toHaveLength(1);
+
+    const retried = await app.inject({ method: "POST", url: "/api/runs/run-review/outcomes/edit-approved", headers, payload });
+    expect(retried.statusCode).toBe(200);
+    expect(savedContexts).toHaveLength(1);
+    expect(savedContexts[0]?.approved_learning_outcomes).toHaveLength(0);
+    await app.close();
+  });
+
+
+  it("does not let direct CLO re-approval bypass the approved-edit confirmation flow", async () => {
+    const current = context();
+    current.approved_learning_outcomes.push({
+      outcome_id: "outcome-1", text: "Use loops carefully", source_outcome_ids: ["source-outcome-1"], source_refs: [sourceRef],
+      approval_origin: "TEACHER_EDITED", approved_by_teacher: true, revision: 1,
+    });
+    const runRepo = {
+      getRun: vi.fn().mockResolvedValue({ runId: "run-review", status: "planning" }),
+      getCoreCourseDesignContext: vi.fn().mockResolvedValue(current),
+      saveCoreCourseDesignContextRevision: vi.fn(),
+      beginInstructionalDesignMutation: vi.fn(),
+    };
+    const reviewRepo = {
+      get: vi.fn().mockResolvedValue({ itemType: "CLO", itemId: "source-outcome-1", status: "REVIEWED", draftText: "Use loops carefully" }),
+    };
+    const config = loadConfig({ DATABASE_URL: "postgresql://unused/unused", OLLAMA_MODEL: "test", INSTRUCTIONAL_DESIGN_SERVICE_KEY: "test-key" });
+    const headers = { "x-agentpoc-instructional-design-key": "test-key" };
+    const app = Fastify({ logger: false });
+    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, reviewRepo: reviewRepo as any, enforceOutcomeReview: true });
+    await app.ready();
+
+    const bypass = await app.inject({
+      method: "POST", url: "/api/runs/run-review/outcomes/approve", headers,
+      payload: { source_outcome_id: "source-outcome-1", teacher_text: "Changed without confirmation", recommended_text: "Use loops carefully" },
+    });
+    expect(bypass.statusCode).toBe(409);
+    expect(bypass.json().error.code).toBe("OUTCOME_REVIEW_TEXT_MISMATCH");
+    expect(runRepo.beginInstructionalDesignMutation).not.toHaveBeenCalled();
+    expect(runRepo.saveCoreCourseDesignContextRevision).not.toHaveBeenCalled();
     await app.close();
   });
 

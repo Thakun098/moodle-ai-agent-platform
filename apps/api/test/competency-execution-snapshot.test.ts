@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { assertCompetencyExecutionSnapshotCurrent } from "../src/services/competency-execution-snapshot-service.js";
+import { describe, expect, it, vi } from "vitest";
+import { assertCompetencyExecutionSnapshotCurrent, captureCompetencyExecutionSnapshot } from "../src/services/competency-execution-snapshot-service.js";
 
 describe("Ticket 24 competency execution snapshot current-state guard", () => {
   it("ignores confirmed mappings whose Competency is no longer approved", async () => {
@@ -24,3 +24,18 @@ describe("Ticket 24 competency execution snapshot current-state guard", () => {
     })).resolves.toBeUndefined();
   });
 });
+  it("requires and pins a framework before approving a native Competency", async () => {
+    const save = vi.fn(async (value: unknown) => value);
+    const dependencies = {
+      candidateRepo: { list: async () => [{ candidateId: "c1", revision: 2, status: "APPROVED", name: "Design classes", description: "Approved description", derivedFromOutcomeIdsJson: ["o1"] }] },
+      reviewRepo: { review: async () => ({ revision: 3, mappings: [] }) },
+      activityIntentRepo: { get: async () => null },
+      snapshotRepo: { save },
+    } as any;
+    const request = { runId: "run-1", planId: "plan-1", revision: 1, dependencies };
+    await expect(captureCompetencyExecutionSnapshot({ ...request, frameworkId: null })).rejects.toMatchObject({ code: "COMPETENCY_FRAMEWORK_REQUIRED" });
+    expect(save).not.toHaveBeenCalled();
+    const captured = await captureCompetencyExecutionSnapshot({ ...request, frameworkId: 7 });
+    expect(captured.frameworkId).toBe(7);
+    expect(save).toHaveBeenCalledOnce();
+  });

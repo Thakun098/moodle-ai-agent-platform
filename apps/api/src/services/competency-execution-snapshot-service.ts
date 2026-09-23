@@ -28,11 +28,15 @@ export async function captureCompetencyExecutionSnapshot(input: {
   runId: string;
   planId: string;
   revision: number;
+  frameworkId: number | null;
   dependencies: CompetencyExecutionSnapshotDependencies;
 }): Promise<CompetencyExecutionSnapshot> {
   const review = await reviewCompetencyMappings(input.dependencies.reviewRepo, input.runId);
   const candidates = await input.dependencies.candidateRepo.list(input.runId);
   const approved = candidates.filter((candidate) => candidate.status === "APPROVED").sort((a, b) => a.candidateId.localeCompare(b.candidateId));
+  if (approved.length > 0 && (!Number.isSafeInteger(input.frameworkId) || Number(input.frameworkId) <= 0)) {
+    throw Object.assign(new Error("Select a Moodle Competency Framework before Course approval."), { code: "COMPETENCY_FRAMEWORK_REQUIRED", statusCode: 422 });
+  }
   const approvedIds = new Set(approved.map((candidate) => candidate.candidateId));
   const mappings = review.mappings
     .filter((entry) => entry.available && entry.mapping === "CONFIRMED" && approvedIds.has(entry.competencyId))
@@ -51,6 +55,7 @@ export async function captureCompetencyExecutionSnapshot(input: {
     planId: input.planId,
     revision: input.revision,
     mappingReviewRevision: review.revision,
+    frameworkId: input.frameworkId,
     capturedAt: new Date().toISOString(),
     competencies: approved.map((candidate) => ({
       candidateId: candidate.candidateId,
