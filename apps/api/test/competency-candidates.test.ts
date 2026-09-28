@@ -34,6 +34,7 @@ function candidateRepo() {
     }),
     decide: vi.fn(async (_run: string, id: string, decision: any) => {
       const row = rows.find((item) => item.candidateId === id); if (!row) return null;
+      if (row.revision !== decision.expected_revision) throw Object.assign(new Error("stale Candidate"), { code: "COMPETENCY_CANDIDATE_REVISION_CONFLICT", statusCode: 409 });
       Object.assign(row, { revision: row.revision + 1, name: decision.name ?? row.name, description: decision.description ?? row.description, rationale: decision.rationale ?? row.rationale, derivedFromOutcomeIdsJson: decision.derived_from_outcome_ids ?? row.derivedFromOutcomeIdsJson, status: decision.status, teacherOverrideJson: decision.teacher_override ?? row.teacherOverrideJson, editedFromCandidateId: row.editedFromCandidateId ?? row.candidateId });
       return row;
     }),
@@ -70,23 +71,52 @@ describe("Ticket 19 Competency Candidate API", () => {
     const headers = { "x-agentpoc-instructional-design-key": "test-key" };
     await app.inject({ method: "POST", url: "/api/runs/run-competency/competency-candidates/derive", headers });
     const id = repo.rows[0].candidateId;
-    const edited = await app.inject({ method: "POST", url: `/api/runs/run-competency/competency-candidates/${id}/decision`, headers, payload: { action: "edit", derived_from_outcome_ids: [], description: "No aligned outcome" } });
+    const edited = await app.inject({ method: "POST", url: `/api/runs/run-competency/competency-candidates/${id}/decision`, headers, payload: { action: "edit", expected_revision: 1, expected_context_revision: 3, derived_from_outcome_ids: [], description: "No aligned outcome" } });
     expect(edited.statusCode).toBe(200);
     expect(edited.json().candidate.status).toBe("UNALIGNED");
-    const blocked = await app.inject({ method: "POST", url: `/api/runs/run-competency/competency-candidates/${id}/decision`, headers, payload: { action: "approve", derived_from_outcome_ids: [] } });
+    const blocked = await app.inject({ method: "POST", url: `/api/runs/run-competency/competency-candidates/${id}/decision`, headers, payload: { action: "approve", expected_revision: 2, expected_context_revision: 3, derived_from_outcome_ids: [] } });
     expect(blocked.statusCode).toBe(422);
     expect(blocked.json().error.code).toBe("COMPETENCY_ALIGNMENT_OVERRIDE_REQUIRED");
     const approved = await app.inject({
       method: "POST",
       url: `/api/runs/run-competency/competency-candidates/${id}/decision`,
       headers,
-      payload: { action: "approve", derived_from_outcome_ids: [], teacher_override: { acknowledged: true, reason: "Teacher confirms this competency is intentionally cross-cutting." } },
+      payload: { action: "approve", expected_revision: 2, expected_context_revision: 3, derived_from_outcome_ids: [], teacher_override: { acknowledged: true, reason: "Teacher confirms this competency is intentionally cross-cutting." } },
     });
     expect(approved.statusCode).toBe(200);
     expect(approved.json().candidate).toMatchObject({ status: "APPROVED", teacher_override: { acknowledged: true } });
     const reloaded = await app.inject({ method: "GET", url: "/api/runs/run-competency/competency-candidates", headers });
     expect(reloaded.statusCode).toBe(200);
     expect(reloaded.json().candidates[0].status).toBe("APPROVED");
+    await app.close();
+  });
+
+  it("rejects a stale Candidate/Core Context decision as a revision conflict", async () => {
+    const repo = candidateRepo();
+    repo.rows.push({
+      id: "candidate-1", candidateId: "candidate-1", revision: 1, name: "Program design", description: "Design programs",
+      derivedFromOutcomeIdsJson: ["outcome-1"], rationale: "Approved Outcome", sourceRefsJson: [], status: "PROPOSED",
+      teacherOverrideJson: null, editedFromCandidateId: null, createdAt: "2026-09-15T00:00:00Z", updatedAt: "2026-09-15T00:00:00Z",
+    });
+    let currentContext = context();
+    const contextRaceRunRepo = {
+      getRun: vi.fn().mockResolvedValue({ runId: "run-competency", status: "planning" }),
+      getCoreCourseDesignContext: vi.fn(async () => currentContext),
+      beginInstructionalDesignMutation: vi.fn(async () => {
+        currentContext = { ...currentContext, revision: 4, approved_learning_outcomes: [] };
+      }),
+    };
+    const app = buildApp({ config, runRepo: contextRaceRunRepo as any, candidateRepo: repo as any, modelClient: { chat: vi.fn(), listModels: vi.fn(), ping: vi.fn() } as any, fastifyOptions: { logger: false } });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/runs/run-competency/competency-candidates/candidate-1/decision",
+      headers: { "x-agentpoc-instructional-design-key": "test-key" },
+      payload: { action: "approve", expected_revision: 1, expected_context_revision: 3, derived_from_outcome_ids: ["outcome-1"] },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("COMPETENCY_CANDIDATE_REVISION_CONFLICT");
+    expect(repo.rows[0]).toMatchObject({ revision: 1, status: "PROPOSED" });
     await app.close();
   });
 });

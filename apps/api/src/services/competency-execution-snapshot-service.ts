@@ -5,6 +5,7 @@ import type {
   CompetencyExecutionSnapshot,
   CompetencyExecutionSnapshotRepository,
   CompetencyMappingReviewRepository,
+  RunRepository,
 } from "@moodle-agent-poc/agent-runtime";
 import { competencyMappingSignature, reviewCompetencyMappings } from "./competency-mapping-review-service.js";
 
@@ -13,6 +14,29 @@ export interface CompetencyExecutionSnapshotDependencies {
   activityIntentRepo: ActivityIntentRepository;
   reviewRepo: CompetencyMappingReviewRepository;
   snapshotRepo: CompetencyExecutionSnapshotRepository;
+  runRepo: Pick<RunRepository, "getCoreCourseDesignContext">;
+}
+
+async function assertApprovedOutcomeAuthority(
+  runId: string,
+  approvedCandidates: readonly { candidateId: string; derivedFromOutcomeIdsJson: readonly string[] }[],
+  runRepo: Pick<RunRepository, "getCoreCourseDesignContext">,
+): Promise<void> {
+  if (approvedCandidates.length === 0) return;
+  const context = await runRepo.getCoreCourseDesignContext(runId);
+  if (!context) {
+    throw Object.assign(new Error("Core Course Design Context is unavailable for Competency authority validation."), { code: "COMPETENCY_OUTCOME_AUTHORITY_STALE" });
+  }
+  const approvedOutcomeIds = new Set(context.approved_learning_outcomes.map((outcome) => outcome.outcome_id));
+  const stale = approvedCandidates.flatMap((candidate) => candidate.derivedFromOutcomeIdsJson
+    .filter((outcomeId) => !approvedOutcomeIds.has(outcomeId))
+    .map((outcomeId) => ({ candidate_id: candidate.candidateId, outcome_id: outcomeId })));
+  if (stale.length > 0) {
+    throw Object.assign(new Error("An approved Competency Candidate references an Outcome that is no longer current. Revalidate the Candidate before Course approval or Execute."), {
+      code: "COMPETENCY_OUTCOME_AUTHORITY_STALE",
+      details: { context_revision: context.revision, stale_lineage: stale },
+    });
+  }
 }
 
 function competencyIdnumber(runId: string, candidateId: string): string {
@@ -34,6 +58,7 @@ export async function captureCompetencyExecutionSnapshot(input: {
   const review = await reviewCompetencyMappings(input.dependencies.reviewRepo, input.runId);
   const candidates = await input.dependencies.candidateRepo.list(input.runId);
   const approved = candidates.filter((candidate) => candidate.status === "APPROVED").sort((a, b) => a.candidateId.localeCompare(b.candidateId));
+  await assertApprovedOutcomeAuthority(input.runId, approved, input.dependencies.runRepo);
   if (approved.length > 0 && (!Number.isSafeInteger(input.frameworkId) || Number(input.frameworkId) <= 0)) {
     throw Object.assign(new Error("Select a Moodle Competency Framework before Course approval."), { code: "COMPETENCY_FRAMEWORK_REQUIRED", statusCode: 422 });
   }
@@ -76,6 +101,7 @@ export async function assertCompetencyExecutionSnapshotCurrent(
 ): Promise<void> {
   const currentCandidates = await dependencies.candidateRepo.list(snapshot.runId);
   const approved = currentCandidates.filter((candidate) => candidate.status === "APPROVED");
+  await assertApprovedOutcomeAuthority(snapshot.runId, approved, dependencies.runRepo);
   const snapshotById = new Map(snapshot.competencies.map((competency) => [competency.candidateId, competency]));
   if (approved.length !== snapshot.competencies.length) {
     throw Object.assign(new Error("Approved Competency state changed after Course approval. Re-approve the current Course revision before Execute."), { code: "COMPETENCY_EXECUTION_SNAPSHOT_STALE" });

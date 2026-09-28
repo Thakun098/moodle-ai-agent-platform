@@ -170,9 +170,7 @@ export const activityIntentRoutes: FastifyPluginAsync<ActivityIntentRoutesOption
     if (!run) return reply.status(404).send({ error: { code: "NOT_FOUND", message: `Run ${runId} not found`, details: null, request_id: request.id } });
     const sealed = await getStructureRepo().getSealedRevision(runId);
     if (!sealed) return reply.status(409).send({ error: { code: "STRUCTURE_NOT_SEALED", message: "Activity selection requires a sealed Course Structure.", details: null, request_id: request.id } });
-    const context = await contextFromRunRepo(runRepo, runId);
     const repo = getIntentRepo();
-    if (context && typeof (repo as { markStaleForContext?: unknown }).markStaleForContext === "function") await repo.markStaleForContext(runId, sealed.revision, context.revision);
     const intents = (await repo.listSection(runId, sealed.revision, sectionRef)).filter((record) => record.status !== "removed");
     return reply.send({ run_id: runId, structure_revision: sealed.revision, section_ref: sectionRef, intents: intents.map((intent) => serializeActivityIntent(intent)) });
   });

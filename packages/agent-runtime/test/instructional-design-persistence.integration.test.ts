@@ -40,9 +40,9 @@ describe("Instructional Design persistence", () => {
   it("persists Candidate many-to-many lifecycle and revisioned decisions", async () => {
     const [created] = await candidateRepo.saveProposed(runId, [{ candidate_id: "candidate-1", name: "Program design", description: "Design programs", rationale: "Combines approved Outcomes", derived_from_outcome_ids: ["outcome-1", "outcome-2"], source_refs: [], status: "PROPOSED", revision: 1 }]);
     expect(created?.status).toBe("PROPOSED");
-    const edited = await candidateRepo.decide(runId, "candidate-1", { action: "edit", status: "UNALIGNED", derived_from_outcome_ids: [], description: "Teacher edited", name: "Program design", rationale: "Needs explicit review" });
+    const edited = await candidateRepo.decide(runId, "candidate-1", { action: "edit", status: "UNALIGNED", expected_revision: 1, expected_context_revision: 1, derived_from_outcome_ids: [], description: "Teacher edited", name: "Program design", rationale: "Needs explicit review" });
     expect(edited).toMatchObject({ revision: 2, status: "UNALIGNED", derivedFromOutcomeIdsJson: [] });
-    const approved = await candidateRepo.decide(runId, "candidate-1", { action: "approve", status: "APPROVED", derived_from_outcome_ids: [], teacher_override: { acknowledged: true, reason: "Teacher override" } });
+    const approved = await candidateRepo.decide(runId, "candidate-1", { action: "approve", status: "APPROVED", expected_revision: 2, expected_context_revision: 1, derived_from_outcome_ids: [], teacher_override: { acknowledged: true, reason: "Teacher override" } });
     expect(approved).toMatchObject({ revision: 3, status: "APPROVED" });
   });
 

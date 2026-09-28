@@ -79,6 +79,21 @@ describe("Activity Intent API — ADR-0002", () => {
     expect(JSON.parse(response.body).error.code).toBe("STRUCTURE_NOT_SEALED");
     await app.close();
   });
+
+  it("keeps GET activity-intents read-only even when Core Context advanced", async () => {
+    const repo = { ...makeIntentRepo(), markStaleForContext: vi.fn().mockResolvedValue(1) };
+    const runRepo = {
+      getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning", model: "test-model" }),
+      getCoreCourseDesignContext: vi.fn().mockResolvedValue({ revision: 4 }),
+    };
+    const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: makeStructureRepo() as any, activityIntentRepo: repo as any, fastifyOptions: { logger: false } });
+
+    const response = await app.inject({ method: "GET", url: "/api/runs/run-1/sections/section-01/activity-intents" });
+
+    expect(response.statusCode).toBe(200);
+    expect(repo.markStaleForContext).not.toHaveBeenCalled();
+    await app.close();
+  });
 });
 
   it("persists independent Purpose/alignment instructions and enforces learner/out-of-section gates", async () => {

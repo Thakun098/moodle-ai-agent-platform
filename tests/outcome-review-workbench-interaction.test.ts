@@ -56,7 +56,7 @@ class FakeSelection {
       const base = eventName.split(".")[0];
       for (const [registered, handlers] of element.handlers.entries()) {
         if (registered.split(".")[0] !== base) continue;
-        for (const handler of handlers) handler({ preventDefault() {}, stopPropagation() {}, target: element });
+        for (const handler of handlers) handler.call(element, { preventDefault() {}, stopPropagation() {}, target: element });
       }
     }
     return this;
@@ -243,7 +243,7 @@ function flushPromises() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirmResult?: boolean; weekCount?: number; weekStatuses?: string[]; selectedWeekRef?: string; selectedActivityWeekRef?: string; activityIntents?: any[]; deferActivityLoads?: boolean; localStorageSeed?: Record<string, string>; materialSnapshot?: any; materialStatus?: any; failActions?: string[]; deferIntentSaves?: boolean } = {}) {
+function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirmResult?: boolean; weekCount?: number; weekStatuses?: string[]; selectedWeekRef?: string; selectedActivityWeekRef?: string; activityIntents?: any[]; deferActivityLoads?: boolean; localStorageSeed?: Record<string, string>; localStorageWriteFails?: boolean; materialSnapshot?: any; materialStatus?: any; failActions?: string[]; deferIntentSaves?: boolean; competencyCandidates?: any[]; deferCandidateDecisions?: boolean; candidateDecisionConflict?: boolean } = {}) {
   const harnessOptions = options;
   const source = readFileSync("moodle/local_agentpoc/amd/src/course_builder.js", "utf8");
   const dom = new FakeDom();
@@ -260,7 +260,9 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
     ["modal-edit-section", "div"], ["input-edit-section-index", "input"], ["input-edit-section-title", "input"],
     ["input-edit-section-summary", "textarea"], ["input-edit-section-objectives", "select"], ["input-edit-section-outcomes", "select"],
     ["btn-save-section", "button"],
+    ["builder-error-alert", "div"], ["builder-error-message", "div"], ["builder-error-details", "div"],
   ] as const) dom.mount(id, tag);
+  dom.byId.get("builder-error-details")!.children.push(dom.create("pre"));
   dom.byId.get("modal-edit-title")!.children.push(dom.byId.get("input-edit-course-title")!, dom.byId.get("input-edit-course-summary")!);
   dom.byId.get("modal-edit-section")!.children.push(
     dom.byId.get("input-edit-section-index")!, dom.byId.get("input-edit-section-title")!,
@@ -271,7 +273,7 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
   const localStorageData = new Map<string, string>(Object.entries(options.localStorageSeed ?? {}));
   const localStorage = {
     getItem(key: string) { return localStorageData.has(key) ? localStorageData.get(key)! : null; },
-    setItem(key: string, value: string) { localStorageData.set(key, String(value)); },
+    setItem(key: string, value: string) { if (options.localStorageWriteFails) throw new Error("quota exceeded"); localStorageData.set(key, String(value)); },
     removeItem(key: string) { localStorageData.delete(key); },
   };
   const windowEvents = new Map<string, Array<(event: any) => void>>();
@@ -295,19 +297,34 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
   const structure = () => ({ revision: 1, title: "Course", summary: "Summary", sealed_at: "2026-09-19T00:00:00Z", content: { course: { title: "Course" }, sections: weeks.map((week) => ({ ...week, alignment_status: structureStale ? "STALE_ALIGNMENT" : "CURRENT" })) },
     teacher_constraints: structureStale ? { alignment_state: "STALE_ALIGNMENT" } : {}, week_reviews: weekReviews });
   const activityIntents = options.activityIntents ?? [];
+  const competencyCandidates = options.competencyCandidates ?? [];
   const activityLoadResolvers: Array<() => void> = [];
   const intentSaveResolvers: Array<() => void> = [];
+  const candidateDecisionResolvers: Array<() => void> = [];
 
   const fakeFetch = async (url: string, options: any) => {
     const action = new URL(url, "http://localhost").searchParams.get("action") ?? "";
     const body = new URLSearchParams(options?.body ?? "");
     calls.push({ action, body });
+    if (action === "decide_competency_candidate" && harnessOptions.candidateDecisionConflict) {
+      return { ok: false, json: async () => ({ success: false, error: { message: "stale Candidate", code: "COMPETENCY_CANDIDATE_REVISION_CONFLICT" } }) };
+    }
     if ((harnessOptions.failActions ?? []).includes(action)) {
       return { ok: false, json: async () => ({ success: false, error: { message: action + " failed", code: "TEST_FAILURE" } }) };
     }
     let data: any = {};
     if (action === "get_instructional_design") data = { core_context: coreContext, outcome_proposals: [], competency_candidates: [], coverage: [], structure_revision: structure() };
-    else if (action === "get_competency_candidates") data = { candidates: [] };
+    else if (action === "get_competency_candidates") data = { candidates: competencyCandidates };
+    else if (action === "decide_competency_candidate") {
+      if (harnessOptions.deferCandidateDecisions) await new Promise<void>((resolve) => candidateDecisionResolvers.push(resolve));
+      const candidate = competencyCandidates.find((item) => item.candidate_id === body.get("candidate_id"));
+      const decision = JSON.parse(String(body.get("decision") || "{}"));
+      if (candidate) {
+        candidate.revision = Number(candidate.revision || 0) + 1;
+        candidate.status = decision.action === "approve" ? "APPROVED" : decision.action === "reject" ? "REJECTED" : decision.action === "defer" ? "DEFERRED" : "PROPOSED";
+      }
+      data = { candidate };
+    }
     else if (action === "get_outcome_reviews") data = { items: reviewItems, core_context_revision: 1 };
     else if (action === "save_outcome_review") data = { review: {} };
     else if (action === "save_structure_revision") {
@@ -321,6 +338,8 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
       data = { intents: activityIntents.filter((item) => !item.section_ref || item.section_ref === sectionRef) };
     }
     else if (action === "get_section_material_snapshot") data = harnessOptions.materialStatus ?? (harnessOptions.materialSnapshot ? { status: "ready", snapshot: harnessOptions.materialSnapshot, planned_resources: [] } : { status: "fallback", snapshot: null, planned_resources: [] });
+    else if (action === "upload_section_material") data = { uploaded: true };
+    else if (action === "seal_section_material") data = { status: "ready", snapshot: { id: "snapshot-new", persisted_id: "snapshot-new", revision: 2 }, planned_resources: [] };
     else if (action === "get_activity_status") data = activityIntents.find((item) => item.activity_ref === body.get("activity_ref")) ?? null;
     else if (action === "get_competency_mappings") data = { revision: 1, mappings: [] };
     else if (action === "set_activity_intents") {
@@ -379,6 +398,7 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
     fetch: fakeFetch,
     URL,
     URLSearchParams,
+    FormData,
     JSON,
     Promise,
     setTimeout,
@@ -402,7 +422,7 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
     confirm: () => options.confirmResult ?? true,
   });
   module.init({ sesskey: "test", ajaxurl: "http://localhost/ajax.php", categories: [] });
-  return { dom, calls, activityLoadResolvers, intentSaveResolvers, localStorageData, windowEvents, confirmCalls };
+  return { dom, calls, activityLoadResolvers, intentSaveResolvers, candidateDecisionResolvers, localStorageData, windowEvents, confirmCalls };
 }
 
 describe("UX/UI Ticket 01 Outcome Review Workbench interaction semantics", () => {
@@ -518,6 +538,49 @@ describe("UX/UI Ticket 01 Outcome Review Workbench interaction semantics", () =>
 
 });
 
+describe("UX/UI Competency Candidate authority interactions", () => {
+  it("does not let a second Candidate mutation start while the first decision is in flight", async () => {
+    const candidate = {
+      candidate_id: "candidate-1", revision: 1, name: "Program design", description: "Design programs",
+      rationale: "Approved Outcome", derived_from_outcome_ids: ["outcome-1"], source_refs: [], status: "PROPOSED",
+    };
+    const { dom, calls, candidateDecisionResolvers } = harness({
+      approvedClo: true,
+      reviewedLo: true,
+      competencyCandidates: [candidate],
+      deferCandidateDecisions: true,
+    });
+    await flushPromises(); await flushPromises(); await flushPromises();
+
+    new FakeSelection(dom, [dom.byText("Save Candidate edit", "button")[0]!]).trigger("click");
+    new FakeSelection(dom, [dom.byText("Approve Candidate", "button")[0]!]).trigger("click");
+    await flushPromises();
+
+    expect(calls.filter((call) => call.action === "decide_competency_candidate")).toHaveLength(1);
+    expect(candidateDecisionResolvers).toHaveLength(1);
+  });
+
+  it("releases the Candidate mutation barrier when conflict read-back also fails", async () => {
+    const failActions: string[] = [];
+    const candidate = {
+      candidate_id: "candidate-1", revision: 1, name: "Program design", description: "Design programs",
+      rationale: "Approved Outcome", derived_from_outcome_ids: ["outcome-1"], source_refs: [], status: "PROPOSED",
+    };
+    const { dom } = harness({
+      approvedClo: true, reviewedLo: true, competencyCandidates: [candidate], candidateDecisionConflict: true, failActions,
+    });
+    await flushPromises(); await flushPromises(); await flushPromises();
+
+    failActions.push("get_instructional_design");
+    new FakeSelection(dom, [dom.byText("Approve Candidate", "button")[0]!]).trigger("click");
+    await flushPromises(); await flushPromises(); await flushPromises();
+
+    expect(dom.byText("Save Candidate edit", "button")[0]!.props.get("disabled")).not.toBe(true);
+    expect(dom.byText("Approve Candidate", "button")[0]!.props.get("disabled")).not.toBe(true);
+    expect(dom.query("#builder-error-message").text()).toContain("latest server state could not be reloaded");
+  });
+});
+
 
 
 describe("UX/UI Ticket 03 Week review workbench", () => {
@@ -606,6 +669,17 @@ async function activityHarness(status = "generated") {
 
 
 describe("UX/UI Ticket 05 Recoverable Local Drafts interaction semantics", () => {
+  it("tells the Teacher when a local recovery snapshot cannot be saved", async () => {
+    const { dom, localStorageData } = harness({ approvedClo: true, reviewedLo: true, weekCount: 1, localStorageWriteFails: true });
+    await flushPromises(); await flushPromises(); await flushPromises();
+
+    dom.query("#btn-edit-course-title").trigger("click");
+    dom.query("#input-edit-course-title").val("Unsaved title").trigger("input");
+
+    expect(localStorageData.size).toBe(0);
+    expect(dom.query("#builder-error-message").text()).toContain("recovery draft could not be saved");
+  });
+
   it("does not replace a matching Week recovery snapshot until Teacher explicitly restores or discards it", async () => {
     const key = "moodle-agent-draft:run-review:structure-week:section-01";
     const original = JSON.stringify({
@@ -999,6 +1073,31 @@ describe("UX/UI Ticket 06 Partial Failure & Manual Stale Recovery", () => {
     expect(materialTab.allText()).toContain("Ready");
     new FakeSelection(dom, [materialTab]).trigger("click");
     expect(dom.query(".activity-context-inspector").text()).toContain("revision 9");
+  });
+
+  it("keeps a successful Material save distinct when only post-seal Activity read-back fails", async () => {
+    const failActions: string[] = [];
+    const { dom, calls } = harness({
+      approvedClo: true, reviewedLo: true, weekCount: 3,
+      weekStatuses: ["Ready to configure", "Ready to configure", "Ready to configure"],
+      selectedActivityWeekRef: "section-02", activityIntents: activityFixtures("generated"), failActions,
+    });
+    await flushPromises(); await flushPromises(); await flushPromises();
+    dom.query("#btn-review-continue").trigger("click");
+    await flushPromises(); await flushPromises(); await flushPromises(); await flushPromises();
+
+    failActions.push("get_activity_intents");
+    const fileInput = dom.query(".form-control-file").elements[0]!;
+    (fileInput as any).files = [{ name: "replacement.pdf", size: 1024 }];
+    new FakeSelection(dom, [fileInput]).trigger("change");
+    await flushPromises(); await flushPromises(); await flushPromises(); await flushPromises();
+
+    expect(calls.some((call) => call.action === "upload_section_material")).toBe(true);
+    expect(calls.some((call) => call.action === "seal_section_material")).toBe(true);
+    expect(dom.query("#builder-error-message").text()).toContain("Learning Material saved, but Activity status refresh failed");
+    expect(dom.query("#builder-error-message").text()).not.toContain("Learning Material save failed");
+    const materialTab = [...dom.all].find((item) => item.attrs.get("data-activity-tab") === "material")!;
+    expect(materialTab.allText()).toContain("Ready");
   });
 
   it("renders authoritative Material failure distinctly from intentional syllabus fallback and restores it on reload", async () => {

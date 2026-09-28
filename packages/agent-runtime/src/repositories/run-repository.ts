@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { assertInitialCoreCourseDesignContext } from "@moodle-agent-poc/contracts";
 import { coreCourseDesignContexts } from "../db/schema/core-course-design-contexts.js";
+import { competencyCandidate } from "../db/schema/competency-candidates.js";
+import { activityIntent } from "../db/schema/activity-intents.js";
 import type { CoreCourseDesignContext, NormalizedSyllabus } from "@moodle-agent-poc/contracts";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import type { AppDatabase } from "../db/connection.js";
 import {
   pocRun,
@@ -14,6 +16,17 @@ import {
 
 function codedError(code: string, message: string, statusCode = code === "NOT_FOUND" ? 404 : 409): Error & { code: string; statusCode: number } {
   return Object.assign(new Error(message), { code, statusCode });
+}
+
+function canonicalJson(value: unknown): string {
+  const sort = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(sort);
+    if (item && typeof item === "object") {
+      return Object.fromEntries(Object.entries(item).sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => [key, sort(entry)]));
+    }
+    return item;
+  };
+  return JSON.stringify(sort(value));
 }
 
 export class RunRepository {
@@ -174,7 +187,33 @@ export class RunRepository {
       const [latest] = await tx.select().from(coreCourseDesignContexts).where(eq(coreCourseDesignContexts.runId, context.run_id)).orderBy(desc(coreCourseDesignContexts.revision)).limit(1);
       if (!latest || context.revision !== latest.revision + 1) throw new Error("Core Context revision must advance from the current revision");
       if (latest.context.source_syllabus.sha256 !== context.source_syllabus.sha256 || latest.context.source_syllabus.text_sha256 !== context.source_syllabus.text_sha256) throw new Error("Core Context source is immutable");
+      const previousOutcomes = new Map(latest.context.approved_learning_outcomes.map((outcome) => [outcome.outcome_id, canonicalJson(outcome)]));
+      const nextOutcomes = new Map(context.approved_learning_outcomes.map((outcome) => [outcome.outcome_id, canonicalJson(outcome)]));
+      const changedOutcomeIds = new Set([...new Set([...previousOutcomes.keys(), ...nextOutcomes.keys()])]
+        .filter((outcomeId) => previousOutcomes.get(outcomeId) !== nextOutcomes.get(outcomeId)));
+      const candidates = changedOutcomeIds.size > 0
+        ? await tx.select().from(competencyCandidate).where(eq(competencyCandidate.runId, context.run_id)).for("update")
+        : [];
       await tx.insert(coreCourseDesignContexts).values({ runId: context.run_id, revision: context.revision, context });
+      for (const candidate of candidates) {
+        if (candidate.status !== "APPROVED" || !candidate.derivedFromOutcomeIdsJson.some((outcomeId) => changedOutcomeIds.has(outcomeId))) continue;
+        await tx.update(competencyCandidate).set({
+          revision: candidate.revision + 1,
+          status: "PROPOSED",
+          teacherOverrideJson: null,
+          updatedAt: new Date().toISOString(),
+        }).where(eq(competencyCandidate.id, candidate.id));
+      }
+      await tx.update(activityIntent).set({
+        status: "stale",
+        attemptCount: 0,
+        error: "Core Course Design Context changed. Regenerate this Activity before finalization.",
+        updatedAt: new Date().toISOString(),
+      }).where(and(
+        eq(activityIntent.runId, context.run_id),
+        inArray(activityIntent.status, ["generated", "shell", "creating"]),
+        or(isNull(activityIntent.contextRevision), ne(activityIntent.contextRevision, context.revision)),
+      ));
       await tx.update(pocRun).set({ updatedAt: new Date().toISOString() }).where(eq(pocRun.runId, context.run_id));
     });
   }

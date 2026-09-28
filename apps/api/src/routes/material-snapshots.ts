@@ -227,8 +227,7 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
           return;
         }
       }
-      await beginInstructionalDesignMutation(getRunRepo(), runId);
-      const record = await getSnapshotRepo().saveSnapshot({
+      const snapshotInput = {
         id: snapshot.id,
         runId: snapshot.runId,
         structureRevision: snapshot.structureRevision,
@@ -241,9 +240,22 @@ export const materialSnapshotRoutes: FastifyPluginAsync<MaterialSnapshotRoutesOp
         estimatedTokens: snapshot.estimatedTokens,
         createdByMoodleUserId: snapshot.createdByMoodleUserId,
         createdAt: snapshot.createdAt,
-      });
-      await getMaterialStateRepo().markReady({ runId, structureRevision, sectionRef, snapshotId: record.id, snapshotRevision: snapshot.revision });
-      await getActivityIntentRepo().markStaleForSection(runId, structureRevision, sectionRef);
+      };
+      const snapshotRepo = getSnapshotRepo();
+      const atomicReplacement = (snapshotRepo as MaterialSnapshotRepository & {
+        saveReplacement?: (input: typeof snapshotInput) => Promise<{ snapshot: MaterialSnapshotRecord; staleActivityCount: number }>;
+      }).saveReplacement;
+      let record: MaterialSnapshotRecord;
+      if (typeof atomicReplacement === "function") {
+        ({ snapshot: record } = await atomicReplacement.call(snapshotRepo, snapshotInput));
+      } else {
+        // Compatibility path for isolated route-test doubles. Production uses
+        // MaterialSnapshotRepository.saveReplacement() and one DB transaction.
+        await beginInstructionalDesignMutation(getRunRepo(), runId);
+        record = await snapshotRepo.saveSnapshot(snapshotInput);
+        await getMaterialStateRepo().markReady({ runId, structureRevision, sectionRef, snapshotId: record.id, snapshotRevision: snapshot.revision });
+        await getActivityIntentRepo().markStaleForSection(runId, structureRevision, sectionRef);
+      }
       reply.status(201).send({ run_id: runId, section_ref: sectionRef, status: "ready", snapshot: { ...serializeSnapshot(snapshot), persisted_id: record.id }, planned_resources: plannedResources(snapshot), error: null });
       } catch (error) {
         if (error instanceof MaterialIngestionError && sealedStructure && knownSection) {

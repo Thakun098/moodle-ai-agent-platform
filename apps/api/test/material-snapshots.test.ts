@@ -150,4 +150,33 @@ describe("MaterialSnapshot API", () => {
     expect(activityIntentRepo.markStaleForSection).not.toHaveBeenCalled();
     await app.close();
   });
+
+  it("uses one atomic replacement boundary instead of committing legacy partial steps", async () => {
+    const snapshotRepo = {
+      getLatestSnapshot: vi.fn().mockResolvedValue(null),
+      saveReplacement: vi.fn().mockRejectedValue(new Error("stale propagation failed")),
+      saveSnapshot: vi.fn(),
+    };
+    const activityIntentRepo = { markStaleForSection: vi.fn() };
+    const materialStateRepo = { getState: vi.fn(), markReady: vi.fn(), markFailed: vi.fn() };
+    const app = buildApp({
+      config,
+      runRepo: { getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning" }) } as any,
+      structureRevisionRepo: { getSealedRevision: vi.fn().mockResolvedValue({ revision: 1, contentJson: { sections: [{ ref: "section-01" }] } }) } as any,
+      snapshotRepo: snapshotRepo as any,
+      activityIntentRepo: activityIntentRepo as any,
+      materialStateRepo: materialStateRepo as any,
+      fastifyOptions: { logger: false },
+    });
+
+    const upload = multipart([{ name: "week-1.txt", content: "Changed authority.", materialId: 10 }]);
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/material-snapshots", ...upload });
+
+    expect(response.statusCode).toBe(500);
+    expect(snapshotRepo.saveReplacement).toHaveBeenCalledOnce();
+    expect(snapshotRepo.saveSnapshot).not.toHaveBeenCalled();
+    expect(materialStateRepo.markReady).not.toHaveBeenCalled();
+    expect(activityIntentRepo.markStaleForSection).not.toHaveBeenCalled();
+    await app.close();
+  });
 });

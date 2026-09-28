@@ -110,10 +110,10 @@ describe("Ticket 18 instructional design alignment", () => {
     let current = context();
     const structure = { contentJson: { course: { title: "Loops" }, sections: [section()] }, teacherConstraintsJson: { coverage_overrides: [] }, revision: 1 };
     const runRepo = { getRun: vi.fn().mockResolvedValue({ runId: "run-1", normalizedSyllabus: {} }), getCoreCourseDesignContext: vi.fn().mockImplementation(async () => current), saveCoreCourseDesignContextRevision: vi.fn().mockImplementation(async (value: CoreCourseDesignContext) => { current = value; }) };
-    const structureRepo = { getLatestRevision: vi.fn().mockResolvedValue(structure), markAlignmentStale: vi.fn(), setExternalCoverageOverride: vi.fn().mockImplementation(async (_run: string, value: any) => ({ ...structure, teacherConstraintsJson: { coverage_overrides: [value] } })) };
+    const structureRepo = { getLatestRevision: vi.fn().mockResolvedValue(structure), getSealedRevision: vi.fn().mockResolvedValue(null), markAlignmentStale: vi.fn(), setExternalCoverageOverride: vi.fn().mockImplementation(async (_run: string, value: any) => ({ ...structure, teacherConstraintsJson: { coverage_overrides: [value] } })) };
     const config = loadConfig({ DATABASE_URL: "postgresql://unused/unused", OLLAMA_MODEL: "test", INSTRUCTIONAL_DESIGN_SERVICE_KEY: "test-key" });
     const app = Fastify({ logger: false });
-    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any });
+    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, candidateRepo: { list: vi.fn().mockResolvedValue([]), invalidateApprovedForOutcome: vi.fn() } as any, activityIntentRepo: { markStaleForContext: vi.fn() } as any });
     await app.ready();
     expect((await app.inject({ method: "GET", url: "/api/runs/run-1/instructional-design" })).statusCode).toBe(401);
     const headers = { "x-agentpoc-instructional-design-key": "test-key" };
@@ -222,12 +222,13 @@ describe("Ticket 18 instructional design alignment", () => {
         target.sealedAt = new Date().toISOString();
         return target;
       }),
+      getSealedRevision: vi.fn().mockResolvedValue(null),
     };
 
     const config = loadConfig({ DATABASE_URL: "postgresql://unused/unused", OLLAMA_MODEL: "test", INSTRUCTIONAL_DESIGN_SERVICE_KEY: "test-key" });
     const app = Fastify({ logger: false });
     registerErrorHandler(app);
-    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any });
+    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, candidateRepo: { invalidateApprovedForOutcome: vi.fn() } as any, activityIntentRepo: { markStaleForContext: vi.fn() } as any });
     // Also register courseStructureRoutes to test sealing
     const { courseStructureRoutes } = await import("../src/routes/course-structure.js");
     app.register(courseStructureRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any });
@@ -397,4 +398,3 @@ describe("Ticket 18 instructional design alignment", () => {
     await app.close();
   });
 });
-

@@ -175,12 +175,12 @@ describe("UX/UI Ticket 01 outcome review API", () => {
       saveCoreCourseDesignContextRevision: vi.fn(),
       beginInstructionalDesignMutation: vi.fn().mockResolvedValue({ runId: "run-review", status: "planning" }),
     };
-    const structureRepo = { getLatestRevision: vi.fn().mockResolvedValue(null), markAlignmentStale: vi.fn() };
+    const structureRepo = { getLatestRevision: vi.fn().mockResolvedValue(null), getSealedRevision: vi.fn().mockResolvedValue(null), markAlignmentStale: vi.fn() };
     const reviewRepo = { get: vi.fn().mockResolvedValue(null) };
     const config = loadConfig({ DATABASE_URL: "postgresql://unused/unused", OLLAMA_MODEL: "test", INSTRUCTIONAL_DESIGN_SERVICE_KEY: "test-key" });
     const headers = { "x-agentpoc-instructional-design-key": "test-key" };
     const app = Fastify({ logger: false });
-    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, candidateRepo: {} as any, reviewRepo: reviewRepo as any, enforceOutcomeReview: true });
+    app.register(instructionalDesignRoutes, { config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, candidateRepo: { invalidateApprovedForOutcome: vi.fn() } as any, reviewRepo: reviewRepo as any, activityIntentRepo: { markStaleForContext: vi.fn() } as any, enforceOutcomeReview: true });
     await app.ready();
 
     const blocked = await app.inject({ method: "POST", url: "/api/runs/run-review/outcomes/approve", headers, payload: { source_outcome_id: "source-outcome-1", use_source_as_is: true } });

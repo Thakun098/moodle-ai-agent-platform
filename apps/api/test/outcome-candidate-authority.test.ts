@@ -30,8 +30,9 @@ function fixture() {
     saveCoreCourseDesignContextRevision: vi.fn().mockImplementation(async (next: CoreCourseDesignContext) => { current = next; }),
   };
   const candidateRepo = { invalidateApprovedForOutcome: vi.fn().mockResolvedValue(1) };
-  const structureRepo = { markAlignmentStale: vi.fn(), getLatestRevision: vi.fn().mockResolvedValue(null) };
-  return { runRepo, candidateRepo, structureRepo, current: () => current };
+  const structureRepo = { markAlignmentStale: vi.fn(), getLatestRevision: vi.fn().mockResolvedValue(null), getSealedRevision: vi.fn().mockResolvedValue({ revision: 4 }) };
+  const activityIntentRepo = { markStaleForContext: vi.fn().mockResolvedValue(2) };
+  return { runRepo, candidateRepo, structureRepo, activityIntentRepo, current: () => current };
 }
 
 async function createApp(repos: ReturnType<typeof fixture>) {
@@ -42,6 +43,7 @@ async function createApp(repos: ReturnType<typeof fixture>) {
     runRepo: repos.runRepo as any,
     candidateRepo: repos.candidateRepo as any,
     structureRevisionRepo: repos.structureRepo as any,
+    activityIntentRepo: repos.activityIntentRepo as any,
   });
   await app.ready();
   return app;
@@ -64,6 +66,10 @@ describe("Outcome revision invalidates dependent Competency approval", () => {
     expect(response.json().core_context.approved_learning_outcomes[0].text).toBe("Design and implement classes");
     expect(repos.candidateRepo.invalidateApprovedForOutcome).toHaveBeenCalledWith("run-1", "outcome-1");
     expect(repos.candidateRepo.invalidateApprovedForOutcome.mock.invocationCallOrder[0]).toBeLessThan(
+      repos.runRepo.saveCoreCourseDesignContextRevision.mock.invocationCallOrder[0]!,
+    );
+    expect(repos.activityIntentRepo.markStaleForContext).toHaveBeenCalledWith("run-1", 4, 3);
+    expect(repos.activityIntentRepo.markStaleForContext.mock.invocationCallOrder[0]).toBeLessThan(
       repos.runRepo.saveCoreCourseDesignContextRevision.mock.invocationCallOrder[0]!,
     );
     expect(repos.structureRepo.markAlignmentStale).toHaveBeenCalledWith("run-1", 3);

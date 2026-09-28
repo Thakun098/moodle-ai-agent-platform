@@ -1,7 +1,6 @@
-import type { CompetencyCandidateDecision, CoreCourseDesignContext } from "@moodle-agent-poc/contracts";
+import type { CoreCourseDesignContext } from "@moodle-agent-poc/contracts";
 import { ActivityIntentRepository, CompetencyCandidateRepository, CourseStructureRevisionRepository, projectWeekReviews, getDatabase, OutcomeReviewRepository, RunRepository, type CompetencyCandidateRecord, type ModelClient } from "@moodle-agent-poc/agent-runtime";
 import {
-  approveLearningOutcome,
   assertOutcomeCoverage,
   assertRequiredOutcomeApprovals,
   buildLearningOutcomeProposals,
@@ -11,9 +10,11 @@ import {
   type AlignedStructureSection,
   type ExternalCoverageOverride,
 } from "@moodle-agent-poc/planning";
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
 import { editApprovedOutcome } from "../services/approved-outcome-edit-service.js";
+import { applyCompetencyCandidateDecision } from "../services/competency-candidate-decision-service.js";
+import { approveReviewedLearningOutcome } from "../services/learning-outcome-approval-service.js";
 import { beginInstructionalDesignMutation } from "../services/instructional-design-run-lifecycle-service.js";
 
 export interface InstructionalDesignRoutesOptions {
@@ -51,16 +52,19 @@ function serializeCompetencyCandidate(record: CompetencyCandidateRecord): Record
   };
 }
 
-function sourceRefsForApprovedOutcomes(context: CoreCourseDesignContext, outcomeIds: readonly string[]): unknown[] {
-  const refs = outcomeIds.flatMap((outcomeId) => context.approved_learning_outcomes.find((outcome) => outcome.outcome_id === outcomeId)?.source_refs ?? []);
-  const seen = new Set<string>();
-  return refs.filter((ref) => { const key = JSON.stringify(ref); if (seen.has(key)) return false; seen.add(key); return true; });
-}
 function candidateError(error: unknown): { message: string; details?: unknown } {
   return { message: error instanceof Error ? error.message : String(error), ...((error && typeof error === "object" && "details" in error) ? { details: (error as { details?: unknown }).details } : {}) };
 }
 function asContext(value: unknown): CoreCourseDesignContext | null {
   return value && typeof value === "object" ? value as CoreCourseDesignContext : null;
+}
+
+function sendCodedApplicationError(reply: FastifyReply, error: unknown): never | FastifyReply {
+  const coded = error as { statusCode?: unknown; code?: unknown; details?: unknown };
+  if (typeof coded.statusCode === "number" && coded.statusCode >= 400 && coded.statusCode < 600 && typeof coded.code === "string") {
+    return reply.status(coded.statusCode).send({ error: { code: coded.code, message: error instanceof Error ? error.message : String(error), details: coded.details ?? null } });
+  }
+  throw error;
 }
 
 function alignedSections(value: unknown, contextRevision?: number): AlignedStructureSection[] {
@@ -144,68 +148,18 @@ export const instructionalDesignRoutes: FastifyPluginAsync<InstructionalDesignRo
 
   fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/outcomes/approve", async (request, reply) => {
     if (!authorize(request, options.config, reply)) return;
-    const repo = getRunRepo();
-    const run = await repo?.getRun(request.params.runId);
-    if (!run) return reply.status(404).send({ error: { code: "NOT_FOUND", message: "Run not found." } });
-    const context = repo && typeof (repo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
-      ? asContext(await (repo as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<unknown> }).getCoreCourseDesignContext(request.params.runId))
-      : null;
-    if (!context) return reply.status(404).send({ error: { code: "CORE_CONTEXT_NOT_FOUND", message: "Core Course Design Context is not available." } });
-    if (!repo || typeof (repo as { saveCoreCourseDesignContextRevision?: unknown }).saveCoreCourseDesignContextRevision !== "function") {
-      return reply.status(501).send({ error: { code: "OUTCOME_PERSISTENCE_UNAVAILABLE", message: "Outcome revision persistence is not configured." } });
+    try {
+      const result = await approveReviewedLearningOutcome({
+        runRepo: getRunRepo(),
+        candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase()),
+        structureRepo: getStructureRepo(),
+        activityIntentRepo: options.activityIntentRepo ?? new ActivityIntentRepository(getDatabase()),
+        reviewRepo: options.reviewRepo ?? new OutcomeReviewRepository(getDatabase()),
+      }, { runId: request.params.runId, body: request.body, enforceOutcomeReview: options.enforceOutcomeReview === true });
+      return { run_id: request.params.runId, core_context: result.context, alignment_status: result.alignmentStatus };
+    } catch (error) {
+      return sendCodedApplicationError(reply, error);
     }
-    const body = request.body && typeof request.body === "object" ? request.body as Record<string, unknown> : {};
-    const sourceOutcomeId = String(body.source_outcome_id ?? "");
-    const sourceOutcome = context.source_learning_outcomes.find((outcome) => outcome.source_outcome_id === sourceOutcomeId);
-    let reviewedApprovalText: string | null = null;
-    if (options.enforceOutcomeReview) {
-      const reviewRepo = options.reviewRepo ?? new OutcomeReviewRepository(getDatabase());
-      const review = await reviewRepo.get(request.params.runId, "CLO", sourceOutcomeId);
-      if (!review || review.status !== "REVIEWED") {
-        return reply.status(409).send({ error: { code: "OUTCOME_REVIEW_REQUIRED", message: "A CLO must be explicitly Reviewed before it can be approved." } });
-      }
-      if (!sourceOutcome) {
-        return reply.status(422).send({ error: { code: "OUTCOME_INVALID", message: "Unknown source Learning Outcome." } });
-      }
-      reviewedApprovalText = review.draftText?.trim() || sourceOutcome.source_text.trim();
-      const requestedApprovalText = body.use_source_as_is === true
-        ? sourceOutcome.source_text.trim()
-        : typeof body.teacher_text === "string" && body.teacher_text.trim() !== ""
-          ? body.teacher_text.trim()
-          : typeof body.recommended_text === "string" && body.recommended_text.trim() !== ""
-            ? body.recommended_text.trim()
-            : null;
-      if (requestedApprovalText !== reviewedApprovalText) {
-        return reply.status(409).send({ error: { code: "OUTCOME_REVIEW_TEXT_MISMATCH", message: "CLO approval must use the exact wording from the persisted Reviewed state." } });
-      }
-    }
-    await beginInstructionalDesignMutation(repo, request.params.runId);
-    const updated = approveLearningOutcome(context, reviewedApprovalText !== null && sourceOutcome ? {
-      source_outcome_id: sourceOutcomeId,
-      use_source_as_is: reviewedApprovalText === sourceOutcome.source_text.trim(),
-      ...(reviewedApprovalText !== sourceOutcome.source_text.trim() ? { teacher_text: reviewedApprovalText } : {}),
-      ...(typeof body.teacher_id === "number" ? { teacher_id: body.teacher_id } : {}),
-    } : {
-      source_outcome_id: sourceOutcomeId,
-      use_source_as_is: body.use_source_as_is === true,
-      ...(typeof body.recommended_text === "string" ? { recommended_text: body.recommended_text } : {}),
-      ...(typeof body.teacher_text === "string" ? { teacher_text: body.teacher_text } : {}),
-      ...(typeof body.teacher_id === "number" ? { teacher_id: body.teacher_id } : {}),
-    });
-    const changedOutcome = updated.approved_learning_outcomes.find((outcome) => outcome.source_outcome_ids.includes(sourceOutcomeId));
-    const candidateRepo = options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase());
-    if (changedOutcome && typeof (candidateRepo as { invalidateApprovedForOutcome?: unknown }).invalidateApprovedForOutcome === "function") {
-      // Fail safe: dependent academic authority is withdrawn before the new
-      // Outcome revision is published. If Context persistence then fails, the
-      // Candidate is conservatively review-required rather than stale-approved.
-      await (candidateRepo as CompetencyCandidateRepository & { invalidateApprovedForOutcome: (runId: string, outcomeId: string) => Promise<number> }).invalidateApprovedForOutcome(request.params.runId, changedOutcome.outcome_id);
-    }
-    await (repo as RunRepository & { saveCoreCourseDesignContextRevision: (ctx: CoreCourseDesignContext) => Promise<void> }).saveCoreCourseDesignContextRevision(updated);
-    const structureRepo = getStructureRepo();
-    if (structureRepo && typeof (structureRepo as { markAlignmentStale?: unknown }).markAlignmentStale === "function") {
-      await (structureRepo as CourseStructureRevisionRepository & { markAlignmentStale: (runId: string, revision: number) => Promise<void> }).markAlignmentStale(request.params.runId, updated.revision);
-    }
-    return { run_id: request.params.runId, core_context: updated, alignment_status: "STALE_ALIGNMENT" };
   });
 
   fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/outcomes/edit-approved", async (request, reply) => {
@@ -389,40 +343,16 @@ export const instructionalDesignRoutes: FastifyPluginAsync<InstructionalDesignRo
   fastify.post<{ Params: { runId: string; candidateId: string } }>("/api/runs/:runId/competency-candidates/:candidateId/decision", async (request, reply) => {
     if (!authorize(request, options.config, reply)) return;
     const runRepo = getRunRepo();
-    const run = await runRepo.getRun(request.params.runId);
-    if (!run) return reply.status(404).send({ error: { code: "NOT_FOUND", message: "Run not found." } });
     const repo = options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase());
-    const existing = await repo.get(request.params.runId, request.params.candidateId);
-    if (!existing) return reply.status(404).send({ error: { code: "COMPETENCY_CANDIDATE_NOT_FOUND", message: "Competency Candidate not found." } });
-    const context = asContext(await (runRepo as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<unknown> }).getCoreCourseDesignContext(request.params.runId));
-    if (!context) return reply.status(404).send({ error: { code: "CORE_CONTEXT_NOT_FOUND", message: "Core Course Design Context is not available." } });
-    const body = request.body && typeof request.body === "object" ? request.body as Record<string, unknown> : {};
-    const actionValue = typeof body.action === "string" ? body.action : "";
-    if (!["approve", "reject", "defer", "edit"].includes(actionValue)) return reply.status(422).send({ error: { code: "COMPETENCY_DECISION_INVALID", message: "Candidate decision must be approve, reject, defer, or edit." } });
-    const action = actionValue as CompetencyCandidateDecision["action"];
-    const rawIds = body.derived_from_outcome_ids === undefined ? existing.derivedFromOutcomeIdsJson : body.derived_from_outcome_ids;
-    if (!Array.isArray(rawIds) || !rawIds.every((id) => typeof id === "string")) return reply.status(422).send({ error: { code: "COMPETENCY_OUTCOME_INVALID", message: "derived_from_outcome_ids must be an array of approved Outcome IDs." } });
-    const derivedIds = [...new Set(rawIds as string[])];
-    const approvedIds = new Set(context.approved_learning_outcomes.map((outcome) => outcome.outcome_id));
-    const unauthorized = derivedIds.filter((id) => !approvedIds.has(id));
-    if (unauthorized.length > 0) return reply.status(422).send({ error: { code: "COMPETENCY_OUTCOME_UNAUTHORIZED", message: "Candidate may derive only from approved Outcomes.", details: { unauthorized_outcome_ids: unauthorized } } });
-    const aligned = derivedIds.length > 0;
-    const override = body.teacher_override && typeof body.teacher_override === "object" && !Array.isArray(body.teacher_override) ? body.teacher_override as Record<string, unknown> : undefined;
-    const hasOverride = override?.acknowledged === true && typeof override.reason === "string" && override.reason.trim() !== "";
-    if (action === "approve" && !aligned && !hasOverride) return reply.status(422).send({ error: { code: "COMPETENCY_ALIGNMENT_OVERRIDE_REQUIRED", message: "An unaligned Candidate requires an explicit Teacher override before approval." } });
-    const status = action === "approve" ? "APPROVED" : action === "reject" ? "REJECTED" : action === "defer" ? "DEFERRED" : aligned ? "PROPOSED" : "UNALIGNED";
-    const decision: CompetencyCandidateDecision & { status: "PROPOSED" | "APPROVED" | "REJECTED" | "DEFERRED" | "UNALIGNED"; source_refs?: unknown[] } = {
-      action,
-      status,
-      derived_from_outcome_ids: derivedIds,
-      source_refs: sourceRefsForApprovedOutcomes(context, derivedIds),
-      ...(typeof body.name === "string" ? { name: body.name } : {}),
-      ...(typeof body.description === "string" ? { description: body.description } : {}),
-      ...(typeof body.rationale === "string" ? { rationale: body.rationale } : {}),
-      ...(hasOverride ? { teacher_override: { acknowledged: true, reason: (override!.reason as string).trim(), ...(typeof body.teacher_id === "number" ? { teacher_id: body.teacher_id } : {}) } } : {}),
-    };
-    await beginInstructionalDesignMutation(runRepo, request.params.runId);
-    const updated = await repo.decide(request.params.runId, request.params.candidateId, decision);
-    return { run_id: request.params.runId, candidate: updated ? serializeCompetencyCandidate(updated) : null };
+    try {
+      const updated = await applyCompetencyCandidateDecision({ runRepo, candidateRepo: repo }, {
+        runId: request.params.runId,
+        candidateId: request.params.candidateId,
+        body: request.body,
+      });
+      return { run_id: request.params.runId, candidate: serializeCompetencyCandidate(updated) };
+    } catch (error) {
+      return sendCodedApplicationError(reply, error);
+    }
   });
 };

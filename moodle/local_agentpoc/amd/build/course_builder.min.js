@@ -58,7 +58,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         outcomeAuthorityFeedback: null,
         outcomeReviewNavScrollTop: 0,
         activeDraftGuard: null,
-        draftSessions: {}
+        draftSessions: {},
+        recoveryWriteFailures: {}
     };
 
     function recoverySnapshotKey(surface, entityRef) {
@@ -116,8 +117,13 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         };
         try {
             window.localStorage.setItem(key, JSON.stringify(snapshot));
+            delete state.recoveryWriteFailures[key];
             return true;
         } catch (err) {
+            if (!state.recoveryWriteFailures[key]) {
+                state.recoveryWriteFailures[key] = true;
+                showError('Your recovery draft could not be saved in this browser. Keep this editor open and use explicit Save before navigating away.');
+            }
             return false;
         }
     }
@@ -1081,12 +1087,38 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $candidateOutcomes.append($('<option></option>').val(outcome.outcome_id).text(outcomeDisplayLabel(outcome.outcome_id)).attr('title', outcome.outcome_id).prop('selected', (candidate.derived_from_outcome_ids || []).indexOf(outcome.outcome_id) !== -1));
             });
             $card.append($('<div class="small mb-2"></div>').text('Teacher may clear mappings to request UNALIGNED review.'));
+            var candidateDecisionInFlight = false;
             function decide(action, override) {
-                var decision = {action: action, name: $name.val(), description: $description.val(), derived_from_outcome_ids: $candidateOutcomes.val() || []};
+                if (candidateDecisionInFlight) return Promise.resolve(null);
+                candidateDecisionInFlight = true;
+                $actions.find('button').prop('disabled', true);
+                var decision = {
+                    action: action,
+                    expected_revision: candidate.revision,
+                    expected_context_revision: state.coreContext.revision,
+                    name: $name.val(),
+                    description: $description.val(),
+                    derived_from_outcome_ids: $candidateOutcomes.val() || []
+                };
                 if (override) decision.teacher_override = override;
                 return callBff('decide_competency_candidate', {run_id: state.runId, candidate_id: candidate.candidate_id, decision: JSON.stringify(decision)}).then(function(result) {
                     state.competencyCandidates = (state.competencyCandidates || []).map(function(item) { return item.candidate_id === candidate.candidate_id ? result.candidate : item; });
                     renderAlignmentReview(state.currentStructure);
+                }).catch(function(err) {
+                    var code = err.details && err.details.error && err.details.error.code;
+                    if (code === 'COMPETENCY_CANDIDATE_REVISION_CONFLICT') {
+                        return reloadInstructionalDesignAuthority().then(function() {
+                            if (state.currentStructure) renderAlignmentReview(state.currentStructure);
+                            showError('Candidate or approved Outcome authority changed. The latest server state has been reloaded; review it before retrying.', err.details);
+                        }).catch(function(reloadErr) {
+                            candidateDecisionInFlight = false;
+                            if (state.currentStructure) renderAlignmentReview(state.currentStructure);
+                            showError('Candidate authority changed, but the latest server state could not be reloaded. Check connectivity and retry the reload before deciding again.', reloadErr.details || err.details);
+                        });
+                    }
+                    candidateDecisionInFlight = false;
+                    $actions.find('button').prop('disabled', false);
+                    throw err;
                 });
             }
             var $actions = $('<div class="d-flex flex-wrap"></div>');

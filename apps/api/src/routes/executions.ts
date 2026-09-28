@@ -150,6 +150,7 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
           candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(db!),
           activityIntentRepo: options.activityIntentRepo ?? new ActivityIntentRepository(db!),
           reviewRepo: options.competencyReviewRepo ?? new CompetencyMappingReviewRepository(db!),
+          runRepo: getRunRepo(),
         });
       } catch (error) {
         reply.status(409).send({ error: { code: (error as { code?: string }).code ?? "COMPETENCY_EXECUTION_SNAPSHOT_STALE", message: error instanceof Error ? error.message : String(error), details: null, request_id: request.id } });
@@ -195,6 +196,7 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
               candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase()),
               activityIntentRepo: options.activityIntentRepo ?? new ActivityIntentRepository(getDatabase()),
               reviewRepo: options.competencyReviewRepo ?? new CompetencyMappingReviewRepository(getDatabase()),
+              runRepo: getRunRepo(),
             });
             await claimApprovedExecution(getRunRepo(), { runId, planId: execRequest.plan_id, revision: execRequest.revision });
           },

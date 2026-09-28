@@ -21,6 +21,7 @@ describe("Ticket 24 competency execution snapshot current-state guard", () => {
       candidateRepo: { list: async () => [approvedCandidate, rejectedCandidate] } as any,
       activityIntentRepo: { get: async () => ({ id: "a1", status: "generated", activityRef: "assignment-01", intentRevision: 1, activityRevision: 2 }) } as any,
       reviewRepo: { review: async () => ({ revision: 7, mappings: [approvedMapping, rejectedMapping] }) } as any,
+      runRepo: { getCoreCourseDesignContext: async () => ({ revision: 4, approved_learning_outcomes: [{ outcome_id: "o1" }] }) } as any,
     })).resolves.toBeUndefined();
   });
 });
@@ -31,6 +32,7 @@ describe("Ticket 24 competency execution snapshot current-state guard", () => {
       reviewRepo: { review: async () => ({ revision: 3, mappings: [] }) },
       activityIntentRepo: { get: async () => null },
       snapshotRepo: { save },
+      runRepo: { getCoreCourseDesignContext: async () => ({ revision: 4, approved_learning_outcomes: [{ outcome_id: "o1" }] }) },
     } as any;
     const request = { runId: "run-1", planId: "plan-1", revision: 1, dependencies };
     await expect(captureCompetencyExecutionSnapshot({ ...request, frameworkId: null })).rejects.toMatchObject({ code: "COMPETENCY_FRAMEWORK_REQUIRED" });
@@ -38,4 +40,19 @@ describe("Ticket 24 competency execution snapshot current-state guard", () => {
     const captured = await captureCompetencyExecutionSnapshot({ ...request, frameworkId: 7 });
     expect(captured.frameworkId).toBe(7);
     expect(save).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an approved Candidate whose Outcome lineage is no longer current", async () => {
+    const save = vi.fn(async (value: unknown) => value);
+    const dependencies = {
+      candidateRepo: { list: async () => [{ candidateId: "c1", revision: 2, status: "APPROVED", name: "Stale competency", description: "Stale description", derivedFromOutcomeIdsJson: ["withdrawn-outcome"] }] },
+      reviewRepo: { review: async () => ({ revision: 3, mappings: [] }) },
+      activityIntentRepo: { get: async () => null },
+      runRepo: { getCoreCourseDesignContext: async () => ({ revision: 4, approved_learning_outcomes: [{ outcome_id: "current-outcome" }] }) },
+      snapshotRepo: { save },
+    } as any;
+
+    await expect(captureCompetencyExecutionSnapshot({ runId: "run-1", planId: "plan-1", revision: 1, frameworkId: 7, dependencies }))
+      .rejects.toMatchObject({ code: "COMPETENCY_OUTCOME_AUTHORITY_STALE" });
+    expect(save).not.toHaveBeenCalled();
   });

@@ -346,6 +346,7 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
         activityIntentRepo: injectedActivityIntentRepo ?? new ActivityIntentRepository(db!),
         reviewRepo: injectedCompetencyReviewRepo ?? new CompetencyMappingReviewRepository(db!),
         snapshotRepo: injectedCompetencySnapshotRepo ?? new CompetencyExecutionSnapshotRepository(db!),
+        runRepo,
       },
     });
 

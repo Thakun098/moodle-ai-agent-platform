@@ -38,7 +38,7 @@ describe("Ticket 23 persisted Teacher decisions through the API", () => {
       await intents.complete(id, { contentJson: { ref: `${type}-01`, type, title: type }, groundingMode: "SYLLABUS_GROUNDED", reviewRequired: false });
     }
     await candidates.saveProposed(runId, [{ candidate_id: "c", name: "Queue skill", description: "Explain queues", rationale: "Shared Outcome", derived_from_outcome_ids: ["o"], source_refs: [], status: "PROPOSED", revision: 1 }]);
-    await candidates.decide(runId, "c", { action: "approve", status: "APPROVED" });
+    await candidates.decide(runId, "c", { action: "approve", status: "APPROVED", expected_revision: 1, expected_context_revision: 1 });
     await app.register(competencyMappingRoutes, { config: loadConfig({ DATABASE_URL: url, INSTRUCTIONAL_DESIGN_SERVICE_KEY: "ticket23-test" }), reviewRepo: new CompetencyMappingReviewRepository(client.db) });
   });
   afterAll(async () => { await app.close(); await client.pool.query('DELETE FROM poc_run WHERE run_id = $1', [runId]); await client.pool.end(); });
@@ -61,12 +61,12 @@ describe("Ticket 23 persisted Teacher decisions through the API", () => {
       const reloaded = (await app.inject({ method: "GET", url: base, headers })).json();
       expect(reloaded).toEqual(view);
       expect(reloaded.mappings.find((p: any) => p.activityId === ids[0]).evidence).toBe("DECLINED");
-      await candidates.decide(runId, "c", { action: "edit", status: "PROPOSED", description: "Edited competency" });
+      await candidates.decide(runId, "c", { action: "edit", status: "PROPOSED", expected_revision: 2, expected_context_revision: 1, description: "Edited competency" });
       view = (await app.inject({ method: "GET", url: base, headers })).json();
       expect(view.mappings.every((p: any) => p.mapping === "STALE" && p.evidence === "STALE")).toBe(true);
       expect((await intents.get(ids[0]!))?.status).toBe("generated");
       expect((await intents.get(ids[1]!))?.status).toBe("generated");
-      await candidates.decide(runId, "c", { action: "approve", status: "APPROVED" });
+      await candidates.decide(runId, "c", { action: "approve", status: "APPROVED", expected_revision: 3, expected_context_revision: 1 });
       view = (await app.inject({ method: "GET", url: base, headers })).json();
       view = (await submit(ids[1]!, "mapping", "CONFIRMED")).json();
       expect(view.mappings.find((p: any) => p.activityId === ids[1]).evidence).toBe("UNDECIDED");
