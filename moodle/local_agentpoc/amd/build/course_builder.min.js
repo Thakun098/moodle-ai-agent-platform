@@ -1056,6 +1056,16 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             $select.append($('<option></option>').val(id).text(label).attr('title', id).prop('selected', selected.indexOf(id) !== -1));
         });
     }
+    function competencyCandidateStatusPresentation(status) {
+        var presentations = {
+            APPROVED: {label: 'Approved', badge: 'badge-success', card: 'border-success', icon: 'fa-check-circle text-success'},
+            REJECTED: {label: 'Rejected', badge: 'badge-danger', card: 'border-danger', icon: 'fa-times-circle text-danger'},
+            DEFERRED: {label: 'Deferred', badge: 'badge-warning', card: 'border-warning', icon: 'fa-pause-circle text-warning'},
+            UNALIGNED: {label: 'Unaligned', badge: 'badge-danger', card: 'border-danger', icon: 'fa-exclamation-triangle text-danger'},
+            PROPOSED: {label: 'Proposed', badge: 'badge-secondary', card: 'border-light', icon: 'fa-clock-o text-muted'}
+        };
+        return presentations[status] || presentations.PROPOSED;
+    }
     function renderCompetencyCandidates($root) {
         if (!state.coreContext || !Array.isArray(state.coreContext.approved_learning_outcomes) || !state.coreContext.approved_learning_outcomes.length) return;
         $root.append($('<div class="font-weight-bold mt-3 mb-2"></div>').text('Competency Candidates · Teacher review required'));
@@ -1076,8 +1086,15 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             return;
         }
         (state.competencyCandidates || []).forEach(function(candidate) {
-            var $card = $('<div class="border rounded p-2 mb-2 competency-candidate-card"></div>');
-            $card.append($('<div class="small text-muted mb-1"></div>').text(candidate.candidate_id + ' · ' + candidate.status));
+            var candidatePresentation = competencyCandidateStatusPresentation(candidate.status);
+            var $card = $('<div class="border rounded p-2 mb-2 competency-candidate-card"></div>').addClass(candidatePresentation.card);
+            var $statusLine = $('<div class="d-flex justify-content-between align-items-center small mb-2"></div>');
+            var $candidateIdentity = $('<span class="text-muted text-truncate mr-2"></span>').text(candidate.candidate_id);
+            var $statusBadge = $('<span class="badge competency-candidate-status"></span>').addClass(candidatePresentation.badge).addClass('competency-status-' + String(candidate.status || 'PROPOSED').toLowerCase());
+            var $statusIcon = $('<i class="fa mr-1" aria-hidden="true"></i>').addClass(candidatePresentation.icon);
+            $statusBadge.append($statusIcon).append(document.createTextNode(candidatePresentation.label));
+            $statusLine.append($candidateIdentity).append($statusBadge);
+            $card.append($statusLine);
             var $name = $('<input type="text" class="form-control form-control-sm mb-1">').val(candidate.name || '');
             var $description = $('<textarea class="form-control form-control-sm mb-1" rows="2"></textarea>').val(candidate.description || '');
             $card.append($name).append($description);
@@ -1088,6 +1105,18 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             });
             $card.append($('<div class="small mb-2"></div>').text('Teacher may clear mappings to request UNALIGNED review.'));
             var candidateDecisionInFlight = false;
+            function applyCandidateStatusPresentation(nextCandidate) {
+                candidate = nextCandidate;
+                var presentation = competencyCandidateStatusPresentation(candidate.status);
+                $card.removeClass('border-light border-success border-danger border-warning').addClass(presentation.card);
+                $statusBadge.removeClass('badge-secondary badge-success badge-danger badge-warning competency-status-proposed competency-status-approved competency-status-rejected competency-status-deferred competency-status-unaligned')
+                    .addClass(presentation.badge).addClass('competency-status-' + String(candidate.status || 'PROPOSED').toLowerCase()).empty();
+                $statusIcon = $('<i class="fa mr-1" aria-hidden="true"></i>').addClass(presentation.icon);
+                $statusBadge.append($statusIcon).append(document.createTextNode(presentation.label));
+                $approve.prop('disabled', candidate.status === 'APPROVED').text(candidate.status === 'APPROVED' ? 'Approved' : 'Approve Candidate');
+                $reject.prop('disabled', candidate.status === 'REJECTED').text(candidate.status === 'REJECTED' ? 'Rejected' : 'Reject');
+                $defer.prop('disabled', candidate.status === 'DEFERRED').text(candidate.status === 'DEFERRED' ? 'Deferred' : 'Defer');
+            }
             function decide(action, override) {
                 if (candidateDecisionInFlight) return Promise.resolve(null);
                 candidateDecisionInFlight = true;
@@ -1103,7 +1132,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 if (override) decision.teacher_override = override;
                 return callBff('decide_competency_candidate', {run_id: state.runId, candidate_id: candidate.candidate_id, decision: JSON.stringify(decision)}).then(function(result) {
                     state.competencyCandidates = (state.competencyCandidates || []).map(function(item) { return item.candidate_id === candidate.candidate_id ? result.candidate : item; });
-                    renderAlignmentReview(state.currentStructure);
+                    if (result.candidate.status === 'UNALIGNED') renderAlignmentReview(state.currentStructure);
+                    else applyCandidateStatusPresentation(result.candidate);
                 }).catch(function(err) {
                     var code = err.details && err.details.error && err.details.error.code;
                     if (code === 'COMPETENCY_CANDIDATE_REVISION_CONFLICT') {
@@ -1147,6 +1177,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 });
             }
             $card.append($actions);
+            applyCandidateStatusPresentation(candidate);
             $root.append($card);
         });
     }
@@ -1249,12 +1280,20 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             var $layout = $('<div class="row week-review-workbench"></div>');
             var $rail = $('<nav class="col-md-4 mb-3 week-review-rail" aria-label="Week review"></nav>');
             var $workspace = $('<div class="col-md-8 week-review-workspace"></div>');
+            var selectedWeek = sections.find(function(section) { return section.ref === state.selectedWeekRef; });
+            $rail.append($('<div class="week-rail-heading small text-uppercase text-muted font-weight-bold px-2 py-2"></div>').text('Course weeks'));
+            if (selectedWeek) {
+                var selectedWeekLabel = /^week\s+\d+/i.test(selectedWeek.title || '') ? selectedWeek.title : ('Week ' + selectedWeek.position + ' · ' + (selectedWeek.title || 'Untitled'));
+                $workspace.append($('<div class="week-selected-context alert alert-primary py-2 px-3 mb-3"></div>')
+                    .append($('<div class="small text-uppercase font-weight-bold"></div>').text('Currently reviewing'))
+                    .append($('<div class="font-weight-bold"></div>').text(selectedWeekLabel)));
+            }
             sections.forEach(function(section) {
                 var presentation = weekStatusPresentation(weekReviewStatus(section));
                 var label = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled'));
                 var $week = $('<button type="button" class="list-group-item list-group-item-action text-left week-review-nav-item"></button>')
                     .attr('data-week-ref', section.ref).attr('aria-current', section.ref === state.selectedWeekRef ? 'true' : 'false')
-                    .toggleClass('active', section.ref === state.selectedWeekRef)
+                    .toggleClass('active week-nav-current', section.ref === state.selectedWeekRef)
                     .append($('<span class="d-block font-weight-bold"></span>').text(label))
                     .append($('<span class="badge mt-1"></span>').addClass(presentation.badge).text(presentation.label));
                 $week.on('click', function() {
@@ -1977,6 +2016,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         var $mappingControls = $('<div class="mt-2" id="activity-competency-mappings"></div>');
         $mappingDetails.append($mappingControls);
         $inspector.append($activityInspector).append($mappingDetails);
+        var selectedActivityWeek = sections.find(function(section) { return section.ref === state.selectedActivityWeekRef; });
+        $rail.append($('<div class="week-rail-heading small text-uppercase text-muted font-weight-bold px-2 py-2"></div>').text('Course weeks'));
+        if (selectedActivityWeek) {
+            var selectedActivityWeekLabel = /^week\s+\d+/i.test(selectedActivityWeek.title || '') ? selectedActivityWeek.title : ('Week ' + selectedActivityWeek.position + ' · ' + (selectedActivityWeek.title || 'Untitled week'));
+            $workspace.append($('<div class="activity-selected-week-context alert alert-primary py-2 px-3 mb-3"></div>')
+                .append($('<div class="small text-uppercase font-weight-bold"></div>').text('Currently configuring'))
+                .append($('<div class="font-weight-bold"></div>').text(selectedActivityWeekLabel)));
+        }
         sections.forEach(function(section) {
             var intents = state.activityIntents[section.ref] || [];
             var stale = intents.some(function(intent) { return intent.status === 'stale'; });
@@ -1987,7 +2034,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             var label = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled week'));
             var $week = $('<button type="button" class="list-group-item list-group-item-action text-left activity-week-nav-item"></button>')
                 .attr('data-week-ref', section.ref).attr('aria-current', section.ref === state.selectedActivityWeekRef ? 'true' : 'false')
-                .toggleClass('active', section.ref === state.selectedActivityWeekRef)
+                .toggleClass('active week-nav-current', section.ref === state.selectedActivityWeekRef)
                 .append($('<span class="d-block font-weight-bold"></span>').text(label))
                 .append($('<span class="badge mt-1"></span>').addClass(statusBadge).text(status));
             $week.on('click', function() {
@@ -2762,10 +2809,30 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 }
 
                 var $promptLabel = $('<label class="small font-weight-bold mb-1"></label>').text(label + ' Prompt (Optional)');
-                var $prompt = $('<textarea class="form-control form-control-sm mb-2" rows="3"></textarea>').attr('placeholder', isQuiz ? 'e.g., Focus on concepts from this week and keep questions beginner-friendly...' : "e.g., Ask students to build a small class that applies this week's concepts...");
+                var persistedInstruction = String(intent.generation_instruction || '').trim();
+                var $prompt = $('<textarea class="form-control form-control-sm mb-2 activity-generation-prompt" rows="3"></textarea>').attr('placeholder', isQuiz ? 'e.g., Focus on concepts from this week and keep questions beginner-friendly...' : "e.g., Ask students to build a small class that applies this week's concepts...");
                 if (isQuiz) $quizPrompt = $prompt; else $assignmentPrompt = $prompt;
                 if (intent.generation_instruction) $prompt.val(intent.generation_instruction);
                 $panel.append($promptLabel).append($prompt);
+                var $promptStatus = $('<div class="activity-intent-save-status small mb-2"></div>');
+                function setPromptSaveStatus(className, iconClass, text) {
+                    $promptStatus.removeClass('text-success text-warning text-muted').addClass(className).empty();
+                    $promptStatus.append($('<i class="fa mr-1" aria-hidden="true"></i>').addClass(iconClass));
+                    $promptStatus.append(document.createTextNode(text));
+                }
+                function updatePromptSaveStatus() {
+                    var currentInstruction = String($prompt.val() || '').trim();
+                    if (currentInstruction !== persistedInstruction) {
+                        setPromptSaveStatus('text-warning', 'fa-exclamation-circle', 'Unsaved changes · Generate will save first');
+                    } else if (persistedInstruction) {
+                        setPromptSaveStatus('text-success', 'fa-check-circle', 'Saved and ready to generate');
+                    } else {
+                        setPromptSaveStatus('text-muted', 'fa-info-circle', 'No prompt saved · deterministic defaults will apply');
+                    }
+                }
+                $prompt.on('input', updatePromptSaveStatus);
+                updatePromptSaveStatus();
+                $panel.append($promptStatus);
                 var $saveIntent = $('<button type="button" class="btn btn-sm btn-outline-secondary mb-2"></button>').text('Save Intent');
                 $saveIntent.on('click', function() {
                     var instructions = {}; instructions[type] = $prompt.val().trim();

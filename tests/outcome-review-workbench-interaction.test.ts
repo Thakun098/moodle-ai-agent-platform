@@ -348,6 +348,8 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
       const assignment = activityIntents.find((item) => item.activity_type === "assignment");
       if (quiz && body.has("quiz_selected_outcome_ids")) quiz.selected_outcome_ids = JSON.parse(String(body.get("quiz_selected_outcome_ids") || "[]"));
       if (assignment && body.has("assignment_selected_outcome_ids")) assignment.selected_outcome_ids = JSON.parse(String(body.get("assignment_selected_outcome_ids") || "[]"));
+      if (quiz && body.has("quiz_generation_instruction")) quiz.generation_instruction = String(body.get("quiz_generation_instruction") || "");
+      if (assignment && body.has("assignment_generation_instruction")) assignment.generation_instruction = String(body.get("assignment_generation_instruction") || "");
       data = { intents: activityIntents };
     }
     else if (action === "save_activity_edit") {
@@ -539,6 +541,23 @@ describe("UX/UI Ticket 01 Outcome Review Workbench interaction semantics", () =>
 });
 
 describe("UX/UI Competency Candidate authority interactions", () => {
+  it("shows semantic Candidate status without rerendering the Outcome workbench", async () => {
+    const candidate = {
+      candidate_id: "candidate-1", revision: 1, name: "Program design", description: "Design programs",
+      rationale: "Approved Outcome", derived_from_outcome_ids: ["outcome-1"], source_refs: [], status: "PROPOSED",
+    };
+    const { dom } = harness({ approvedClo: true, reviewedLo: true, competencyCandidates: [candidate] });
+    await flushPromises(); await flushPromises(); await flushPromises();
+    const outcomeEditorBefore = dom.byId.get("outcome-review-text");
+
+    new FakeSelection(dom, [dom.byText("Approve Candidate", "button")[0]!]).trigger("click");
+    await flushPromises(); await flushPromises();
+
+    expect(dom.byId.get("outcome-review-text")).toBe(outcomeEditorBefore);
+    expect(dom.query(".competency-status-approved").text()).toContain("Approved");
+    expect(dom.query(".competency-candidate-card").elements[0]!.classes.has("border-success")).toBe(true);
+  });
+
   it("does not let a second Candidate mutation start while the first decision is in flight", async () => {
     const candidate = {
       candidate_id: "candidate-1", revision: 1, name: "Program design", description: "Design programs",
@@ -589,6 +608,9 @@ describe("UX/UI Ticket 03 Week review workbench", () => {
     await flushPromises(); await flushPromises(); await flushPromises();
     expect(dom.query(".week-review-nav-item").length).toBe(3);
     expect(dom.query(".week-review-workspace").text()).toContain("Week 1");
+    expect(dom.query(".week-selected-context").text()).toContain("Currently reviewing");
+    expect(dom.query(".week-selected-context").text()).toContain("Week 1");
+    expect(dom.query(".week-review-nav-item").elements[0]!.classes.has("week-nav-current")).toBe(true);
     expect(dom.query(".week-review-workspace").text()).not.toContain("Week 2");
     const week2 = [...dom.all].find((item) => item.attrs.get("data-week-ref") === "section-02");
     new FakeSelection(dom, [week2!]).trigger("click");
@@ -858,6 +880,10 @@ describe("UX/UI Ticket 04 Activity Week Workbench", () => {
     const { dom } = await activityHarness();
     expect(dom.query(".activity-week-nav-item").length).toBe(3);
     expect(dom.query(".activity-week-workspace").text()).toContain("Week 2");
+    expect(dom.query(".activity-selected-week-context").text()).toContain("Currently configuring");
+    expect(dom.query(".activity-selected-week-context").text()).toContain("Week 2");
+    const selectedWeek = dom.query(".activity-week-nav-item").elements.find((item) => item.attrs.get("aria-current") === "true")!;
+    expect(selectedWeek.classes.has("week-nav-current")).toBe(true);
     expect(dom.query(".activity-week-workspace").text()).not.toContain("Week 1");
     expect(dom.query(".activity-review-tabs").text()).toContain("Material");
     expect(dom.query(".activity-review-tabs").text()).toContain("Quiz");
@@ -871,6 +897,21 @@ describe("UX/UI Ticket 04 Activity Week Workbench", () => {
     expect(dom.query(".activity-context-inspector").text()).toContain("Provenance: AI Generated");
     expect(dom.query(".activity-context-inspector").text()).toContain("AI self-review");
     expect(dom.query(".activity-context-inspector").text()).toContain("Questions");
+  });
+
+  it("shows whether the Activity generation prompt is saved and ready", async () => {
+    const { dom } = await activityHarness();
+    const quizTab = [...dom.all].find((item) => item.attrs.get("data-activity-tab") === "quiz")!;
+    new FakeSelection(dom, [quizTab]).trigger("click");
+
+    expect(dom.query(".activity-intent-save-status").text()).toContain("No prompt saved");
+    const prompt = dom.query(".activity-generation-prompt");
+    prompt.val("Focus on applied examples").trigger("input");
+    expect(dom.query(".activity-intent-save-status").text()).toContain("Unsaved changes");
+
+    new FakeSelection(dom, [dom.byText("Save Intent", "button")[0]!]).trigger("click");
+    await flushPromises(); await flushPromises();
+    expect(dom.query(".activity-intent-save-status").text()).toContain("Saved and ready to generate");
   });
 
   it("navigates Q1/Q2 while rendering one question and never exposes per-question regenerate", async () => {

@@ -11,6 +11,14 @@ describe("UX/UI review follow-up: Activity workspace", () => {
     expect(template).toMatch(/\.activity-week-workspace\s*\{[\s\S]*flex:\s*0 0 63%[\s\S]*max-width:\s*63%/);
   });
 
+  it("bounds both Week rails and gives the selected Week an explicit state", () => {
+    expect(template).toMatch(/\.week-review-rail\s*\{[\s\S]*max-height:\s*640px[\s\S]*overflow-y:\s*auto/);
+    expect(template).toMatch(/\.activity-week-rail\s*\{[\s\S]*max-height:\s*640px[\s\S]*overflow-y:\s*auto/);
+    expect(template).toMatch(/\.week-review-nav-item\.week-nav-current[\s\S]*\.activity-week-nav-item\.week-nav-current/);
+    expect(source).toContain("week-selected-context");
+    expect(source).toContain("activity-selected-week-context");
+  });
+
   it("makes Activity tabs visibly selectable and gives the active tab a strong selected state", () => {
     expect(template).toMatch(/\.activity-review-tabs \.nav-link\s*\{[\s\S]*font-weight:\s*600/);
     expect(template).toMatch(/\.activity-review-tabs \.nav-link\.active\s*\{[\s\S]*background:\s*#0f6cbf[\s\S]*color:\s*#fff/);
