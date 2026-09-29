@@ -145,7 +145,7 @@ export const activityIntentRoutes: FastifyPluginAsync<ActivityIntentRoutesOption
             learner_context_acknowledged: learnerAcknowledged,
             ...(generationInstruction ? { generation_instruction: generationInstruction } : {}),
             ...(alignmentOverride ? { alignment_override: alignmentOverride } : {}),
-          }, { allowMissingAlignment: true })
+          }, { allowMissingAlignment: true, allowUnacknowledgedLearnerContext: true })
           : {
             purpose: (typeof purpose === "string" ? purpose : "PRACTICE") as ActivityPurpose,
             selected_objective_ids: selectedObjectives,

@@ -61,7 +61,7 @@ const grounding = {
   materialSnapshotId: "snapshot-1",
 };
 
-function design(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS") {
+function design(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS", learnerAcknowledged = status === "UNSPECIFIED") {
   return buildActivityDesignContext({
     coreContext: context(status),
     structureRevision: 7,
@@ -69,7 +69,7 @@ function design(status: CoreCourseDesignContext["learner_context"]["status"] = "
     intent: {
       id: "intent-1", ref: "assignment-01", type: "assignment", title: "Search lab", purpose: "FORMATIVE", intent_revision: 6,
       selected_objective_ids: ["objective-1"], selected_outcome_ids: ["outcome-1"], learner_context_revision: 2,
-      learner_context_acknowledged: status === "UNSPECIFIED", options: { grade: 100 }, generation_instruction: "Explain the queue trace.",
+      learner_context_acknowledged: learnerAcknowledged, options: { grade: 100 }, generation_instruction: "Explain the queue trace.",
     },
     grounding,
   });
@@ -101,6 +101,10 @@ describe("Activity Design Context", () => {
     expect(current.learner_context).toMatchObject({ status: "UNSPECIFIED", acknowledged: true, education_level: [], year_level: [] });
     expect(current.warnings).toContain("LEARNER_CONTEXT_UNSPECIFIED");
     expect(formatActivityDesignPrompt(current)).toContain("Do not infer any of them");
+  });
+
+  it("keeps generation strict for a saved draft with unspecified unacknowledged learner context", () => {
+    expect(() => design("UNSPECIFIED", false)).toThrow(/acknowledgment/iu);
   });
 
   it("accepts structured self-review and rejects unauthorized alignment or scope exceptions", () => {

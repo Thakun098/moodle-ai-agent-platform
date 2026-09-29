@@ -28,6 +28,23 @@ describe("Ticket 20 Activity Intent validator", () => {
     expect(() => validateActivityIntent(context("UNSPECIFIED"), section, { activity_type: "quiz", purpose: "PRACTICE", selected_objective_ids: ["objective-1"], learner_context_revision: 2 })).toThrow(/acknowledgment/iu);
   });
 
+  it("allows an unacknowledged unspecified learner context only for explicit draft-save validation", () => {
+    const input = {
+      activity_type: "quiz" as const,
+      purpose: "PRACTICE" as const,
+      selected_objective_ids: ["objective-1"],
+      learner_context_revision: 2,
+      learner_context_acknowledged: false,
+    };
+    expect(() => validateActivityIntent(context("UNSPECIFIED"), section, input)).toThrow(/acknowledgment/iu);
+    expect(validateActivityIntent(context("UNSPECIFIED"), section, input, {
+      allowUnacknowledgedLearnerContext: true,
+    })).toMatchObject({
+      learner_context_revision: 2,
+      learner_context_acknowledged: false,
+    });
+  });
+
   it("allows a Teacher-confirmed missing alignment but never uses it for an out-of-section Outcome", () => {
     const missing = validateActivityIntent(context(), section, {
       activity_type: "assignment", purpose: "FORMATIVE", selected_outcome_ids: [], learner_context_revision: 2,

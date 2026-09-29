@@ -43,4 +43,18 @@ describe("UX/UI review follow-up: Activity workspace", () => {
     expect(template).toContain("generated without selected LO/CLO alignment");
     expect(template).toContain("I have reviewed every flagged Activity and acknowledge the current Plan revision.");
   });
+
+  it("preflights unspecified learner acknowledgment locally without auto-acknowledging", () => {
+    const generateBlock = source.slice(source.indexOf("function generateSelectedActivity"), source.indexOf("function renderPanel"));
+    expect(generateBlock).toContain("Confirm that learner context is unspecified before generating this Activity.");
+    expect(generateBlock).toContain("state.coreContext.learner_context.status === 'UNSPECIFIED'");
+    expect(generateBlock).toContain("$learnerAck.trigger('focus')");
+    expect(generateBlock).not.toContain("$learnerAck.prop('checked', true)");
+  });
+
+  it("labels the no-material generation path as Syllabus fallback without predicting the server grounding mode", () => {
+    expect(source).toContain("Source: Syllabus fallback");
+    expect(source).toContain("AI expansion remains Teacher Review Required");
+  });
+
 });

@@ -50,7 +50,7 @@ export function validateActivityIntent(
   context: CoreCourseDesignContext,
   section: { ref: string; aligned_objective_ids?: readonly string[]; aligned_outcome_ids?: readonly string[] },
   input: ActivityIntentSemanticInput,
-  options: { allowMissingAlignment?: boolean } = {},
+  options: { allowMissingAlignment?: boolean; allowUnacknowledgedLearnerContext?: boolean } = {},
 ): ValidatedActivityIntent {
   if (!["PRACTICE", "FORMATIVE", "SUMMATIVE"].includes(input.purpose)) {
     throw new PlanningError("ACTIVITY_INTENT_INVALID", "Exactly one Activity Purpose is required: PRACTICE, FORMATIVE, or SUMMATIVE.");
@@ -95,7 +95,7 @@ export function validateActivityIntent(
     throw new PlanningError("ACTIVITY_INTENT_LEARNER_CONTEXT_STALE", "Learner Context revision is stale; reload the current Core Context before saving the Activity Intent.", { learner_context_revision: learnerRevision, current_learner_context_revision: context.learner_context.revision });
   }
   const learnerAcknowledged = input.learner_context_acknowledged === true;
-  if (context.learner_context.status === "UNSPECIFIED" && !learnerAcknowledged) {
+  if (context.learner_context.status === "UNSPECIFIED" && !learnerAcknowledged && !options.allowUnacknowledgedLearnerContext) {
     throw new PlanningError("ACTIVITY_INTENT_LEARNER_ACK_REQUIRED", "Teacher acknowledgment is required before generating with unspecified learner context.");
   }
   const generationInstruction = typeof input.generation_instruction === "string" && input.generation_instruction.trim() !== "" ? input.generation_instruction.trim() : undefined;

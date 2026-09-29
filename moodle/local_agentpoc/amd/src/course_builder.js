@@ -2782,6 +2782,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             }
 
             function generateSelectedActivity(type, instruction, $button) {
+                var $learnerAck = type === 'quiz' ? $quizAck : $assignmentAck;
+                var learnerContextUnspecified = Boolean(state.coreContext && state.coreContext.learner_context && state.coreContext.learner_context.status === 'UNSPECIFIED');
+                if (learnerContextUnspecified && !$learnerAck.is(':checked')) {
+                    showError('Confirm that learner context is unspecified before generating this Activity. The acknowledgment will be stored with the Activity Intent.');
+                    if ($learnerAck[0] && typeof $learnerAck[0].scrollIntoView === 'function') $learnerAck[0].scrollIntoView({block: 'center'});
+                    $learnerAck.trigger('focus');
+                    return Promise.resolve();
+                }
                 var selectedOutcomes = (type === 'quiz' ? $quizOutcomes : $assignmentOutcomes).val() || [];
                 var selectedObjectives = (type === 'quiz' ? $quizObjectives : $assignmentObjectives).val() || [];
                 var purpose = (type === 'quiz' ? $quizPurpose : $assignmentPurpose).val();
@@ -2852,6 +2860,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 }
 
                 appendSemanticControls(type, intent, $panel);
+                if (!materialState.snapshotId) {
+                    $panel.append($('<div class="alert alert-info py-2 px-2 mb-2 activity-syllabus-fallback-callout"></div>')
+                        .text('Source: Syllabus fallback. If syllabus evidence requires AI expansion, AI expansion remains Teacher Review Required. Learner-context acknowledgment is separate and explicit.'));
+                }
                 if (intent.grounding_mode) {
                     var grounding = 'Grounding: ' + intent.grounding_mode;
                     if (intent.review_required) grounding += ' • Teacher review required';
