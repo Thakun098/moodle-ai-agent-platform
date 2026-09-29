@@ -19,6 +19,28 @@ describe("UX/UI review follow-up: Activity workspace", () => {
     expect(source).toContain("activity-selected-week-context");
   });
 
+  it("clamps Activity Week selector titles to two lines without truncating the source label", () => {
+    expect(source).toContain('class="activity-week-nav-title font-weight-bold"');
+    expect(source).not.toContain('activity-week-nav-title d-block');
+    expect(template).toMatch(/\.activity-week-nav-title\s*\{[\s\S]*display:\s*-webkit-box[\s\S]*-webkit-line-clamp:\s*2[\s\S]*overflow:\s*hidden/);
+    expect(source).not.toMatch(/label\.(?:slice|substring|substr)\(/);
+  });
+
+  it("spaces Activity Week cards and keeps long labels inside the compact selector", () => {
+    expect(template).toMatch(/\.activity-week-nav-item\s*\{[\s\S]*padding:\s*0\.75rem 0\.875rem[\s\S]*margin-bottom:\s*0\.45rem[\s\S]*overflow:\s*hidden/);
+    expect(template).toMatch(/\.activity-week-nav-item \.badge\s*\{[\s\S]*display:\s*inline-block[\s\S]*margin-top:\s*0\.45rem/);
+    expect(template).toMatch(/\.activity-week-rail\s*\{[\s\S]*min-width:\s*0/);
+  });
+
+  it("keeps the full Activity Week label in the selected workspace and accessible selector text", () => {
+    expect(source).toContain("function activityWeekDisplayLabel(section)");
+    expect(source).toContain(".attr('title', label)");
+    expect(source).not.toContain(".attr('aria-label', label + ' — ' + status)");
+    expect(source).toContain(".text(selectedActivityWeekLabel)");
+    expect(source).toMatch(/selectedActivityWeekLabel = activityWeekDisplayLabel\(selectedActivityWeek\)/);
+    expect(source).toMatch(/label = activityWeekDisplayLabel\(section\)/);
+  });
+
   it("makes Activity tabs visibly selectable and gives the active tab a strong selected state", () => {
     expect(template).toMatch(/\.activity-review-tabs \.nav-link\s*\{[\s\S]*font-weight:\s*600/);
     expect(template).toMatch(/\.activity-review-tabs \.nav-link\.active\s*\{[\s\S]*background:\s*#0f6cbf[\s\S]*color:\s*#fff/);

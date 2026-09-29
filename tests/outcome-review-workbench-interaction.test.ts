@@ -243,7 +243,7 @@ function flushPromises() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirmResult?: boolean; weekCount?: number; weekStatuses?: string[]; selectedWeekRef?: string; selectedActivityWeekRef?: string; activityIntents?: any[]; deferActivityLoads?: boolean; localStorageSeed?: Record<string, string>; localStorageWriteFails?: boolean; materialSnapshot?: any; materialStatus?: any; failActions?: string[]; deferIntentSaves?: boolean; competencyCandidates?: any[]; deferCandidateDecisions?: boolean; candidateDecisionConflict?: boolean } = {}) {
+function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirmResult?: boolean; weekCount?: number; weekTitles?: string[]; weekStatuses?: string[]; selectedWeekRef?: string; selectedActivityWeekRef?: string; activityIntents?: any[]; deferActivityLoads?: boolean; localStorageSeed?: Record<string, string>; localStorageWriteFails?: boolean; materialSnapshot?: any; materialStatus?: any; failActions?: string[]; deferIntentSaves?: boolean; competencyCandidates?: any[]; deferCandidateDecisions?: boolean; candidateDecisionConflict?: boolean } = {}) {
   const harnessOptions = options;
   const source = readFileSync("moodle/local_agentpoc/amd/src/course_builder.js", "utf8");
   const dom = new FakeDom();
@@ -291,7 +291,7 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
   ];
   let structureStale = false;
   const weekCount = options.weekCount ?? 1;
-  const weeks = Array.from({ length: weekCount }, (_, index) => ({ ref: `section-0${index + 1}`, position: index + 1, title: `Week ${index + 1}`,
+  const weeks = Array.from({ length: weekCount }, (_, index) => ({ ref: `section-0${index + 1}`, position: index + 1, title: options.weekTitles?.[index] ?? `Week ${index + 1}`,
     summary: `Topic ${index + 1}`, aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["outcome-1"], alignment_status: "CURRENT" }));
   const weekReviews = weeks.map((week, index) => ({ section_ref: week.ref, status: options.weekStatuses?.[index] ?? "Pending review", reviewed_at: null }));
   const structure = () => ({ revision: 1, title: "Course", summary: "Summary", sealed_at: "2026-09-19T00:00:00Z", content: { course: { title: "Course" }, sections: weeks.map((week) => ({ ...week, alignment_status: structureStale ? "STALE_ALIGNMENT" : "CURRENT" })) },
@@ -857,6 +857,26 @@ describe("UX/UI Ticket 05 Recoverable Local Drafts interaction semantics", () =>
 
 
 describe("UX/UI Ticket 04 Activity Week Workbench", () => {
+  it("renders a full long Thai Week title in the DOM and selected workspace without a stale overriding accessible name", async () => {
+    const longTitle = "สัปดาห์ที่ 2: การออกแบบกิจกรรมการเรียนรู้เชิงประยุกต์ด้วยบริบทที่ยาวมากสำหรับผู้เรียน";
+    const result = harness({ approvedClo: true, reviewedLo: true, weekCount: 3,
+      weekTitles: ["Week 1", longTitle, "Week 3"],
+      weekStatuses: ["Ready to configure", "Ready to configure", "Ready to configure"], selectedActivityWeekRef: "section-02",
+      activityIntents: activityFixtures(), materialSnapshot: { id: "snapshot-1", persisted_id: "snapshot-1", revision: 1, files: [{ filename: "week2.pdf" }] } });
+    await flushPromises(); await flushPromises(); await flushPromises();
+    result.dom.query("#btn-review-continue").trigger("click");
+    await flushPromises(); await flushPromises(); await flushPromises(); await flushPromises();
+
+    const selectedWeek = [...result.dom.all].find((item) => item.classes.has("activity-week-nav-item") && item.attrs.get("data-week-ref") === "section-02")!;
+    const fullLabel = `Week 2 · ${longTitle}`;
+    expect(selectedWeek.attrs.get("title")).toBe(fullLabel);
+    expect(selectedWeek.attrs.has("aria-label")).toBe(false);
+    expect(selectedWeek.allText()).toContain(fullLabel);
+    expect(selectedWeek.allText()).toContain("Ready");
+    expect(new FakeSelection(result.dom, [selectedWeek]).find(".activity-week-nav-title").text()).toBe(fullLabel);
+    expect(result.dom.query(".activity-selected-week-context").text()).toContain(fullLabel);
+  });
+
   it("ignores obsolete Activity-load callbacks after switching Weeks", async () => {
     const result = harness({ approvedClo: true, reviewedLo: true, weekCount: 3,
       weekStatuses: ["Ready to configure", "Ready to configure", "Ready to configure"], selectedActivityWeekRef: "section-02",

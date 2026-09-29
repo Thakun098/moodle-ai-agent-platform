@@ -620,8 +620,30 @@
     background: #f8fafc;
     padding: 0.75rem !important;
 }
-.week-review-nav-item,
+.week-review-nav-item {
+    white-space: normal;
+}
+.activity-week-nav-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+}
 .activity-week-nav-item {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+    padding: 0.75rem 0.875rem;
+    margin-bottom: 0.45rem;
+    line-height: 1.3;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+.activity-week-nav-item .badge {
+    display: inline-block;
+    max-width: 100%;
+    margin-top: 0.45rem;
     white-space: normal;
 }
 .week-review-nav-item.week-nav-current,
@@ -689,6 +711,7 @@
 .activity-week-rail {
     flex: 0 0 17%;
     max-width: 17%;
+    min-width: 0;
     max-height: 640px;
     overflow-y: auto;
     background: #f8fafc;

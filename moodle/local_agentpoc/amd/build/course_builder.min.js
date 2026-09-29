@@ -2057,6 +2057,30 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         writeRecoverySnapshot('activity-content', activityRef, baseRevision, payload);
     }
 
+    function activityWeekDisplayLabel(section) {
+        var title = section.title || 'Untitled week';
+        return /^week\s+\d+/i.test(title) ? title : ('Week ' + section.position + ' · ' + title);
+    }
+
+    function activityWeekStatusPresentation(intents) {
+        var stale = intents.some(function(intent) { return intent.status === 'stale'; });
+        var ready = intents.length && intents.every(function(intent) { return intent.status === 'generated' || intent.status === 'shell'; });
+        var creating = intents.some(function(intent) { return intent.status === 'creating'; });
+        var label = stale ? 'Stale' : ready ? 'Ready' : creating ? 'In progress' : 'Pending review';
+        var badge = label === 'Ready' ? 'badge-success' : label === 'In progress' ? 'badge-primary' : label === 'Stale' ? 'badge-warning' : 'badge-secondary';
+        return {label: label, badge: badge};
+    }
+
+    function updateActivityWeekNavStatus($rail, sectionRef, intents) {
+        var presentation = activityWeekStatusPresentation(intents);
+        $rail.find('.activity-week-nav-item').each(function(_index, element) {
+            var $week = $(element);
+            if ($week.attr('data-week-ref') !== sectionRef) return;
+            $week.find('.badge').removeClass('badge-success badge-primary badge-warning badge-secondary')
+                .addClass(presentation.badge).text(presentation.label);
+        });
+    }
+
     function renderActivityStructureStage() {
         var renderVersion = ++state.activityRenderVersion;
         var $container = $('#activity-structure-container');
@@ -2079,24 +2103,21 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         var selectedActivityWeek = sections.find(function(section) { return section.ref === state.selectedActivityWeekRef; });
         $rail.append($('<div class="week-rail-heading small text-uppercase text-muted font-weight-bold px-2 py-2"></div>').text('Course weeks'));
         if (selectedActivityWeek) {
-            var selectedActivityWeekLabel = /^week\s+\d+/i.test(selectedActivityWeek.title || '') ? selectedActivityWeek.title : ('Week ' + selectedActivityWeek.position + ' · ' + (selectedActivityWeek.title || 'Untitled week'));
+            var selectedActivityWeekLabel = activityWeekDisplayLabel(selectedActivityWeek);
             $workspace.append($('<div class="activity-selected-week-context alert alert-primary py-2 px-3 mb-3"></div>')
                 .append($('<div class="small text-uppercase font-weight-bold"></div>').text('Currently configuring'))
                 .append($('<div class="font-weight-bold"></div>').text(selectedActivityWeekLabel)));
         }
         sections.forEach(function(section) {
             var intents = state.activityIntents[section.ref] || [];
-            var stale = intents.some(function(intent) { return intent.status === 'stale'; });
-            var ready = intents.length && intents.every(function(intent) { return intent.status === 'generated' || intent.status === 'shell'; });
-            var creating = intents.some(function(intent) { return intent.status === 'creating'; });
-            var status = stale ? 'Stale' : ready ? 'Ready' : creating ? 'In progress' : 'Pending review';
-            var statusBadge = status === 'Ready' ? 'badge-success' : status === 'In progress' ? 'badge-primary' : status === 'Stale' ? 'badge-warning' : 'badge-secondary';
-            var label = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled week'));
+            var statusPresentation = activityWeekStatusPresentation(intents);
+            var label = activityWeekDisplayLabel(section);
             var $week = $('<button type="button" class="list-group-item list-group-item-action text-left activity-week-nav-item"></button>')
                 .attr('data-week-ref', section.ref).attr('aria-current', section.ref === state.selectedActivityWeekRef ? 'true' : 'false')
+                .attr('title', label)
                 .toggleClass('active week-nav-current', section.ref === state.selectedActivityWeekRef)
-                .append($('<span class="d-block font-weight-bold"></span>').text(label))
-                .append($('<span class="badge mt-1"></span>').addClass(statusBadge).text(status));
+                .append($('<span class="activity-week-nav-title font-weight-bold"></span>').text(label))
+                .append($('<span class="badge mt-1"></span>').addClass(statusPresentation.badge).text(statusPresentation.label));
             $week.on('click', function() {
                 guardedNavigate(function() {
                     state.selectedActivityWeekRef = section.ref;
@@ -2121,14 +2142,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             callBff('get_activity_intents', {run_id: state.runId, section_ref: backgroundSection.ref}).then(function(result) {
                 if (renderVersion !== state.activityRenderVersion) return;
                 state.activityIntents[backgroundSection.ref] = result.intents || [];
-                var intents = state.activityIntents[backgroundSection.ref];
-                var stale = intents.some(function(item) { return item.status === 'stale'; });
-                var ready = intents.length && intents.every(function(item) { return item.status === 'generated' || item.status === 'shell'; });
-                var creating = intents.some(function(item) { return item.status === 'creating'; });
-                var status = stale ? 'Stale' : ready ? 'Ready' : creating ? 'In progress' : 'Pending review';
-                var $badge = $rail.find('[data-week-ref="' + backgroundSection.ref + '"] .badge');
-                $badge.removeClass('badge-success badge-primary badge-warning badge-secondary')
-                    .addClass(status === 'Ready' ? 'badge-success' : status === 'In progress' ? 'badge-primary' : status === 'Stale' ? 'badge-warning' : 'badge-secondary').text(status);
+                updateActivityWeekNavStatus($rail, backgroundSection.ref, state.activityIntents[backgroundSection.ref]);
             }).catch(function(err) {
                 if (renderVersion === state.activityRenderVersion) showError('Failed to load Activity state for ' + (backgroundSection.title || backgroundSection.ref) + ': ' + err.message, err.details);
             }).finally(function() {
@@ -3173,6 +3187,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             var activityRead = callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref}).then(function(result) {
                 if (renderVersion !== state.activityRenderVersion) return;
                 state.activityIntents[section.ref] = result.intents || [];
+                updateActivityWeekNavStatus($rail, section.ref, state.activityIntents[section.ref]);
                 syncOptionInputs();
                 renderPanels();
             }).catch(function(err) {
