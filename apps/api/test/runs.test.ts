@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   closeDatabase,
   createDbClient,
@@ -246,6 +248,37 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
     const run = await runRepo.getRun(result.run_id);
     await Promise.all([1, 2].map(() => runRepo.initializeCoreCourseDesignContext(result.run_id, run!.normalizedSyllabus!, persisted!)));
     expect(await runRepo.getCoreCourseDesignContext(result.run_id)).toEqual(persisted);
+  });
+
+  it("persists the production Tourism DOCX Core Context with source Objectives and CLOs", async () => {
+    const filename = "Course_Syllabus_30700-1004_Tourism_and_Hospitality.docx";
+    const docx = readFileSync(resolve(process.cwd(), "packages/syllabus/test/fixtures", filename));
+    const upload = createMultipartPayload(
+      filename,
+      docx,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/runs",
+      headers: upload.headers,
+      payload: upload.body,
+    });
+
+    expect(response.statusCode).toBe(201);
+    const data = response.json();
+    expect(data.syllabus.objectives_count).toBe(9);
+    expect(data.core_course_design_context.learning_objectives).toHaveLength(4);
+    expect(data.core_course_design_context.source_learning_outcomes).toHaveLength(5);
+    expect(data.core_course_design_context.course.learning_hours[0]?.text).toBe("2-2-3");
+    expect(data.core_course_design_context.assessment_requirements).toHaveLength(6);
+    expect(data.core_course_design_context.missing_information.some(
+      (item: { code: string }) => item.code === "SOURCE_OUTCOMES_MISSING",
+    )).toBe(false);
+
+    const persisted = await runRepo.getCoreCourseDesignContext(data.run_id);
+    expect(persisted).toEqual(data.core_course_design_context);
   });
 
   it("successfully ingests a valid markdown syllabus and persists SHA-256 (R5, T0407)", async () => {

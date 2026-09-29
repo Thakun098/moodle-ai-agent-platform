@@ -174,7 +174,9 @@ export function normalizeItems(
 
     if (matchesKnownHeader(normalizedHeader, [
       "objectives", "learning objectives", "course objectives", "goals", "learning outcomes",
-      "วัตถุประสงค์การเรียนรู้", "ผลลัพธ์การเรียนรู้", "ผลลัพธ์การเรียนรู้ของรายวิชา"
+      "วัตถุประสงค์การเรียนรู้", "วัตถุประสงค์รายวิชา", "จุดประสงค์การเรียนรู้", "จุดประสงค์รายวิชา",
+      "ผลลัพธ์การเรียนรู้", "ผลลัพธ์การเรียนรู้รายวิชา", "ผลลัพธ์การเรียนรู้ของรายวิชา",
+      "ผลลัพธ์การเรียนรู้ระดับรายวิชา"
     ])) {
       if (currentScheduleItem) {
         currentScheduleItem.endIndex = itemIndex - 1;
@@ -192,7 +194,7 @@ export function normalizeItems(
 
     if (matchesKnownHeader(normalizedHeader, [
       "assessment", "assessments", "grading", "grading policy", "evaluation",
-      "การประเมินผล", "เกณฑ์การประเมิน"
+      "การประเมินผล", "การวัดและประเมินผล", "การวัดผลและประเมินผล", "เกณฑ์การประเมิน"
     ])) {
       if (currentScheduleItem) {
         currentScheduleItem.endIndex = itemIndex - 1;
@@ -210,7 +212,8 @@ export function normalizeItems(
 
     if (matchesKnownHeader(normalizedHeader, [
       "schedule", "course schedule", "topics", "weekly schedule", "course content",
-      "แผนการสอน", "แผนการสอน 15 สัปดาห์", "กำหนดการสอน", "เนื้อหารายสัปดาห์"
+      "แผนการสอน", "แผนการสอน 15 สัปดาห์", "กำหนดการสอน", "เนื้อหารายสัปดาห์",
+      "โครงสร้างเนื้อหารายสัปดาห์"
     ])) {
       if (currentScheduleItem) {
         currentScheduleItem.endIndex = itemIndex - 1;
@@ -223,6 +226,27 @@ export function normalizeItems(
         currentScheduleItem = null;
       }
       currentSection = "schedule";
+      continue;
+    }
+
+    if (matchesKnownHeader(normalizedHeader, [
+      "course competencies", "competencies", "สมรรถนะรายวิชา",
+      "teaching methods", "learning methods", "วิธีการจัดการเรียนรู้",
+      "references", "sources", "แหล่งที่มาของข้อมูล"
+    ])) {
+      if (currentScheduleItem) {
+        currentScheduleItem.endIndex = itemIndex - 1;
+        scheduleOrTopics.push({
+          ...(currentScheduleItem.weekOrUnit ? { week_or_unit: currentScheduleItem.weekOrUnit } : {}),
+          title: currentScheduleItem.title,
+          topics: Object.freeze([...currentScheduleItem.topics]),
+          source: createLocation(currentScheduleItem.startIndex, currentScheduleItem.endIndex),
+        });
+        currentScheduleItem = null;
+      }
+      currentSection = "none";
+      tableScheduleMode = false;
+      pendingTableWeek = null;
       continue;
     }
 

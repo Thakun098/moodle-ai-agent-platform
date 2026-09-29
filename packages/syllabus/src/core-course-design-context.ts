@@ -4,14 +4,14 @@ import type { CoreCourseDesignContext, DesignFact, DesignMissingInformation, Nor
 type Field = "objectives" | "outcomes" | "ambiguous" | "title" | "code" | "description" | "duration" | "learning_hours" | "delivery_mode" | "target_learners" | "education_level" | "year_level" | "prerequisites" | "prior_knowledge" | "assessment" | "grading" | "constraints" | "schedule";
 
 const aliases: Record<Field, string[]> = {
-  objectives: ["objectives", "learning objectives", "course objectives", "goals", "วัตถุประสงค์", "วัตถุประสงค์การเรียนรู้", "วัตถุประสงค์รายวิชา", "จุดมุ่งหมายรายวิชา"],
-  outcomes: ["outcomes", "learning outcomes", "course learning outcomes", "ผลลัพธ์การเรียนรู้", "ผลลัพธ์การเรียนรู้ของรายวิชา"],
+  objectives: ["objectives", "learning objectives", "course objectives", "goals", "วัตถุประสงค์", "วัตถุประสงค์การเรียนรู้", "วัตถุประสงค์รายวิชา", "จุดประสงค์การเรียนรู้", "จุดประสงค์รายวิชา", "จุดมุ่งหมายรายวิชา"],
+  outcomes: ["outcomes", "learning outcomes", "course learning outcomes", "ผลลัพธ์การเรียนรู้", "ผลลัพธ์การเรียนรู้รายวิชา", "ผลลัพธ์การเรียนรู้ของรายวิชา", "ผลลัพธ์การเรียนรู้ระดับรายวิชา"],
   ambiguous: ["objectives and outcomes", "learning objectives and outcomes", "objectives/outcomes"],
   title: ["course title", "course name", "ชื่อรายวิชา", "ชื่อวิชา"],
   code: ["course code", "รหัสวิชา", "รหัสรายวิชา"],
   description: ["description", "course description", "overview", "คำอธิบายรายวิชา"],
   duration: ["duration", "course duration", "ระยะเวลา"],
-  learning_hours: ["learning hours", "contact hours", "hours", "ชั่วโมงเรียน", "จำนวนชั่วโมง"],
+  learning_hours: ["learning hours", "contact hours", "hours", "ชั่วโมงเรียน", "จำนวนชั่วโมง", "เวลาเรียน"],
   delivery_mode: ["delivery mode", "mode of delivery", "รูปแบบการเรียน", "รูปแบบการสอน"],
   target_learners: ["target learners", "target audience", "กลุ่มผู้เรียน", "กลุ่มเป้าหมาย"],
   education_level: ["learner level", "education level", "level", "ระดับผู้เรียน", "ระดับการศึกษา", "ระดับ"],
@@ -21,7 +21,7 @@ const aliases: Record<Field, string[]> = {
   assessment: ["assessment", "assessments", "assessment requirements", "evaluation", "การประเมินผล", "การวัดและประเมินผล", "การวัดผลและประเมินผล", "การวัดผล"],
   grading: ["grading", "grading policy", "เกณฑ์การประเมิน", "เกณฑ์การให้คะแนน", "เกณฑ์การตัดเกรด"],
   constraints: ["constraints", "policies", "course policies", "ข้อจำกัด", "นโยบายรายวิชา"],
-  schedule: ["schedule", "course schedule", "topics", "weekly schedule", "course content", "แผนการสอน", "เนื้อหารายสัปดาห์"],
+  schedule: ["schedule", "course schedule", "topics", "weekly schedule", "course content", "แผนการสอน", "กำหนดการสอน", "เนื้อหารายสัปดาห์", "โครงสร้างเนื้อหารายสัปดาห์"],
 };
 
 const hash = (text: string): string => createHash("sha256").update(text).digest("hex");
@@ -52,7 +52,7 @@ function matchPrefixAlias(text: string): { field: Field; value: string; aliasMat
 
 function classifyMeasurability(text: string): { status: "MEASURABLE" | "WEAK_OR_AMBIGUOUS" | "UNKNOWN"; review_required: boolean } {
   const cleanText = text.replace(/^\s*(?:CLO\s*[-_]?\s*\d+|[-*•]|\d+(?:\.\d+)*[.)])\s*/iu, "").trim();
-  const observableRegex = /^(?:อธิบาย|ออกแบบ|สร้าง|ประยุกต์ใช้|ใช้|พัฒนา|วิเคราะห์|เขียนโปรแกรม|แก้ปัญหา|ประเมิน|ทดสอบ|จัดการ|ระบุ|คำนวณ|เลือก)|^(?:explain|describe|design|create|build|implement|apply|develop|analyze|solve|evaluate|test|manage|write|identify|calculate|select)\b/iu;
+  const observableRegex = /^(?:อธิบาย|ออกแบบ|สร้าง|ประยุกต์ใช้|ใช้|พัฒนา|วิเคราะห์|เขียนโปรแกรม|แก้ปัญหา|ประเมิน|วางแผน|ทดสอบ|จัดการ|ระบุ|คำนวณ|เลือก)|^(?:explain|describe|design|create|build|implement|apply|develop|analyze|solve|evaluate|plan|test|manage|write|identify|calculate|select)\b/iu;
   const weakRegex = /^(?:เข้าใจ|เรียนรู้|รู้จัก|ตระหนัก|ทราบ)|^(?:understand|know|learn|appreciate|be\s+aware|be\s+familiar)\b/iu;
 
   if (observableRegex.test(cleanText)) {
@@ -88,7 +88,27 @@ export function deriveCoreCourseDesignContext(syllabus: NormalizedSyllabus, runI
     };
   }
 
+  function factFromParts(text: string, parts: readonly { raw: string; index: number }[]): DesignFact {
+    return {
+      text,
+      origin: "PROVIDED_BY_SYLLABUS",
+      source_refs: parts.map(({ raw, index }) => ({
+        source: "syllabus" as const,
+        sha256: syllabus.metadata.sha256,
+        start_line: index + 1,
+        end_line: index + 1,
+        text: raw,
+      })),
+    };
+  }
+
+  const singleValueFields = new Set<Field>([
+    "title", "code", "duration", "learning_hours", "delivery_mode",
+    "target_learners", "education_level", "year_level",
+  ]);
+
   let section: Field | undefined;
+  let pendingAssessmentLabel: { text: string; raw: string; index: number } | undefined;
   const lines = syllabus.raw_text.split(/\r?\n/);
 
   lines.forEach((raw, index) => {
@@ -113,6 +133,7 @@ export function deriveCoreCourseDesignContext(syllabus: NormalizedSyllabus, runI
 
     if (header && !inlineField) {
       section = header;
+      pendingAssessmentLabel = undefined;
       return;
     }
 
@@ -122,6 +143,7 @@ export function deriveCoreCourseDesignContext(syllabus: NormalizedSyllabus, runI
       if (!value) return;
       handleInlineField(inlineField, value, raw, index);
       section = undefined;
+      pendingAssessmentLabel = undefined;
       return;
     }
 
@@ -130,48 +152,80 @@ export function deriveCoreCourseDesignContext(syllabus: NormalizedSyllabus, runI
     if (prefixMatch && prefixMatch.value) {
       handleInlineField(prefixMatch.field, prefixMatch.value, raw, index);
       section = undefined;
+      pendingAssessmentLabel = undefined;
       return;
     }
 
-    // Top-level numbered section boundary that was NOT a recognized field:
+    const boundaryKey = clean(line).replace(/[:：]$/, "").replace(/\s*\([^)]*\)$/, "").trim().toLowerCase();
+    if ([
+      "course competencies", "competencies", "สมรรถนะรายวิชา",
+      "teaching methods", "learning methods", "วิธีการจัดการเรียนรู้",
+      "references", "sources", "แหล่งที่มาของข้อมูล",
+    ].includes(boundaryKey)) {
+      section = undefined;
+      pendingAssessmentLabel = undefined;
+      return;
+    }
+
+    // Top-level numbered section boundary that was NOT a recognized field.
     if (/^\s*\d+\.\s+[^\d]/u.test(line)) {
       section = undefined;
+      pendingAssessmentLabel = undefined;
       return;
     }
 
     // Unrecognized Markdown or keyword headings
     if (/^#+\s/u.test(line) || /^(?:Week|Unit|Module|Chapter|สัปดาห์ที่|บทที่)\s*\d/iu.test(line)) {
       section = undefined;
+      pendingAssessmentLabel = undefined;
       return;
     }
 
     // Inside an active multiline section
     if (section && section !== "schedule") {
-      // In outcome section: exclude weekly prose / non-CLO lines
       if (section === "outcomes") {
         if (/^(?:รายวิชานี้|OOP\s+จาก|แผนการจัดการ)/iu.test(line)) {
           section = undefined;
           return;
         }
-        // Accept CLO variants: CLO1, CLO 1, CLO-1, CLO 01, or bullet lines
-        if (/^\s*CLO\s*[-_]?\s*\d+/iu.test(line) || /^[-*•]\s+/u.test(line) || /^\d+\.\d+\s+/u.test(line)) {
-          const value = line.replace(/^(?:[-*•]\s+)/u, "").trim();
-          if (value) fields[section].push(fact(value, raw, index));
-        }
+        const value = line
+          .replace(/^\s*(?:[-*•]|\d+(?:\.\d+)*[.)])\s*/u, "")
+          .trim();
+        if (value) fields.outcomes.push(fact(value, raw, index));
         return;
       }
 
       if (section === "assessment") {
-        // Assessment percentage lines (e.g. "แบบฝึกปฏิบัติ... 20%...")
-        if (/\d+%/u.test(line)) {
-          const value = line.replace(/^(?:[-*•]\s+|\d+[.)]\s+)/u, "").trim();
-          if (value) fields.assessment.push(fact(value, raw, index));
+        const value = line.replace(/^(?:[-*•]\s+|\d+[.)]\s+)/u, "").trim();
+        if (!value || /^(?:รายการ|สัดส่วน)$/u.test(value)) return;
+
+        if (/\d+%/u.test(value)) {
+          if (pendingAssessmentLabel) {
+            if (pendingAssessmentLabel.text !== "รวม") {
+              fields.assessment.push(factFromParts(
+                `${pendingAssessmentLabel.text} ${value}`,
+                [pendingAssessmentLabel, { raw, index }],
+              ));
+            }
+          } else if (!/^100%$/u.test(value)) {
+            fields.assessment.push(fact(value, raw, index));
+          }
+          pendingAssessmentLabel = undefined;
+          return;
         }
+
+        pendingAssessmentLabel = { text: value, raw, index };
         return;
       }
 
-      const value = line.replace(/^(?:[-*•]\s+)/u, "").trim();
-      if (value) fields[section].push(fact(value, raw, index));
+      const value = line.replace(/^(?:[-*•]\s+|\d+(?:\.\d+)*[.)]\s+)/u, "").trim();
+      if (!value) return;
+      if (singleValueFields.has(section)) {
+        handleInlineField(section, value, raw, index);
+        section = undefined;
+        return;
+      }
+      fields[section].push(fact(value, raw, index));
     }
   });
 

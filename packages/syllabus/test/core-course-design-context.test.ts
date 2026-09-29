@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertInitialCoreCourseDesignContext, validateNormalizedSyllabus } from "@moodle-agent-poc/contracts";
 import { deriveCoreCourseDesignContext } from "../src/core-course-design-context.js";
@@ -8,6 +10,48 @@ async function context(text = rich) {
   return { syllabus, context: deriveCoreCourseDesignContext(syllabus, "test-run") };
 }
 describe("Core Course Design Context source extraction", () => {
+  it("extracts objectives, CLOs, learning hours, and assessment labels from the production Tourism DOCX", async () => {
+    const filename = "Course_Syllabus_30700-1004_Tourism_and_Hospitality.docx";
+    const content = readFileSync(resolve(process.cwd(), "packages/syllabus/test/fixtures", filename));
+    const syllabus = await ingestSyllabus({ filename, content });
+    const c = deriveCoreCourseDesignContext(syllabus, "tourism-production-run");
+
+    expect(syllabus.learning_objectives).toHaveLength(9);
+    expect(syllabus.learning_objectives).toContain("อธิบายหลักการและองค์ประกอบของอุตสาหกรรมท่องเที่ยวและการบริการได้");
+    expect(syllabus.learning_objectives).toContain("รู้และเข้าใจเกี่ยวกับอุตสาหกรรมท่องเที่ยวและการบริการ");
+    expect(syllabus.learning_objectives).not.toContain(
+      "ประมวลความรู้เกี่ยวกับหลักการดำเนินงานและองค์ประกอบของอุตสาหกรรมท่องเที่ยวและการบริการตามหลักวิชาการ",
+    );
+
+    expect(c.learning_objectives.map((item) => item.source_text)).toEqual([
+      "รู้และเข้าใจเกี่ยวกับอุตสาหกรรมท่องเที่ยวและการบริการ",
+      "วิเคราะห์สถานการณ์ ผลกระทบ และแนวโน้มของอุตสาหกรรมท่องเที่ยวและการบริการ",
+      "มีเจตคติที่ดีต่อวิชาชีพด้านการท่องเที่ยวในฐานะเจ้าของประเทศ",
+      "ประยุกต์ใช้ความรู้ในการประเมินและวางแผนโอกาสทางการท่องเที่ยว",
+    ]);
+    expect(c.source_learning_outcomes.map((item) => item.source_text)).toEqual([
+      "อธิบายหลักการและองค์ประกอบของอุตสาหกรรมท่องเที่ยวและการบริการได้",
+      "วิเคราะห์สถานการณ์และปัจจัยที่มีอิทธิพลต่ออุตสาหกรรมท่องเที่ยวและการบริการได้",
+      "วิเคราะห์ผลกระทบและแนวโน้มของอุตสาหกรรมท่องเที่ยวและการบริการได้",
+      "ประเมินโอกาสทางการท่องเที่ยวจากสถานการณ์ที่กำหนดได้",
+      "วางแผนโอกาสทางการท่องเที่ยวและประยุกต์ใช้ความรู้ตามสถานการณ์อาชีพได้",
+    ]);
+    expect(c.course.title?.map((item) => item.text)).toEqual(["อุตสาหกรรมท่องเที่ยวและการบริการ"]);
+    expect(c.course.learning_hours?.map((item) => item.text)).toEqual(["2-2-3"]);
+    expect(c.assessment_requirements.map((item) => item.text)).toEqual([
+      "การมีส่วนร่วมและกิจกรรมในชั้นเรียน 10%",
+      "แบบฝึกหัด/ใบงาน 15%",
+      "งานวิเคราะห์กรณีศึกษา 15%",
+      "งานกลุ่ม/โครงงาน 20%",
+      "สอบกลางภาค 20%",
+      "สอบปลายภาค 20%",
+    ]);
+    expect(c.source_learning_outcomes.every((item) => item.measurable_status === "MEASURABLE")).toBe(true);
+    expect(c.learner_context.status).toBe("UNSPECIFIED");
+    expect(c.missing_information.some((item) => item.code === "SOURCE_OUTCOMES_MISSING")).toBe(false);
+    expect(() => assertInitialCoreCourseDesignContext(c)).not.toThrow();
+  });
+
   it("separates Objectives/Outcomes without changing the frozen normalized contract", async () => {
     const { syllabus, context: c } = await context();
     expect(validateNormalizedSyllabus(syllabus).valid).toBe(true);
