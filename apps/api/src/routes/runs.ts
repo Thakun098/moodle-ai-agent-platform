@@ -373,6 +373,40 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
     return { core_course_design_context: context };
   });
 
+  fastify.post<{ Params: { runId: string }; Body: { learner_context_revision?: number } }>("/api/runs/:runId/core-context/learner-context/acknowledgment", async (request, reply) => {
+    const learnerRevision = Number(request.body?.learner_context_revision);
+    if (!Number.isSafeInteger(learnerRevision) || learnerRevision < 1) {
+      return reply.status(400).send({
+        error: {
+          code: "BAD_REQUEST",
+          message: "learner_context_revision must be a positive integer.",
+          details: null,
+          request_id: request.id,
+        },
+      });
+    }
+    const repo = getRunRepo();
+    try {
+      const context = await repo.acknowledgeUnspecifiedLearnerContext(request.params.runId, learnerRevision);
+      return { core_course_design_context: context };
+    } catch (error) {
+      const statusCode = error && typeof error === "object" && "statusCode" in error
+        ? Number((error as { statusCode?: unknown }).statusCode)
+        : 409;
+      const code = error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : "LEARNER_CONTEXT_ACK_FAILED";
+      return reply.status(Number.isSafeInteger(statusCode) ? statusCode : 409).send({
+        error: {
+          code,
+          message: error instanceof Error ? error.message : String(error),
+          details: null,
+          request_id: request.id,
+        },
+      });
+    }
+  });
+
   // P4-D9: Keep GET /api/runs/:runId endpoint
   fastify.get("/api/runs/:runId", async (request, reply) => {
     const { runId } = request.params as { runId: string };

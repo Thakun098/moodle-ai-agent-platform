@@ -243,7 +243,7 @@ function flushPromises() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirmResult?: boolean; weekCount?: number; weekTitles?: string[]; weekStatuses?: string[]; selectedWeekRef?: string; selectedActivityWeekRef?: string; activityIntents?: any[]; deferActivityLoads?: boolean; localStorageSeed?: Record<string, string>; localStorageWriteFails?: boolean; materialSnapshot?: any; materialStatus?: any; failActions?: string[]; deferIntentSaves?: boolean; competencyCandidates?: any[]; deferCandidateDecisions?: boolean; candidateDecisionConflict?: boolean } = {}) {
+function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirmResult?: boolean; weekCount?: number; weekTitles?: string[]; weekStatuses?: string[]; selectedWeekRef?: string; selectedActivityWeekRef?: string; activityIntents?: any[]; deferActivityLoads?: boolean; localStorageSeed?: Record<string, string>; localStorageWriteFails?: boolean; materialSnapshot?: any; materialStatus?: any; failActions?: string[]; deferIntentSaves?: boolean; competencyCandidates?: any[]; deferCandidateDecisions?: boolean; candidateDecisionConflict?: boolean; learnerAcknowledged?: boolean } = {}) {
   const harnessOptions = options;
   const source = readFileSync("moodle/local_agentpoc/amd/src/course_builder.js", "utf8");
   const dom = new FakeDom();
@@ -283,7 +283,7 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
     learning_objectives: [{ objective_id: "objective-1", source_text: "Explain loops", source_refs: [{ start_line: 4, end_line: 4, text: "Explain loops" }] }],
     source_learning_outcomes: [{ source_outcome_id: "source-outcome-1", source_text: "Use loops", source_refs: [{ start_line: 5, end_line: 5, text: "Use loops" }] }],
     approved_learning_outcomes: options.approvedClo ? [{ outcome_id: "outcome-1", text: "Use loops carefully", source_outcome_ids: ["source-outcome-1"], source_refs: [{ start_line: 5, end_line: 5, text: "Use loops" }], approval_origin: "TEACHER_EDITED", approved_by_teacher: true, revision: 1 }] : [],
-    learner_context: { status: "UNSPECIFIED" },
+    learner_context: { revision: 1, status: "UNSPECIFIED", teacher_acknowledged_unspecified: options.learnerAcknowledged ?? true },
   };
   const reviewItems = [
     { item_type: "LO", item_id: "objective-1", status: options.reviewedLo ? "REVIEWED" : "PENDING_REVIEW", source_text: "Explain loops", authoritative_text: "Explain loops", draft_text: null, source_refs: coreContext.learning_objectives[0].source_refs },
@@ -314,6 +314,11 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
     }
     let data: any = {};
     if (action === "get_instructional_design") data = { core_context: coreContext, outcome_proposals: [], competency_candidates: [], coverage: [], structure_revision: structure() };
+    else if (action === "acknowledge_learner_context") {
+      coreContext.revision += 1;
+      coreContext.learner_context.teacher_acknowledged_unspecified = true;
+      data = { core_course_design_context: coreContext };
+    }
     else if (action === "get_competency_candidates") data = { candidates: competencyCandidates };
     else if (action === "decide_competency_candidate") {
       if (harnessOptions.deferCandidateDecisions) await new Promise<void>((resolve) => candidateDecisionResolvers.push(resolve));
@@ -606,6 +611,29 @@ describe("UX/UI Competency Candidate authority interactions", () => {
 
 
 
+describe("Ticket 31 shared Learner Context authority", () => {
+  it("surfaces UNSPECIFIED Learner Context during Course Structure without blocking Structure Continue", async () => {
+    const { dom, calls } = harness({
+      approvedClo: true,
+      reviewedLo: true,
+      weekCount: 1,
+      weekStatuses: ["Ready to configure"],
+      learnerAcknowledged: false,
+    });
+    await flushPromises(); await flushPromises(); await flushPromises();
+
+    expect(dom.query("#instructional-design-review .learner-context-shared-ack").length).toBe(1);
+    expect(dom.query("#instructional-design-review .learner-context-acknowledgment").text()).toContain("Learner Context: UNSPECIFIED");
+    expect(dom.query("#btn-review-continue").prop("disabled")).not.toBe(true);
+
+    dom.query("#btn-review-continue").trigger("click");
+    await flushPromises(); await flushPromises(); await flushPromises(); await flushPromises();
+
+    expect(calls.some((call) => call.action === "seal_structure")).toBe(true);
+    expect(calls.some((call) => call.action === "acknowledge_learner_context")).toBe(false);
+  });
+});
+
 describe("UX/UI Ticket 03 Week review workbench", () => {
   it("shows only the selected Week and its LO/CLO mappings while the rail lists all Weeks", async () => {
     const { dom, calls } = harness({ approvedClo: true, reviewedLo: true, weekCount: 3 });
@@ -704,8 +732,8 @@ function activityFixtures(status = "generated") {
   return [quiz, assignment];
 }
 
-async function activityHarness(status = "generated") {
-  const result = harness({ approvedClo: true, reviewedLo: true, weekCount: 3,
+async function activityHarness(status = "generated", learnerAcknowledged = true) {
+  const result = harness({ approvedClo: true, reviewedLo: true, weekCount: 3, learnerAcknowledged,
     weekStatuses: ["Ready to configure", "Ready to configure", "Ready to configure"], selectedActivityWeekRef: "section-02",
     activityIntents: activityFixtures(status),
     materialSnapshot: { id: "snapshot-1", persisted_id: "snapshot-1", revision: 1, files: [{ filename: "week2.pdf" }] } });
@@ -878,6 +906,29 @@ describe("UX/UI Ticket 05 Recoverable Local Drafts interaction semantics", () =>
 });
 
 
+describe("Ticket 31 shared Learner Context authority", () => {
+  it("shows the shared control during Course Structure review without blocking Structure sealing", async () => {
+    const result = harness({
+      approvedClo: true,
+      reviewedLo: true,
+      learnerAcknowledged: false,
+      weekCount: 1,
+      weekStatuses: ["Ready to configure"],
+    });
+    await flushPromises(); await flushPromises(); await flushPromises();
+
+    expect(result.dom.query(".learner-context-acknowledgment").text()).toContain("Learner Context: UNSPECIFIED");
+    expect(result.calls.filter((call) => call.action === "acknowledge_learner_context")).toHaveLength(0);
+
+    result.dom.query("#btn-review-continue").trigger("click");
+    await flushPromises(); await flushPromises(); await flushPromises(); await flushPromises();
+
+    expect(result.calls.map((call) => call.action)).toContain("seal_structure");
+    expect(result.calls.filter((call) => call.action === "acknowledge_learner_context")).toHaveLength(0);
+    expect(result.dom.query("#activity-structure-container .learner-context-shared-ack").length).toBe(1);
+  });
+});
+
 describe("UX/UI Ticket 04 Activity Week Workbench", () => {
   it("renders a full long Thai Week title in the DOM and selected workspace without a stale overriding accessible name", async () => {
     const longTitle = "สัปดาห์ที่ 2: การออกแบบกิจกรรมการเรียนรู้เชิงประยุกต์ด้วยบริบทที่ยาวมากสำหรับผู้เรียน";
@@ -943,6 +994,31 @@ describe("UX/UI Ticket 04 Activity Week Workbench", () => {
     expect(dom.query(".activity-context-inspector").text()).toContain("Provenance: AI Generated");
     expect(dom.query(".activity-context-inspector").text()).toContain("AI self-review");
     expect(dom.query(".activity-context-inspector").text()).toContain("Questions");
+  });
+
+  it("uses one shared Learner Context acknowledgment across Activity generation", async () => {
+    const { dom, calls } = await activityHarness("selected", false);
+    expect(dom.query(".learner-context-acknowledgment").text()).toContain("Learner Context: UNSPECIFIED");
+    expect(dom.query("#activity-structure-container .learner-context-shared-ack").length).toBe(1);
+
+    const quizTab = [...dom.all].find((item) => item.attrs.get("data-activity-tab") === "quiz")!;
+    new FakeSelection(dom, [quizTab]).trigger("click");
+    new FakeSelection(dom, [dom.byText("Retry Generate", "button")[0]!]).trigger("click");
+    await flushPromises();
+    expect(calls.filter((call) => call.action === "generate_activity")).toHaveLength(0);
+
+    dom.query("#activity-structure-container .learner-context-shared-ack").prop("checked", true).trigger("change");
+    await flushPromises(); await flushPromises(); await flushPromises();
+    expect(calls.filter((call) => call.action === "acknowledge_learner_context")).toHaveLength(1);
+    expect(dom.query("#activity-structure-container .learner-context-acknowledgment").text()).toContain("Acknowledged");
+
+    const refreshedQuizTab = [...dom.all].find((item) => item.attrs.get("data-activity-tab") === "quiz")!;
+    new FakeSelection(dom, [refreshedQuizTab]).trigger("click");
+    new FakeSelection(dom, [dom.byText("Retry Generate", "button")[0]!]).trigger("click");
+    await flushPromises(); await flushPromises(); await flushPromises();
+    expect(calls.filter((call) => call.action === "generate_activity")).toHaveLength(1);
+    expect(calls.some((call) => call.body.has("quiz_learner_context_acknowledged"))).toBe(false);
+    expect(calls.some((call) => call.body.has("assignment_learner_context_acknowledged"))).toBe(false);
   });
 
   it("shows whether the Activity generation prompt is saved and ready", async () => {

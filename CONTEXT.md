@@ -83,6 +83,14 @@ The approved owner of scope and facts for planning artifacts:
 - Deterministic policy owns final enforcement.
 _Avoid_: model-selected scope, implicit activity existence
 
+**Learner Context**:
+Source-backed or Teacher-provided information about the intended learners. When the source does not provide it, its status is explicitly UNSPECIFIED rather than inferred.
+_Avoid_: guessed learner profile, inferred education level
+
+**Learner Context Acknowledgment**:
+The explicit Teacher confirmation attached to the current Learner Context revision when its status is UNSPECIFIED. It is made once for that learner context and inherited by all Activities that use the same revision; unrelated Outcome/CLO changes do not require re-acknowledgment.
+_Avoid_: per-Activity consent, Generate-implies-consent, auto-acknowledgment
+
 **Teacher Review Required**:
 A visible review condition attached whenever Activity content uses `SYLLABUS_SCOPED_AI`. It must survive into the official Preview/Approval experience so the teacher can see that some content was elaborated from model knowledge within syllabus scope. Approval must never silently hide this condition.
 _Avoid_: informational log only, hidden warning

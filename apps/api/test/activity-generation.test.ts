@@ -56,14 +56,14 @@ const noSnapshotRepo = {
 };
 
 describe("Per-Activity generation — ADR-0002", () => {
-  it("rejects an unacknowledged UNSPECIFIED draft before model generation, then allows explicit acknowledgment", async () => {
+  it("derives UNSPECIFIED learner authority from Core Context instead of duplicated Activity consent", async () => {
     const intents = makeIntentRepo();
     Object.assign(intents.row, {
       purpose: "PRACTICE",
       selectedObjectiveIdsJson: ["objective-1"],
       selectedOutcomeIdsJson: [],
       learnerContextRevision: 1,
-      learnerContextAcknowledged: false,
+      learnerContextAcknowledged: true,
       contextRevision: 3,
       intentRevision: 1,
     });
@@ -132,12 +132,73 @@ describe("Per-Activity generation — ADR-0002", () => {
     expect(model.chat).not.toHaveBeenCalled();
     expect(intents.row.status).toBe("selected");
 
-    intents.row.learnerContextAcknowledged = true;
+    coreContext.learner_context.teacher_acknowledged_unspecified = true;
+    intents.row.learnerContextAcknowledged = false;
     const generated = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/activities/assignment-01/generate" });
     expect(generated.statusCode).toBe(200);
     expect(generated.json().error).toBe(null);
     expect(generated.json()).toMatchObject({ status: "generated", grounding_mode: "SYLLABUS_SCOPED_AI", review_required: true });
     expect(model.chat).toHaveBeenCalledTimes(1);
+
+    await app.close();
+  });
+
+  it("fails closed when an Activity Intent references a stale Learner Context revision", async () => {
+    const intents = makeIntentRepo();
+    Object.assign(intents.row, {
+      purpose: "PRACTICE",
+      selectedObjectiveIdsJson: ["objective-1"],
+      selectedOutcomeIdsJson: [],
+      learnerContextRevision: 1,
+      learnerContextAcknowledged: true,
+      contextRevision: 3,
+      intentRevision: 1,
+    });
+    const coreContext = {
+      schema_version: "0.1", policy_version: "instructional-design.v0.1", revision: 4, run_id: "run-1",
+      source_syllabus: { normalized_syllabus_version: "0.1", filename: "syllabus.md", sha256: "a".repeat(64), text_sha256: "b".repeat(64) }, course: {},
+      learner_context: { revision: 2, status: "UNSPECIFIED", target_learners: [], education_level: [], year_level: [], prerequisites: [], prior_knowledge: [], teacher_acknowledged_unspecified: true },
+      learning_objectives: [{ objective_id: "objective-1", source_text: "Explain recursion", source_refs: [], status: "SOURCE" }],
+      source_learning_outcomes: [], approved_learning_outcomes: [], schedule_or_topics: [], assessment_requirements: [], grading_policy: [], constraints: [], missing_information: [],
+      provenance: { extractor_version: "syllabus-semantics.v0.2", location_basis: "NORMALIZED_RAW_TEXT_LINES" },
+    };
+    const model = { ping: vi.fn(), listModels: vi.fn(), chat: vi.fn() };
+    const runRepo = {
+      getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning", normalizedSyllabus: syllabus("Recursion") }),
+      getCoreCourseDesignContext: vi.fn().mockResolvedValue(coreContext),
+    };
+    const alignedStructureRepo = {
+      getSealedRevision: vi.fn().mockResolvedValue({
+        id: "structure-1", runId: "run-1", revision: 1, title: "CS", summary: "CS", validationStatus: "valid", validationErrors: null,
+        sealedAt: "2026-09-29T00:00:00Z", sealedByMoodleUserId: 7, teacherConstraintsJson: { activityRules: [], warnings: [] }, createdAt: "2026-09-29T00:00:00Z",
+        contentJson: { course: { title: "CS" }, sections: [{ ref: "section-01", position: 1, title: "Week 1", summary: "Recursion", source_refs: [], aligned_objective_ids: ["objective-1"], aligned_outcome_ids: [], activity_intents: [] }] },
+      }),
+    };
+    const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: alignedStructureRepo as any, activityIntentRepo: intents as any, snapshotRepo: noSnapshotRepo as any, modelClient: model as any, fastifyOptions: { logger: false } });
+
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/activities/assignment-01/generate" });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("ACTIVITY_INTENT_LEARNER_CONTEXT_STALE");
+    expect(model.chat).not.toHaveBeenCalled();
+    expect(intents.row.learnerContextRevision).toBe(1);
+
+    await app.close();
+  });
+
+  it("fails closed when the authoritative Core Course Design Context is unavailable", async () => {
+    const intents = makeIntentRepo();
+    const model = { ping: vi.fn(), listModels: vi.fn(), chat: vi.fn() };
+    const runRepo = {
+      getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning", normalizedSyllabus: syllabus("Recursion") }),
+      getCoreCourseDesignContext: vi.fn().mockResolvedValue(null),
+    };
+    const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: structureRepo() as any, activityIntentRepo: intents as any, snapshotRepo: noSnapshotRepo as any, modelClient: model as any, fastifyOptions: { logger: false } });
+
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/activities/assignment-01/generate" });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("ACTIVITY_GENERATION_CONTEXT_UNAVAILABLE");
+    expect(model.chat).not.toHaveBeenCalled();
+    expect(intents.row.status).toBe("selected");
 
     await app.close();
   });

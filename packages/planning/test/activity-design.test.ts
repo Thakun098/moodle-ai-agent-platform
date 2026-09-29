@@ -15,7 +15,7 @@ afterEach(() => vi.unstubAllGlobals());
 const sourceRef = { source: "syllabus", sha256: "a".repeat(64), start_line: 1, end_line: 1, text: "Week 1" };
 const materialRef = { source: "lecture.md", section: "section-01" };
 
-function context(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS"): CoreCourseDesignContext {
+function context(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS", acknowledged = status === "UNSPECIFIED"): CoreCourseDesignContext {
   return {
     schema_version: "0.1",
     policy_version: "instructional-design.v0.1",
@@ -31,7 +31,7 @@ function context(status: CoreCourseDesignContext["learner_context"]["status"] = 
       year_level: [],
       prerequisites: [],
       prior_knowledge: [],
-      teacher_acknowledged_unspecified: status === "UNSPECIFIED",
+      teacher_acknowledged_unspecified: acknowledged,
     },
     learning_objectives: [{ objective_id: "objective-1", source_text: "Explain BFS", source_refs: [sourceRef], status: "SOURCE" }],
     source_learning_outcomes: [
@@ -63,7 +63,7 @@ const grounding = {
 
 function design(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS", learnerAcknowledged = status === "UNSPECIFIED") {
   return buildActivityDesignContext({
-    coreContext: context(status),
+    coreContext: context(status, learnerAcknowledged),
     structureRevision: 7,
     section: { ref: "section-01", position: 1, title: "Week 1: Search", summary: "Search fundamentals", aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["outcome-1"] },
     intent: {

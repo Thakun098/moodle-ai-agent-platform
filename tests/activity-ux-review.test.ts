@@ -66,12 +66,16 @@ describe("UX/UI review follow-up: Activity workspace", () => {
     expect(template).toContain("I have reviewed every flagged Activity and acknowledge the current Plan revision.");
   });
 
-  it("preflights unspecified learner acknowledgment locally without auto-acknowledging", () => {
+  it("preflights shared unspecified learner acknowledgment locally without auto-acknowledging", () => {
     const generateBlock = source.slice(source.indexOf("function generateSelectedActivity"), source.indexOf("function renderPanel"));
-    expect(generateBlock).toContain("Confirm that learner context is unspecified before generating this Activity.");
-    expect(generateBlock).toContain("state.coreContext.learner_context.status === 'UNSPECIFIED'");
+    expect(source).toContain("function learnerContextNeedsAcknowledgment()");
+    expect(source).toContain("function renderLearnerContextAcknowledgmentControl");
+    expect(generateBlock).toContain("Acknowledge the shared Learner Context: UNSPECIFIED control before generating any Activity.");
+    expect(generateBlock).toContain("learnerContextNeedsAcknowledgment()");
     expect(generateBlock).toContain("$learnerAck.trigger('focus')");
     expect(generateBlock).not.toContain("$learnerAck.prop('checked', true)");
+    expect(source).not.toContain("quiz_learner_context_acknowledged");
+    expect(source).not.toContain("assignment_learner_context_acknowledged");
   });
 
   it("labels the no-material generation path as Syllabus fallback without predicting the server grounding mode", () => {

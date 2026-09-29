@@ -94,7 +94,8 @@ export function validateActivityIntent(
   if (!Number.isSafeInteger(learnerRevision) || learnerRevision < 1 || learnerRevision !== context.learner_context.revision) {
     throw new PlanningError("ACTIVITY_INTENT_LEARNER_CONTEXT_STALE", "Learner Context revision is stale; reload the current Core Context before saving the Activity Intent.", { learner_context_revision: learnerRevision, current_learner_context_revision: context.learner_context.revision });
   }
-  const learnerAcknowledged = input.learner_context_acknowledged === true;
+  const learnerAcknowledged = context.learner_context.status !== "UNSPECIFIED"
+    || context.learner_context.teacher_acknowledged_unspecified === true;
   if (context.learner_context.status === "UNSPECIFIED" && !learnerAcknowledged && !options.allowUnacknowledgedLearnerContext) {
     throw new PlanningError("ACTIVITY_INTENT_LEARNER_ACK_REQUIRED", "Teacher acknowledgment is required before generating with unspecified learner context.");
   }

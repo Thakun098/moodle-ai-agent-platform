@@ -564,4 +564,105 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
     });
     expect(notFoundRes.statusCode).toBe(404);
   });
+
+  it("does not clear approval when Learner Context acknowledgment is stale", async () => {
+    const { body, headers } = createMultipartPayload(
+      "learner-context-stale.txt",
+      "Course Title: Learner Context Stale Guard\nWeek 1: Introduction",
+      "text/plain",
+    );
+    const created = await app.inject({ method: "POST", url: "/api/runs", headers, payload: body });
+    expect(created.statusCode).toBe(201);
+    const runId = created.json().run_id as string;
+    await runRepo.updateStatus(runId, "preview");
+    await runRepo.approvePlan({ runId, planId: "plan-approved-before-stale-ack", revision: 1, approvedByMoodleUserId: "7" });
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/api/runs/${runId}/core-context/learner-context/acknowledgment`,
+      payload: { learner_context_revision: 99 },
+    });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error.code).toBe("LEARNER_CONTEXT_STALE");
+
+    const run = await runRepo.getRun(runId);
+    expect(run).toMatchObject({
+      status: "preview",
+      approvedPlanId: "plan-approved-before-stale-ack",
+      approvedRevision: 1,
+      approvedByMoodleUserId: "7",
+    });
+  });
+
+  it("acknowledges the current UNSPECIFIED Learner Context once and scopes authority to its revision", async () => {
+    const { body, headers } = createMultipartPayload(
+      "learner-context.txt",
+      "Course Title: Learner Context Authority\nWeek 1: Introduction",
+      "text/plain",
+    );
+    const created = await app.inject({ method: "POST", url: "/api/runs", headers, payload: body });
+    expect(created.statusCode).toBe(201);
+    const runId = created.json().run_id as string;
+    const initial = await runRepo.getCoreCourseDesignContext(runId);
+    expect(initial?.learner_context).toMatchObject({
+      revision: 1,
+      status: "UNSPECIFIED",
+      teacher_acknowledged_unspecified: false,
+    });
+
+    const acknowledged = await app.inject({
+      method: "POST",
+      url: `/api/runs/${runId}/core-context/learner-context/acknowledgment`,
+      payload: { learner_context_revision: 1 },
+    });
+    expect(acknowledged.statusCode).toBe(200);
+    expect(acknowledged.json().core_course_design_context).toMatchObject({
+      revision: 2,
+      learner_context: {
+        revision: 1,
+        status: "UNSPECIFIED",
+        teacher_acknowledged_unspecified: true,
+      },
+    });
+
+    const reloaded = await app.inject({ method: "GET", url: `/api/runs/${runId}/core-context` });
+    expect(reloaded.statusCode).toBe(200);
+    expect(reloaded.json().core_course_design_context.learner_context.teacher_acknowledged_unspecified).toBe(true);
+
+    const outcomeOnly = {
+      ...reloaded.json().core_course_design_context,
+      revision: 3,
+      approved_learning_outcomes: [{
+        outcome_id: "outcome-teacher-1",
+        text: "Explain the course introduction",
+        source_outcome_ids: [],
+        source_refs: [],
+        approval_origin: "TEACHER_EDITED",
+        approved_by_teacher: true,
+        revision: 1,
+      }],
+    };
+    await runRepo.saveCoreCourseDesignContextRevision(outcomeOnly);
+    const afterOutcome = await runRepo.getCoreCourseDesignContext(runId);
+    expect(afterOutcome?.learner_context).toMatchObject({
+      revision: 1,
+      teacher_acknowledged_unspecified: true,
+    });
+
+    await runRepo.saveCoreCourseDesignContextRevision({
+      ...afterOutcome!,
+      revision: 4,
+      learner_context: {
+        ...afterOutcome!.learner_context,
+        status: "PROVIDED_BY_TEACHER",
+        target_learners: [{ text: "First-year undergraduate students", origin: "PROVIDED_BY_TEACHER", source_refs: [] }],
+      },
+    });
+    const afterLearnerChange = await runRepo.getCoreCourseDesignContext(runId);
+    expect(afterLearnerChange?.learner_context).toMatchObject({
+      revision: 2,
+      status: "PROVIDED_BY_TEACHER",
+      teacher_acknowledged_unspecified: false,
+    });
+  });
 });

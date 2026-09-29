@@ -146,7 +146,7 @@ describe("Activity Intent API — ADR-0002", () => {
   });
 
 
-it("persists an unacknowledged UNSPECIFIED learner draft and only flips acknowledgment after explicit Teacher update", async () => {
+it("stores learner acknowledgment as derived metadata instead of per-Activity authority", async () => {
   const currentContext: CoreCourseDesignContext = {
     schema_version: "0.1", policy_version: "instructional-design.v0.1", revision: 4, run_id: "run-1",
     source_syllabus: { normalized_syllabus_version: "0.1", filename: "syllabus.md", sha256: "a".repeat(64), text_sha256: "b".repeat(64) }, course: {},
@@ -175,7 +175,7 @@ it("persists an unacknowledged UNSPECIFIED learner draft and only flips acknowle
   };
   const runRepo = {
     getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning" }),
-    getCoreCourseDesignContext: vi.fn().mockResolvedValue(currentContext),
+    getCoreCourseDesignContext: vi.fn().mockImplementation(async () => currentContext),
   };
   const structureRepo = {
     getSealedRevision: vi.fn().mockResolvedValue({
@@ -185,23 +185,45 @@ it("persists an unacknowledged UNSPECIFIED learner draft and only flips acknowle
   };
   const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, activityIntentRepo: repo as any, fastifyOptions: { logger: false } });
 
-  const draft = await app.inject({
+  const unacknowledged = await app.inject({
     method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents",
-    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 2, quiz_learner_context_acknowledged: false },
+    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 2, quiz_learner_context_acknowledged: true },
   });
-  expect(draft.statusCode).toBe(200);
-  expect(draft.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({
+  expect(unacknowledged.statusCode).toBe(200);
+  expect(unacknowledged.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({
     learner_context_revision: 2,
     learner_context_acknowledged: false,
   });
 
-  const acknowledged = await app.inject({
+  currentContext.learner_context.teacher_acknowledged_unspecified = true;
+  const inherited = await app.inject({
     method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents",
-    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 2, quiz_learner_context_acknowledged: true },
+    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 2, quiz_learner_context_acknowledged: false },
   });
-  expect(acknowledged.statusCode).toBe(200);
-  expect(acknowledged.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({
+  expect(inherited.statusCode).toBe(200);
+  expect(inherited.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({
+    learner_context_revision: 2,
     learner_context_acknowledged: true,
+  });
+
+  currentContext.revision = 5;
+  currentContext.learner_context.revision = 3;
+  currentContext.learner_context.teacher_acknowledged_unspecified = false;
+  const staleSave = await app.inject({
+    method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents",
+    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 2 },
+  });
+  expect(staleSave.statusCode).toBe(422);
+  expect(staleSave.json().error.code).toBe("ACTIVITY_INTENT_LEARNER_CONTEXT_STALE");
+
+  const rebound = await app.inject({
+    method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents",
+    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 3 },
+  });
+  expect(rebound.statusCode).toBe(200);
+  expect(rebound.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({
+    learner_context_revision: 3,
+    learner_context_acknowledged: false,
   });
 
   await app.close();

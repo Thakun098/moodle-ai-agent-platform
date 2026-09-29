@@ -277,6 +277,53 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         $('#core-course-design-context').html(coreContextView.render(context)).toggleClass('d-none', !context);
     }
 
+    function learnerContextNeedsAcknowledgment() {
+        return Boolean(
+            state.coreContext &&
+            state.coreContext.learner_context &&
+            state.coreContext.learner_context.status === 'UNSPECIFIED' &&
+            state.coreContext.learner_context.teacher_acknowledged_unspecified !== true
+        );
+    }
+
+    function renderLearnerContextAcknowledgmentControl(onAcknowledged) {
+        var learner = state.coreContext && state.coreContext.learner_context;
+        if (!learner || learner.status !== 'UNSPECIFIED') return null;
+        var $panel = $('<div class="alert mb-3 learner-context-acknowledgment"></div>')
+            .addClass(learner.teacher_acknowledged_unspecified === true ? 'alert-success' : 'alert-warning');
+        $panel.append($('<div class="font-weight-bold"></div>').text('Learner Context: UNSPECIFIED'));
+        $panel.append($('<div class="small mb-2"></div>').text(
+            learner.teacher_acknowledged_unspecified === true
+                ? 'Teacher acknowledgment applies to Learner Context revision ' + learner.revision + ' and is shared by all Activities.'
+                : 'Learner details are not specified. Acknowledge this once for Learner Context revision ' + learner.revision + ' before generating Activities.'
+        ));
+        if (learner.teacher_acknowledged_unspecified === true) {
+            $panel.append($('<span class="badge badge-success"></span>').text('Acknowledged'));
+            return $panel;
+        }
+        var $ack = $('<input type="checkbox" class="mr-2 learner-context-shared-ack">');
+        var $label = $('<label class="mb-0 small font-weight-bold"></label>').append($ack).append(' I acknowledge learner context is unspecified');
+        $ack.on('change', function() {
+            if (!$ack.is(':checked')) return;
+            $ack.prop('disabled', true);
+            callBff('acknowledge_learner_context', {
+                run_id: state.runId,
+                learner_context_revision: learner.revision
+            }).then(function(result) {
+                var context = result && result.core_course_design_context;
+                if (!context) throw new Error('Acknowledgment response did not include Core Course Design Context.');
+                showCoreContext(context);
+                state.coreContextRevision = context.revision;
+                if (typeof onAcknowledged === 'function') onAcknowledged();
+            }).catch(function(err) {
+                $ack.prop('checked', false).prop('disabled', false);
+                showError('Failed to acknowledge Learner Context: ' + err.message, err.details);
+            });
+        });
+        $panel.append($label);
+        return $panel;
+    }
+
     function showError(message, details) {
         $('#builder-error-message').text(message || 'An unexpected error occurred.');
         if (details) {
@@ -1377,6 +1424,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         var $heading = $('<div class="font-weight-bold mb-2"></div>').text('Instructional Designer review · DESIGN_STRUCTURE');
         $root.append($heading);
         $root.append($('<div class="small text-muted mb-3"></div>').text('Sections are aligned to authorized Objective/Outcome IDs. Activity creation remains a separate Teacher-authorized step.'));
+        var $learnerContextControl = renderLearnerContextAcknowledgmentControl(function() {
+            renderAlignmentReview(state.currentStructure);
+        });
+        if ($learnerContextControl) $root.append($learnerContextControl);
         var sections = structure.content && Array.isArray(structure.content.sections) ? structure.content.sections : [];
         sections.filter(function(section) { return !state.selectedWeekRef || section.ref === state.selectedWeekRef; }).forEach(function(section) {
             var $card = $('<div class="border rounded p-2 mb-2"></div>');
@@ -2117,6 +2168,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         if (!state.selectedActivityWeekRef || !sections.some(function(section) { return section.ref === state.selectedActivityWeekRef; })) {
             state.selectedActivityWeekRef = state.selectedWeekRef && sections.some(function(section) { return section.ref === state.selectedWeekRef; }) ? state.selectedWeekRef : sections[0].ref;
         }
+        var $learnerContextFallback = renderLearnerContextAcknowledgmentControl(function() {
+            renderActivityStructureStage();
+        });
+        if ($learnerContextFallback) $container.append($learnerContextFallback);
         var $layout = $('<div class="row activity-review-workbench"></div>');
         var $rail = $('<nav class="col-lg-3 mb-3 activity-week-rail" aria-label="Activity Week navigator"></nav>');
         var $workspace = $('<section class="col-lg-6 mb-3 activity-week-workspace" aria-live="polite"></section>');
@@ -2283,8 +2338,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             $assignmentObjectives.attr('id', 'activity-assignment-objectives-' + section.ref);
             $quizOutcomes.attr('id', 'activity-quiz-outcomes-' + section.ref);
             $assignmentOutcomes.attr('id', 'activity-assignment-outcomes-' + section.ref);
-            var $quizAck = $('<input type="checkbox" class="mr-1">');
-            var $assignmentAck = $('<input type="checkbox" class="mr-1">');
             var $quizOverrideAck = $('<input type="checkbox" class="mr-1">');
             var $assignmentOverrideAck = $('<input type="checkbox" class="mr-1">');
             var $quizMissingAlignmentAck = $('<input type="checkbox" class="mr-1">');
@@ -2325,14 +2378,12 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 var $purpose = isQuiz ? $quizPurpose : $assignmentPurpose;
                 var $objectives = isQuiz ? $quizObjectives : $assignmentObjectives;
                 var $outcomes = isQuiz ? $quizOutcomes : $assignmentOutcomes;
-                var $ack = isQuiz ? $quizAck : $assignmentAck;
                 var $overrideAck = isQuiz ? $quizOverrideAck : $assignmentOverrideAck;
                 var $overrideReason = isQuiz ? $quizOverrideReason : $assignmentOverrideReason;
                 var $missingAlignmentAck = isQuiz ? $quizMissingAlignmentAck : $assignmentMissingAlignmentAck;
                 if (intent) {
                     $purpose.val(intent.purpose || (isQuiz ? 'PRACTICE' : 'FORMATIVE'));
                     $objectives.val(intent.selected_objective_ids || []);
-                    $ack.prop('checked', intent.learner_context_acknowledged === true);
                     var missingAlignmentOverride = intent.alignment_override && intent.alignment_override.kind === 'MISSING_ALIGNMENT';
                     $overrideAck.prop('checked', Boolean(intent.alignment_override && intent.alignment_override.acknowledged && !missingAlignmentOverride));
                     $overrideReason.val(!missingAlignmentOverride && intent.alignment_override && intent.alignment_override.reason || '');
@@ -2359,9 +2410,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $alignment.append($missingAlignmentWarning);
                 $alignment.append($('<label class="small d-block mt-2 mb-0"></label>').append($overrideAck).append(' Allow out-of-Section Outcome / CLO (Teacher override)'));
                 $alignment.append($overrideReason);
-                if (state.coreContext && state.coreContext.learner_context && state.coreContext.learner_context.status === 'UNSPECIFIED') {
-                    $alignment.append($('<label class="small d-block mt-2 mb-0"></label>').append($ack).append(' I acknowledge learner context is unspecified'));
-                }
                 var terminal = intent && ['creating', 'retry_exhausted'].indexOf(intent.status) !== -1;
                 $purpose.prop('disabled', terminal);
                 $objectives.prop('disabled', terminal);
@@ -2386,7 +2434,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $overrideReason.off('input.scopegate change.scopegate').on('input.scopegate change.scopegate', function() {
                     setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
                 });
-                [$purpose, $objectives, $outcomes, $ack].forEach(function($control) {
+                [$purpose, $objectives, $outcomes].forEach(function($control) {
                     $control.off('change.intent20').on('change.intent20', function() {
                         updateMissingAlignmentWarning();
                         saveSelection();
@@ -2396,7 +2444,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     updateMissingAlignmentWarning();
                     saveSelection();
                 });
-                $ack.prop('disabled', terminal);
                 updateMissingAlignmentWarning();
                 $panel.append($alignment);
             }
@@ -2486,7 +2533,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 if (quizIntent) {
                     $quizPurpose.val(quizIntent.purpose || 'PRACTICE');
                     $quizObjectives.val(quizIntent.selected_objective_ids || []);
-                    $quizAck.prop('checked', quizIntent.learner_context_acknowledged === true);
                     var quizMissingAlignment = quizIntent.alignment_override && quizIntent.alignment_override.kind === 'MISSING_ALIGNMENT';
                     $quizOverrideAck.prop('checked', Boolean(quizIntent.alignment_override && quizIntent.alignment_override.acknowledged && !quizMissingAlignment));
                     $quizOverrideReason.val(!quizMissingAlignment && quizIntent.alignment_override && quizIntent.alignment_override.reason || '');
@@ -2497,7 +2543,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 if (assignmentIntent) {
                     $assignmentPurpose.val(assignmentIntent.purpose || 'FORMATIVE');
                     $assignmentObjectives.val(assignmentIntent.selected_objective_ids || []);
-                    $assignmentAck.prop('checked', assignmentIntent.learner_context_acknowledged === true);
                     var assignmentMissingAlignment = assignmentIntent.alignment_override && assignmentIntent.alignment_override.kind === 'MISSING_ALIGNMENT';
                     $assignmentOverrideAck.prop('checked', Boolean(assignmentIntent.alignment_override && assignmentIntent.alignment_override.acknowledged && !assignmentMissingAlignment));
                     $assignmentOverrideReason.val(!assignmentMissingAlignment && assignmentIntent.alignment_override && assignmentIntent.alignment_override.reason || '');
@@ -2844,8 +2889,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     assignment_selected_objective_ids: $assignmentObjectives.val() || [],
                     quiz_selected_outcome_ids: quizSelectedOutcomes,
                     assignment_selected_outcome_ids: assignmentSelectedOutcomes,
-                    quiz_learner_context_acknowledged: $quizAck.is(':checked'),
-                    assignment_learner_context_acknowledged: $assignmentAck.is(':checked')
+                    quiz_learner_context_revision: state.coreContext && state.coreContext.learner_context ? state.coreContext.learner_context.revision : undefined,
+                    assignment_learner_context_revision: state.coreContext && state.coreContext.learner_context ? state.coreContext.learner_context.revision : undefined
                 };
                 payload.quiz_alignment_override = quizOverride || {};
                 payload.assignment_alignment_override = assignmentOverride || {};
@@ -2883,10 +2928,9 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             }
 
             function generateSelectedActivity(type, instruction, $button) {
-                var $learnerAck = type === 'quiz' ? $quizAck : $assignmentAck;
-                var learnerContextUnspecified = Boolean(state.coreContext && state.coreContext.learner_context && state.coreContext.learner_context.status === 'UNSPECIFIED');
-                if (learnerContextUnspecified && !$learnerAck.is(':checked')) {
-                    showError('Confirm that learner context is unspecified before generating this Activity. The acknowledgment will be stored with the Activity Intent.');
+                if (learnerContextNeedsAcknowledgment()) {
+                    showError('Acknowledge the shared Learner Context: UNSPECIFIED control before generating any Activity.');
+                    var $learnerAck = $('#activity-structure-container .learner-context-shared-ack').first();
                     if ($learnerAck[0] && typeof $learnerAck[0].scrollIntoView === 'function') $learnerAck[0].scrollIntoView({block: 'center'});
                     $learnerAck.trigger('focus');
                     return Promise.resolve();

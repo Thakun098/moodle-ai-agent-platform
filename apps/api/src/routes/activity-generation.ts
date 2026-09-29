@@ -181,12 +181,42 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
       reply.status(404).send({ error: { code: "ACTIVITY_INTENT_NOT_FOUND", message: `Activity Intent ${activityRef} not found.`, details: null, request_id: request.id } });
       return;
     }
-    await beginInstructionalDesignMutation(getRunRepo(), runId);
-    const coreContext = typeof (getRunRepo() as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
-      ? await (getRunRepo() as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<any> }).getCoreCourseDesignContext(runId)
+    const runRepository = getRunRepo();
+    await beginInstructionalDesignMutation(runRepository, runId);
+    const hasCoreContextReader = typeof (runRepository as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function";
+    const coreContext = hasCoreContextReader
+      ? await (runRepository as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<any> }).getCoreCourseDesignContext(runId)
       : null;
-    if (coreContext && typeof (repo as { updateContextRevision?: unknown }).updateContextRevision === "function") {
-      selected = await repo.updateContextRevision(selected.id, coreContext.revision, coreContext.learner_context.revision) ?? selected;
+    if (hasCoreContextReader && !coreContext) {
+      reply.status(409).send({
+        error: {
+          code: "ACTIVITY_GENERATION_CONTEXT_UNAVAILABLE",
+          message: "Current Core Course Design Context is unavailable; Activity generation cannot verify Learner Context authority.",
+          details: null,
+          request_id: request.id,
+        },
+      });
+      return;
+    }
+    if (coreContext) {
+      if (selected.learnerContextRevision !== null && selected.learnerContextRevision !== undefined
+        && selected.learnerContextRevision !== coreContext.learner_context.revision) {
+        reply.status(409).send({
+          error: {
+            code: "ACTIVITY_INTENT_LEARNER_CONTEXT_STALE",
+            message: "Learner Context revision is stale; reload the current Activity Intent before generating.",
+            details: {
+              learner_context_revision: selected.learnerContextRevision,
+              current_learner_context_revision: coreContext.learner_context.revision,
+            },
+            request_id: request.id,
+          },
+        });
+        return;
+      }
+      if (typeof (repo as { updateContextRevision?: unknown }).updateContextRevision === "function") {
+        selected = await repo.updateContextRevision(selected.id, coreContext.revision, coreContext.learner_context.revision) ?? selected;
+      }
     }
     let generationInstruction: string | undefined;
     try {
@@ -236,7 +266,8 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
             selected_objective_ids: selected.selectedObjectiveIdsJson,
             selected_outcome_ids: selected.selectedOutcomeIdsJson,
             learner_context_revision: selected.learnerContextRevision ?? coreContext.learner_context.revision,
-            learner_context_acknowledged: selected.learnerContextAcknowledged,
+            learner_context_acknowledged: coreContext.learner_context.status !== "UNSPECIFIED"
+              || coreContext.learner_context.teacher_acknowledged_unspecified === true,
             options: selected.optionsJson,
             generation_instruction: selected.generationInstruction,
             ...(selected.alignmentOverrideJson ? { alignment_override: selected.alignmentOverrideJson as { kind?: "OUT_OF_SECTION" | "MISSING_ALIGNMENT"; acknowledged: true; reason: string } } : {}),

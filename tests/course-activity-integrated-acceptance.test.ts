@@ -30,19 +30,23 @@ describe("Issue 29 integrated Course/Activity workbench acceptance contract", ()
     expect(template).toMatch(/\.activity-week-nav-item\s*\{[\s\S]*padding:\s*0\.75rem 0\.875rem[\s\S]*margin-bottom:\s*0\.45rem/);
   });
 
-  it("allows unacknowledged draft persistence only at the save boundary and keeps generation strict", () => {
+  it("keeps learner acknowledgment course-level and generation strict", () => {
     expect(intentValidator).toContain("allowUnacknowledgedLearnerContext?: boolean");
+    expect(intentValidator).toContain("context.learner_context.teacher_acknowledged_unspecified === true");
     expect(intentRoute).toContain("allowUnacknowledgedLearnerContext: true");
     expect(design).not.toContain("allowUnacknowledgedLearnerContext");
+    expect(source).toContain("function renderLearnerContextAcknowledgmentControl");
+    expect(source).toContain("callBff('acknowledge_learner_context'");
+    expect(source).not.toContain("quiz_learner_context_acknowledged");
+    expect(source).not.toContain("assignment_learner_context_acknowledged");
 
     const generate = source.slice(
       source.indexOf("function generateSelectedActivity"),
       source.indexOf("function renderPanel", source.indexOf("function generateSelectedActivity"))
     );
-    expect(generate).toContain("learnerContextUnspecified");
-    expect(generate).toContain("$learnerAck.trigger('focus')");
-    expect(generate.indexOf("learnerContextUnspecified")).toBeLessThan(generate.indexOf("callBff('generate_activity'"));
-    expect(generate).not.toMatch(/learner_context_acknowledged\s*[:=]\s*true/);
+    expect(generate).toContain("learnerContextNeedsAcknowledgment()");
+    expect(generate).toContain("learner-context-shared-ack");
+    expect(generate.indexOf("learnerContextNeedsAcknowledgment()")).toBeLessThan(generate.indexOf("callBff('generate_activity'"));
   });
 
   it("keeps the checked-in AMD build identical to source", () => {
@@ -50,7 +54,7 @@ describe("Issue 29 integrated Course/Activity workbench acceptance contract", ()
   });
 
   it("uses the next unused integrated Moodle plugin version", () => {
-    expect(version).toContain("$plugin->version   = 2026092905;");
-    expect(version).toContain("$plugin->release   = 'v0.1.52';");
+    expect(version).toContain("$plugin->version   = 2026092906;");
+    expect(version).toContain("$plugin->release   = 'v0.1.53';");
   });
 });
