@@ -12,7 +12,7 @@ The syllabus remains the authority for Course Structure. Learning Material remai
 
 ## Decision
 
-1. A normalized syllabus may contain at most 10 schedule/course periods regardless of whether the source labels them Week, Unit, Topic, Module, or another equivalent schedule anchor. More than 10 periods is rejected deterministically. The system must not silently truncate or ignore excess periods.
+1. A normalized syllabus may contain at most 20 schedule/course periods regardless of whether the source labels them Week, Unit, Topic, Module, or another equivalent schedule anchor. More than 20 periods is rejected deterministically. The system must not silently truncate or ignore excess periods.
 2. Initial Course Structure generation does not create Activity Intents from the syllabus or Structure Instruction. Activity existence requires an explicit teacher action in the Activity Creation Step.
 3. Structure Instruction remains optional and may shape Course Structure presentation/emphasis, but it cannot create Quiz/Assignment intents.
 4. After Course Structure preview/seal, the teacher chooses whether to create activities:
@@ -70,6 +70,7 @@ The syllabus remains the authority for Course Structure. Learning Material remai
 20. Selecting Quiz or Assignment is sufficient to create a Teacher-Authorized Activity Intent; all secondary Activity generation controls remain optional. When omitted, deterministic V1 defaults apply: Quiz = 5 multiple-choice questions, 4 choices/question, exactly 1 correct choice, default mark 1/question; Assignment = one assignment brief with grade 100. These values must be policy/configuration-driven rather than model-selected or lifecycle-hard-coded.
 21. If Structure Instruction/Optional Notes contains an Activity request, Structure generation continues but the Activity request is ignored for Activity existence. The teacher receives a Warning that Quiz/Assignment requests must be selected explicitly in the Activity Creation Step. Non-activity parts of the same Structure Instruction continue to shape Course Structure.
 22. A teacher-confirmed Empty Activity Shell remains visibly marked in the official Preview but does not require a second confirmation before Approval. The explicit shell confirmation performed in the insufficient-evidence path is sufficient; the official Preview warning exists for transparency, not duplicate authorization.
+23. In `SYLLABUS_SCOPED_AI`, deterministic detection of AI-expanded concepts, tools, requirements, or technical terms beyond explicit syllabus evidence does not automatically reject an otherwise valid generated Activity. These findings become visible scope-review warnings, force `scope_compliance = WARN`, and remain protected by revision-scoped Teacher Review Required before Approval. This relaxation does not apply to `MATERIAL_GROUNDED` or `SYLLABUS_GROUNDED`, and does not relax Activity type/count, section/intent identity, teacher-selected Objective/Outcome alignment, or contract/schema constraints.
 
 Additional consequences:
 - Approval API/UI needs revision-scoped review acknowledgment semantics without changing the frozen CoursePlan v0.1 schema.

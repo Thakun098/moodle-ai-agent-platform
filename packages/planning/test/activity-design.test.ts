@@ -150,6 +150,68 @@ describe("Activity Design Context", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+it("allows syllabus-scoped AI expansion with review warnings instead of rejecting generation", () => {
+  const base = design();
+  const current = {
+    ...base,
+    grounding: {
+      mode: "SYLLABUS_SCOPED_AI" as const,
+      text: "Graph search and traversal.",
+      source_refs: [{ source: "syllabus.md", section: "Week 1", text: "Graph search and traversal." }],
+      review_required: true,
+      allow_scoped_model_knowledge: true,
+    },
+    warnings: ["SYLLABUS_SCOPED_AI_REVIEW_REQUIRED"],
+  };
+
+  const result = validateActivityDesignOutput({
+    type: "assignment",
+    title: "Graph search comparison",
+    description: "Compare graph search behavior with the Dijkstra algorithm.",
+    instructions: ["Explain when the Dijkstra algorithm is appropriate."],
+    aligned_objective_ids: ["objective-1"],
+    aligned_outcome_ids: ["outcome-1"],
+    quality_review: review(),
+    scope_exceptions: { ...scopeExceptions(), new_concepts: ["Dijkstra algorithm"] },
+  }, current);
+
+  expect(result.qualityReview.warnings).toEqual(expect.arrayContaining([
+    "SYLLABUS_SCOPED_AI_REVIEW_REQUIRED",
+  ]));
+  expect(result.qualityReview.warnings.some((warning) => /Dijkstra|scope/iu.test(warning))).toBe(true);
+});
+
+
+it("flags hidden syllabus-scoped technical expansion for review when the model reports no scope exceptions", () => {
+  const base = design();
+  const current = {
+    ...base,
+    grounding: {
+      mode: "SYLLABUS_SCOPED_AI" as const,
+      text: "Graph search and traversal.",
+      source_refs: [{ source: "syllabus.md", section: "Week 1", text: "Graph search and traversal." }],
+      review_required: true,
+      allow_scoped_model_knowledge: true,
+    },
+    warnings: ["SYLLABUS_SCOPED_AI_REVIEW_REQUIRED"],
+  };
+
+  const result = validateActivityDesignOutput({
+    type: "assignment",
+    title: "Graph search comparison",
+    description: "Compare graph search behavior with the Dijkstra algorithm.",
+    instructions: ["Explain the Dijkstra algorithm in the context of graph search."],
+    aligned_objective_ids: ["objective-1"],
+    aligned_outcome_ids: ["outcome-1"],
+    quality_review: review(),
+    scope_exceptions: scopeExceptions(),
+  }, current);
+
+  expect(result.qualityReview.scope_compliance).toBe("WARN");
+  expect(result.qualityReview.warnings.some((warning) => /Dijkstra/iu.test(warning))).toBe(true);
+});
+
+
 it("rejects hidden unauthorized technical scope even when model reports no scope exceptions", () => {
   const current = design();
   expect(() => validateActivityDesignOutput({

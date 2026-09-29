@@ -31,7 +31,7 @@ _Avoid_: Structure Review, partial plan
 ## Syllabus limits
 
 **Course Period Cap**:
-A valid normalized syllabus may contain at most 10 schedule/course periods, regardless of whether the source labels them Week, Unit, Topic, Module, or another equivalent schedule anchor. If normalization detects more than 10 course periods, ingestion/validation fails deterministically. The system must not silently truncate or ignore excess periods.
+A valid normalized syllabus may contain at most 20 schedule/course periods, regardless of whether the source labels them Week, Unit, Topic, Module, or another equivalent schedule anchor. If normalization detects more than 20 course periods, ingestion/validation fails deterministically. The system must not silently truncate or ignore excess periods.
 _Avoid_: Week-label-only cap, planning-only cap, silent truncation
 
 ## Learning material
@@ -62,7 +62,7 @@ _Avoid_: hallucinated activity content, technical-error recovery, silent fallbac
 The source mode selected deterministically for a teacher-authorized Activity:
 1. `MATERIAL_GROUNDED` — current sealed Learning Material Snapshot exists; it is the preferred factual grounding source.
 2. `SYLLABUS_GROUNDED` — no Learning Material is supplied; sufficiently detailed syllabus evidence for the section/course period is used directly.
-3. `SYLLABUS_SCOPED_AI` — the syllabus provides a meaningful topic/learning scope but not enough factual detail. The model may elaborate using its general knowledge only inside that syllabus-defined scope. The generated Activity must carry a visible Warning and be marked Teacher Review Required before Approval.
+3. `SYLLABUS_SCOPED_AI` — the syllabus provides a meaningful topic/learning scope but not enough factual detail. The model may elaborate using its general knowledge around that syllabus-defined learning scope. Detected content expansion beyond explicit syllabus evidence is a review warning rather than an automatic generation failure in this mode. The generated Activity must carry a visible Warning and be marked Teacher Review Required before Approval. Activity identity/type, teacher-selected Objective/Outcome alignment, schema/shape constraints, and section/intent identity remain hard constraints.
 4. `INSUFFICIENT_EVIDENCE` — the syllabus does not define a meaningful Activity scope. The system must not spend Activity-generation tokens. The teacher may add Material, remove the Activity Intent, or explicitly confirm an Empty Activity Shell.
 _Avoid_: unrestricted model knowledge, silent AI elaboration
 
@@ -72,7 +72,7 @@ The approved owner of scope and facts for planning artifacts:
 - Teacher explicitly owns whether an Activity exists.
 - Current sealed Learning Material Snapshot is preferred factual grounding when supplied.
 - Without Material, detailed syllabus evidence may ground Activity content directly.
-- When the syllabus defines a meaningful topic scope but lacks factual detail, model knowledge may elaborate only within that scope and only with Warning + Teacher Review Required.
+- When the syllabus defines a meaningful topic scope but lacks factual detail, model knowledge may elaborate around that syllabus-defined learning scope with Warning + Teacher Review Required. Deterministically detected content expansion becomes a review warning rather than a generation blocker in `SYLLABUS_SCOPED_AI`; strict grounding modes remain fail-closed.
 - If the syllabus does not define a meaningful scope, the model must not invent one; use the insufficient-evidence path instead.
 - Structure Instruction may shape structure but cannot create activities.
 - Activity-generation instruction may shape a teacher-selected activity but cannot create a new Activity Intent by itself.

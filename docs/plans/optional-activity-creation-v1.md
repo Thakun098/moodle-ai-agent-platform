@@ -12,7 +12,7 @@ Target flow:
 
 ```text
 Upload Syllabus
-  -> Normalize / validate <= 10 course periods
+  -> Normalize / validate <= 20 course periods
   -> Generate Course Structure only
   -> Teacher Preview/Edit
   -> Seal Structure
@@ -83,19 +83,19 @@ Reuse current Material Draft/Snapshot model. One current section Material Snapsh
 Add deterministic constant/config boundary:
 
 ```text
-MAX_SYLLABUS_COURSE_PERIODS = 10
+MAX_SYLLABUS_COURSE_PERIODS = 20
 ```
 
 Enforce after normalization based on `schedule_or_topics.length`, regardless of source labels (Week/Unit/Topic/etc.).
 
-Behavior when count > 10:
+Behavior when count > 20:
 
 - fail ingestion deterministically;
 - use dedicated code such as `COURSE_PERIOD_LIMIT_EXCEEDED`;
 - include observed count and max in error details/message;
 - never truncate silently.
 
-Defense in depth: also add `maxItems: 10` to NormalizedSyllabus schema, while preserving the dedicated ingestion/domain error as the user-facing failure.
+Defense in depth: also add `maxItems: 20` to NormalizedSyllabus schema, while preserving the dedicated ingestion/domain error as the user-facing failure.
 
 Primary files:
 - `packages/contracts/schemas/normalized-syllabus.v0.1.schema.json`
@@ -218,7 +218,8 @@ resolveActivityGrounding(section, syllabus, materialSnapshot?)
 ### SYLLABUS_SCOPED_AI
 - no Material;
 - syllabus provides meaningful topic/learning scope but limited factual detail;
-- model general knowledge may elaborate only within that scope;
+- model general knowledge may elaborate around that syllabus-defined learning scope;
+- deterministic detection of expanded concepts/tools/technical terms beyond explicit syllabus evidence becomes a visible scope-review warning rather than an automatic generation failure in this mode;
 - persist `review_required=true` and grounding mode;
 - Final CoursePlan carries durable warning(s) identifying affected Activity refs.
 
@@ -252,7 +253,7 @@ Current generator requires `MaterialContext` and explicitly forbids syllabus/mod
 Prompt rules by mode:
 - MATERIAL_GROUNDED: Material is factual authority; no outside facts.
 - SYLLABUS_GROUNDED: syllabus evidence is factual authority; no outside facts.
-- SYLLABUS_SCOPED_AI: syllabus defines scope; model may elaborate within scope; output marked review-required.
+- SYLLABUS_SCOPED_AI: syllabus defines the learning scope; model may elaborate around that scope; detected expansion beyond explicit syllabus evidence becomes a visible scope-review warning rather than an automatic generation failure; output is marked review-required.
 - INSUFFICIENT_EVIDENCE: generator is never called.
 
 Keep deterministic shape validation after generation.
@@ -379,7 +380,7 @@ If Skip:
 - proceed to Official Preview.
 
 If Create activities:
-- show up to 10 section/course-period rows;
+- show up to 20 section/course-period rows;
 - each row has Quiz checkbox, Assignment checkbox, one optional Material uploader, optional Activity controls/instruction;
 - no checkbox selected means no generation and no token use;
 - Generate actions/status are per Activity;
@@ -434,9 +435,9 @@ Important: do not fake syllabus grounding by inventing a MaterialSnapshot.
 ## 17. Test plan
 
 ### Syllabus cap
-- 1, 8, 10 course periods -> PASS
-- 11 course periods -> dedicated deterministic failure
-- Units/Topics without `Week` labels still count toward 10
+- 1, 8, 10, 18, 20 course periods -> PASS
+- 21 course periods -> dedicated deterministic failure
+- Units/Topics without `Week` labels still count toward 20
 - no silent truncation
 
 ### Structure planning
@@ -455,6 +456,8 @@ Important: do not fake syllabus grounding by inventing a MaterialSnapshot.
 - Material -> MATERIAL_GROUNDED
 - detailed syllabus -> SYLLABUS_GROUNDED
 - topic-only meaningful syllabus -> SYLLABUS_SCOPED_AI + review required
+- SYLLABUS_SCOPED_AI output with newly expanded technical terms/concepts -> generation PASS, `scope_compliance=WARN`, review acknowledgment required
+- the same expansion under MATERIAL_GROUNDED or SYLLABUS_GROUNDED -> deterministic rejection
 - generic/empty syllabus section -> INSUFFICIENT_EVIDENCE and zero model calls
 
 ### Generation/retry
@@ -536,7 +539,7 @@ Run all five acceptance scenarios and update `status.md` + the current daily SOC
 
 Implementation is acceptable when all are true:
 
-- >10 normalized course periods is deterministically rejected; <=10 works.
+- >20 normalized course periods is deterministically rejected; <=20 works.
 - Course Structure generation creates no Quiz/Assignment automatically.
 - A teacher can skip Activity Creation and create a real Moodle course containing only sections.
 - A teacher can select Quiz/Assignment explicitly per section, with all Activity fields and Material optional.

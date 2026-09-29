@@ -35,7 +35,7 @@
     },
     "schedule_or_topics": {
       "type": "array",
-      "maxItems": 10,
+      "maxItems": 20,
       "items": {
         "type": "object",
         "additionalProperties": false,

@@ -93,6 +93,31 @@ describe("Course Structure deterministic coverage repair", () => {
     expect(() => validateCourseStructureCoverage(syllabus, draft.content.sections)).not.toThrow();
   });
 
+  it("grounds all 18 syllabus periods without a planner-side course-period cap", async () => {
+    const base = tenWeekSyllabus();
+    const syllabus: NormalizedSyllabus = {
+      ...base,
+      schedule_or_topics: Array.from({ length: 18 }, (_, index) => ({
+        week_or_unit: `สัปดาห์ที่ ${index + 1}`,
+        title: index === 7 ? "สอบกลางภาค" : index === 17 ? "สอบปลายภาค" : `หัวข้อสัปดาห์ที่ ${index + 1}`,
+        topics: [index === 7 || index === 17 ? "ประเมินผล" : `กิจกรรม ${index + 1}`],
+        source: { kind: "paragraph" as const, paragraph_index: index + 1 },
+      })),
+    };
+    const weeks = Array.from({ length: 18 }, (_, index) => index + 1);
+    const draft = await new CourseStructurePlanner(modelClientWithSections(weeks))
+      .plan(syllabus, { activityRules: [], warnings: [] }, undefined, undefined, "json");
+
+    expect(draft.content.sections).toHaveLength(18);
+    expect(draft.content.sections[0]?.source_refs).toHaveLength(1);
+    expect(draft.content.sections[17]?.source_refs).toHaveLength(1);
+    expect(() => validateCourseStructureCoverage(syllabus, draft.content.sections)).not.toThrow();
+
+    const schema = buildCourseStructureSchema(syllabus) as any;
+    expect(schema.properties.content.properties.sections.minItems).toBe(18);
+    expect(schema.properties.content.properties.sections.maxItems).toBe(18);
+  });
+
   it("requests and constrains exactly one Structure section per syllabus course period", () => {
     const syllabus = tenWeekSyllabus();
     const prompt = buildCourseStructureUserPrompt(syllabus);

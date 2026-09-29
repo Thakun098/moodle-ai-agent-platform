@@ -284,7 +284,9 @@ export function formatActivityDesignPrompt(context: ActivityDesignContext): stri
       ? "LEARNER_CONTEXT_UNSPECIFIED: learner degree, year, age, and education level are intentionally unspecified. Do not infer any of them; use only the supplied Syllabus, approved Outcomes, and authorized grounding as difficulty signals."
       : "Adapt complexity and scaffolding to the supplied learner context without changing the selected Outcome scope.",
     "Before returning the final Activity, perform one internal self-review. Return only quality_review with PASS/WARN checks for outcome_alignment, learner_level_fit, scope_compliance, purpose_fit, and warnings; do not return a numeric score or reasoning trace.",
-    "If you detect a scope exception, revise it away. If one remains, list it in scope_exceptions so deterministic validation can reject the result.",
+    context.grounding.mode === "SYLLABUS_SCOPED_AI"
+      ? "The syllabus defines the allowed learning scope, but scoped AI elaboration is permitted. If you introduce details not explicit in the syllabus, list them in scope_exceptions and mark scope_compliance WARN so the Teacher can review them."
+      : "If you detect a scope exception, revise it away. If one remains, list it in scope_exceptions so deterministic validation can reject the result.",
     `Authorized Activity Design View:\n${JSON.stringify(projected, null, 2)}`,
   ].join("\n");
 }
@@ -426,7 +428,7 @@ function scopeTermIsAuthorized(term: string, authorizedCorpus: string): boolean 
   return new RegExp(`(^|[^\\p{L}\\p{N}_+#.-])${escaped}(?=$|[^\\p{L}\\p{N}_+#.-])`, "u").test(authorizedCorpus);
 }
 
-function assertGeneratedContentScope(output: Record<string, unknown>, context: ActivityDesignContext): void {
+function findUnauthorizedTechnicalScope(output: Record<string, unknown>, context: ActivityDesignContext): string[] {
   const authorizedCorpus = normalizeScopeText([
     context.grounding.text,
     context.section.title,
@@ -436,19 +438,17 @@ function assertGeneratedContentScope(output: Record<string, unknown>, context: A
     ...context.grounding.source_refs.flatMap((ref) => typeof ref.text === "string" ? [ref.text] : []),
   ].join("\n"));
 
-  const unauthorized = uniqueStrings(
+  return uniqueStrings(
     activityContentSegments(output)
       .flatMap(extractTechnicalScopeTerms)
       .filter((term) => !scopeTermIsAuthorized(term, authorizedCorpus)),
   );
+}
 
-  if (unauthorized.length > 0) {
-    throw new PlanningError(
-      "TEACHER_CONSTRAINT_VIOLATION",
-      `Generated Activity contains technical scope terms outside the authorized Material/Outcome context: ${unauthorized.join(", ")}.`,
-      { unauthorized_scope_terms: unauthorized },
-    );
-  }
+function allowsScopedAiExpansion(context: ActivityDesignContext): boolean {
+  return context.grounding.mode === "SYLLABUS_SCOPED_AI"
+    && context.grounding.allow_scoped_model_knowledge
+    && context.grounding.review_required;
 }
 
 export function validateActivityDesignOutput(parsed: unknown, context: ActivityDesignContext): { qualityReview: ActivityQualityReview } {
@@ -473,9 +473,30 @@ export function validateActivityDesignOutput(parsed: unknown, context: ActivityD
   if (!scopeExceptions) throw new PlanningError("MODEL_RESPONSE_INVALID", "Activity output must include scope_exceptions.");
   const exceptionFields = ["new_concepts", "new_prerequisites", "new_tools_or_frameworks", "new_technical_requirements"];
   const exceptions = exceptionFields.flatMap((field) => scopeExceptionList(scopeExceptions, field).map((value) => `${field}: ${value}`));
-  if (exceptions.length > 0) throw new PlanningError("TEACHER_CONSTRAINT_VIOLATION", "Generated Activity introduces content outside the authorized Activity scope.", { scope_exceptions: exceptions });
-  assertGeneratedContentScope(output, context);
-  const qualityReview = normalizeQualityReview(output.quality_review, context.warnings);
+  const unauthorizedTechnicalScope = findUnauthorizedTechnicalScope(output, context);
+  const scopedAiExpansion = allowsScopedAiExpansion(context);
+  const scopedWarnings: string[] = [];
+
+  if (exceptions.length > 0) {
+    if (!scopedAiExpansion) {
+      throw new PlanningError("TEACHER_CONSTRAINT_VIOLATION", "Generated Activity introduces content outside the authorized Activity scope.", { scope_exceptions: exceptions });
+    }
+    scopedWarnings.push(...exceptions.map((value) => `SYLLABUS_SCOPED_AI_SCOPE_REVIEW: ${value}`));
+  }
+
+  if (unauthorizedTechnicalScope.length > 0) {
+    if (!scopedAiExpansion) {
+      throw new PlanningError(
+        "TEACHER_CONSTRAINT_VIOLATION",
+        `Generated Activity contains technical scope terms outside the authorized Material/Outcome context: ${unauthorizedTechnicalScope.join(", ")}.`,
+        { unauthorized_scope_terms: unauthorizedTechnicalScope },
+      );
+    }
+    scopedWarnings.push(`SYLLABUS_SCOPED_AI_TECHNICAL_SCOPE_REVIEW: ${unauthorizedTechnicalScope.join(", ")}`);
+  }
+
+  const qualityReview = normalizeQualityReview(output.quality_review, [...context.warnings, ...scopedWarnings]);
+  if (scopedWarnings.length > 0) qualityReview.scope_compliance = "WARN";
   if (context.alignment_review_required) qualityReview.outcome_alignment = "WARN";
   return { qualityReview };
 }
