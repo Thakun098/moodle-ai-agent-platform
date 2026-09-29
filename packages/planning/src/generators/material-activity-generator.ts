@@ -315,7 +315,9 @@ function normalizeActivity(parsed: any, intent: ActivityIntent, section: Section
       ? [...new Set([...designContext.selected_outcomes.map((outcome) => outcome.text), ...designContext.selected_objectives.map((objective) => objective.text)])]
       : [];
     const learningObjectives = designContext
-      ? (authorizedLearningObjectives.length > 0 ? authorizedLearningObjectives as [string, ...string[]] : undefined)
+      ? (authorizedLearningObjectives.length > 0
+          ? authorizedLearningObjectives as [string, ...string[]]
+          : designContext.alignment_review_required ? rawLearningObjectives : undefined)
       : rawLearningObjectives ?? (teacherInstruction ? [teacherInstruction] : rawDescription ? [rawDescription] : rawInstructions ? [rawInstructions[0]] : undefined);
     if (!description || !instructions || !learningObjectives) {
       throw new PlanningError("MODEL_RESPONSE_INVALID", `Generated Assignment "${intent.title}" is missing required contract fields.`, { available_fields: Object.keys(assignment) });

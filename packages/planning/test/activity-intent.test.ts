@@ -18,6 +18,7 @@ describe("Ticket 20 Activity Intent validator", () => {
     expect(validateActivityIntent(context(), section, { activity_type: "quiz", purpose: "PRACTICE", selected_objective_ids: ["objective-1"], selected_outcome_ids: ["source-1"], learner_context_revision: 2 }).selected_outcome_ids).toEqual(["outcome-1"]);
     expect(() => validateActivityIntent(context(), section, { activity_type: "quiz", purpose: "FORMATIVE", selected_objective_ids: ["objective-1"], selected_outcome_ids: [], learner_context_revision: 2 })).toThrow(/requires at least one selected Outcome/iu);
     expect(() => validateActivityIntent(context(), section, { activity_type: "quiz", purpose: "PRACTICE", selected_objective_ids: [], selected_outcome_ids: [], learner_context_revision: 2 })).toThrow(/requires at least one selected Objective or Outcome/iu);
+    expect(validateActivityIntent(context(), section, { activity_type: "quiz", purpose: "PRACTICE", selected_objective_ids: [], selected_outcome_ids: [], learner_context_revision: 2 }, { allowMissingAlignment: true })).toMatchObject({ selected_objective_ids: [], selected_outcome_ids: [] });
   });
 
   it("requires explicit out-of-section override and learner acknowledgment", () => {
@@ -25,5 +26,17 @@ describe("Ticket 20 Activity Intent validator", () => {
     const override = validateActivityIntent(context(), section, { activity_type: "assignment", purpose: "FORMATIVE", selected_outcome_ids: ["outcome-2"], learner_context_revision: 2, alignment_override: { acknowledged: true, reason: "Teacher intentionally targets a cross-section Outcome." } });
     expect(override.alignment_override?.acknowledged).toBe(true);
     expect(() => validateActivityIntent(context("UNSPECIFIED"), section, { activity_type: "quiz", purpose: "PRACTICE", selected_objective_ids: ["objective-1"], learner_context_revision: 2 })).toThrow(/acknowledgment/iu);
+  });
+
+  it("allows a Teacher-confirmed missing alignment but never uses it for an out-of-section Outcome", () => {
+    const missing = validateActivityIntent(context(), section, {
+      activity_type: "assignment", purpose: "FORMATIVE", selected_outcome_ids: [], learner_context_revision: 2,
+      alignment_override: { kind: "MISSING_ALIGNMENT", acknowledged: true, reason: "Generate for Teacher review without a selected CLO." },
+    });
+    expect(missing).toMatchObject({ selected_objective_ids: [], selected_outcome_ids: [], alignment_override: { kind: "MISSING_ALIGNMENT", acknowledged: true } });
+    expect(() => validateActivityIntent(context(), section, {
+      activity_type: "assignment", purpose: "FORMATIVE", selected_outcome_ids: ["outcome-2"], learner_context_revision: 2,
+      alignment_override: { kind: "MISSING_ALIGNMENT", acknowledged: true, reason: "This is only a missing-alignment acknowledgment." },
+    })).toThrow(/outside the Section/iu);
   });
 });

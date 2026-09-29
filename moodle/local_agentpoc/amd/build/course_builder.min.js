@@ -1254,7 +1254,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
     function applyPlanRevision(plan, preview) {
         state.currentEnvelope = plan.rawEnvelope;
-        state.requiresAiReview = (plan.reviewRequirements || []).some(function(item) { return item && item.code === 'AI_EXPANDED_CONTENT'; });
+        state.requiresAiReview = (plan.reviewRequirements || []).some(function(item) { return item && item.code; });
         $('#ack-ai-expanded-content').prop('checked', false);
         $('#ai-review-ack-area').toggleClass('d-none', !state.requiresAiReview);
         $('#btn-approve-execute').prop('disabled', state.requiresAiReview);
@@ -1977,7 +1977,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             state.planId = result.plan.planId;
             state.revision = result.plan.revision;
             state.currentEnvelope = result.plan.rawEnvelope;
-            state.requiresAiReview = (result.plan.reviewRequirements || []).some(function(item) { return item && item.code === 'AI_EXPANDED_CONTENT'; });
+            state.requiresAiReview = (result.plan.reviewRequirements || []).some(function(item) { return item && item.code; });
             $('#ack-ai-expanded-content').prop('checked', false);
             $('#ai-review-ack-area').toggleClass('d-none', !state.requiresAiReview);
             $('#btn-approve-execute').prop('disabled', state.requiresAiReview);
@@ -2186,6 +2186,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             var $assignmentAck = $('<input type="checkbox" class="mr-1">');
             var $quizOverrideAck = $('<input type="checkbox" class="mr-1">');
             var $assignmentOverrideAck = $('<input type="checkbox" class="mr-1">');
+            var $quizMissingAlignmentAck = $('<input type="checkbox" class="mr-1">');
+            var $assignmentMissingAlignmentAck = $('<input type="checkbox" class="mr-1">');
             var $quizOverrideReason = $('<input type="text" class="form-control form-control-sm mt-1" placeholder="Reason for targeting an out-of-Section Outcome">');
             var $assignmentOverrideReason = $('<input type="text" class="form-control form-control-sm mt-1" placeholder="Reason for targeting an out-of-Section Outcome">');
             var $quizPrompt = null;
@@ -2225,12 +2227,15 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 var $ack = isQuiz ? $quizAck : $assignmentAck;
                 var $overrideAck = isQuiz ? $quizOverrideAck : $assignmentOverrideAck;
                 var $overrideReason = isQuiz ? $quizOverrideReason : $assignmentOverrideReason;
+                var $missingAlignmentAck = isQuiz ? $quizMissingAlignmentAck : $assignmentMissingAlignmentAck;
                 if (intent) {
                     $purpose.val(intent.purpose || (isQuiz ? 'PRACTICE' : 'FORMATIVE'));
                     $objectives.val(intent.selected_objective_ids || []);
                     $ack.prop('checked', intent.learner_context_acknowledged === true);
-                    $overrideAck.prop('checked', Boolean(intent.alignment_override && intent.alignment_override.acknowledged));
-                    $overrideReason.val(intent.alignment_override && intent.alignment_override.reason || '');
+                    var missingAlignmentOverride = intent.alignment_override && intent.alignment_override.kind === 'MISSING_ALIGNMENT';
+                    $overrideAck.prop('checked', Boolean(intent.alignment_override && intent.alignment_override.acknowledged && !missingAlignmentOverride));
+                    $overrideReason.val(!missingAlignmentOverride && intent.alignment_override && intent.alignment_override.reason || '');
+                    $missingAlignmentAck.prop('checked', Boolean(missingAlignmentOverride && intent.alignment_override.acknowledged));
                     setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
                     $outcomes.val(intent.selected_outcome_ids || []);
                 }
@@ -2246,6 +2251,11 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $alignment.append($('<label class="small font-weight-bold mt-2 mb-1"></label>').text('Target CLO / Outcomes'));
                 $alignment.append($outcomes);
                 $alignment.append($('<div class="small text-muted mt-1"></div>').text('Only CLOs aligned to this Section are selectable by default. PRACTICE needs an LO or CLO; FORMATIVE/SUMMATIVE need a CLO.'));
+                var $missingAlignmentWarning = $('<div class="alert alert-warning py-2 px-2 mt-2 mb-0 activity-alignment-review-warning d-none"></div>');
+                $missingAlignmentWarning.append($('<div class="small font-weight-bold mb-1"></div>').text('No required LO/CLO selected'));
+                $missingAlignmentWarning.append($('<div class="small mb-1"></div>').text('You may still generate, but this Activity will be marked Teacher Review Required and alignment will not be inferred.'));
+                $missingAlignmentWarning.append($('<label class="small d-block mb-0"></label>').append($missingAlignmentAck).append(' Generate without alignment and require Teacher review'));
+                $alignment.append($missingAlignmentWarning);
                 $alignment.append($('<label class="small d-block mt-2 mb-0"></label>').append($overrideAck).append(' Allow out-of-Section Outcome / CLO (Teacher override)'));
                 $alignment.append($overrideReason);
                 if (state.coreContext && state.coreContext.learner_context && state.coreContext.learner_context.status === 'UNSPECIFIED') {
@@ -2257,14 +2267,36 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $outcomes.prop('disabled', terminal);
                 $overrideAck.prop('disabled', terminal);
                 $overrideReason.prop('disabled', terminal);
+                $missingAlignmentAck.prop('disabled', terminal);
+                function alignmentMissing() {
+                    var objectives = $objectives.val() || [];
+                    var outcomes = $outcomes.val() || [];
+                    return $purpose.val() === 'PRACTICE' ? objectives.length === 0 && outcomes.length === 0 : outcomes.length === 0;
+                }
+                function updateMissingAlignmentWarning() {
+                    var missing = alignmentMissing();
+                    $missingAlignmentWarning.toggleClass('d-none', !missing);
+                    if (!missing) $missingAlignmentAck.prop('checked', false);
+                    return missing;
+                }
                 $overrideAck.off('change.scopegate').on('change.scopegate', function() {
                     setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
                 });
                 $overrideReason.off('input.scopegate change.scopegate').on('input.scopegate change.scopegate', function() {
                     setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
                 });
-                [$purpose, $objectives, $outcomes, $ack].forEach(function($control) { $control.off('change.intent20').on('change.intent20', saveSelection); });
+                [$purpose, $objectives, $outcomes, $ack].forEach(function($control) {
+                    $control.off('change.intent20').on('change.intent20', function() {
+                        updateMissingAlignmentWarning();
+                        saveSelection();
+                    });
+                });
+                $missingAlignmentAck.off('change.intent20').on('change.intent20', function() {
+                    updateMissingAlignmentWarning();
+                    saveSelection();
+                });
                 $ack.prop('disabled', terminal);
+                updateMissingAlignmentWarning();
                 $panel.append($alignment);
             }
 
@@ -2354,8 +2386,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     $quizPurpose.val(quizIntent.purpose || 'PRACTICE');
                     $quizObjectives.val(quizIntent.selected_objective_ids || []);
                     $quizAck.prop('checked', quizIntent.learner_context_acknowledged === true);
-                    $quizOverrideAck.prop('checked', Boolean(quizIntent.alignment_override && quizIntent.alignment_override.acknowledged));
-                    $quizOverrideReason.val(quizIntent.alignment_override && quizIntent.alignment_override.reason || '');
+                    var quizMissingAlignment = quizIntent.alignment_override && quizIntent.alignment_override.kind === 'MISSING_ALIGNMENT';
+                    $quizOverrideAck.prop('checked', Boolean(quizIntent.alignment_override && quizIntent.alignment_override.acknowledged && !quizMissingAlignment));
+                    $quizOverrideReason.val(!quizMissingAlignment && quizIntent.alignment_override && quizIntent.alignment_override.reason || '');
+                    $quizMissingAlignmentAck.prop('checked', Boolean(quizMissingAlignment && quizIntent.alignment_override.acknowledged));
                     setOutcomeOverrideAvailability($quizOutcomes, $quizOverrideAck, $quizOverrideReason);
                     $quizOutcomes.val(quizIntent.selected_outcome_ids || []);
                 }
@@ -2363,8 +2397,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     $assignmentPurpose.val(assignmentIntent.purpose || 'FORMATIVE');
                     $assignmentObjectives.val(assignmentIntent.selected_objective_ids || []);
                     $assignmentAck.prop('checked', assignmentIntent.learner_context_acknowledged === true);
-                    $assignmentOverrideAck.prop('checked', Boolean(assignmentIntent.alignment_override && assignmentIntent.alignment_override.acknowledged));
-                    $assignmentOverrideReason.val(assignmentIntent.alignment_override && assignmentIntent.alignment_override.reason || '');
+                    var assignmentMissingAlignment = assignmentIntent.alignment_override && assignmentIntent.alignment_override.kind === 'MISSING_ALIGNMENT';
+                    $assignmentOverrideAck.prop('checked', Boolean(assignmentIntent.alignment_override && assignmentIntent.alignment_override.acknowledged && !assignmentMissingAlignment));
+                    $assignmentOverrideReason.val(!assignmentMissingAlignment && assignmentIntent.alignment_override && assignmentIntent.alignment_override.reason || '');
+                    $assignmentMissingAlignmentAck.prop('checked', Boolean(assignmentMissingAlignment && assignmentIntent.alignment_override.acknowledged));
                     setOutcomeOverrideAvailability($assignmentOutcomes, $assignmentOverrideAck, $assignmentOverrideReason);
                     $assignmentOutcomes.val(assignmentIntent.selected_outcome_ids || []);
                 }
@@ -2469,7 +2505,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $previewTitle.append($('<div class="font-weight-bold"></div>').text(intent.status === 'shell' ? 'Empty Activity Shell Preview' : 'Generated Activity Preview'));
                 $preview.append($previewTitle);
                 if (intent.review_required) {
-                    $preview.append($('<div class="alert alert-warning py-1 px-2 mb-2"></div>').text('AI-expanded source content — Teacher review required before approval.'));
+                    var missingAlignmentReview = intent.alignment_override && intent.alignment_override.kind === 'MISSING_ALIGNMENT';
+                    $preview.append($('<div class="alert alert-warning py-1 px-2 mb-2"></div>').text(missingAlignmentReview ? 'Generated without selected LO/CLO alignment — Teacher review required before approval.' : 'AI-expanded source content — Teacher review required before approval.'));
                 }
                 if (intent.activity.type === 'assignment') {
                     if (intent.activity.description) $preview.append($('<div class="mb-1"></div>').text(intent.activity.description));
@@ -2675,16 +2712,24 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             }
 
             function persistSelection(instructions) {
-                $quiz.prop('disabled', true);
-                $assignment.prop('disabled', true);
-                var quizOverride = $quizOverrideAck.is(':checked') && $quizOverrideReason.val().trim() ? {acknowledged: true, reason: $quizOverrideReason.val().trim()} : null;
-                var assignmentOverride = $assignmentOverrideAck.is(':checked') && $assignmentOverrideReason.val().trim() ? {acknowledged: true, reason: $assignmentOverrideReason.val().trim()} : null;
+                var quizOverride = $quizOverrideAck.is(':checked') && $quizOverrideReason.val().trim() ? {kind: 'OUT_OF_SECTION', acknowledged: true, reason: $quizOverrideReason.val().trim()} : null;
+                var assignmentOverride = $assignmentOverrideAck.is(':checked') && $assignmentOverrideReason.val().trim() ? {kind: 'OUT_OF_SECTION', acknowledged: true, reason: $assignmentOverrideReason.val().trim()} : null;
                 var quizSelectedOutcomes = $quizOutcomes.val() || [];
                 var assignmentSelectedOutcomes = $assignmentOutcomes.val() || [];
+                var quizMissingAlignment = $quizPurpose.val() === 'PRACTICE' ? ($quizObjectives.val() || []).length === 0 && quizSelectedOutcomes.length === 0 : quizSelectedOutcomes.length === 0;
+                var assignmentMissingAlignment = $assignmentPurpose.val() === 'PRACTICE' ? ($assignmentObjectives.val() || []).length === 0 && assignmentSelectedOutcomes.length === 0 : assignmentSelectedOutcomes.length === 0;
                 var quizOutsideSelected = quizSelectedOutcomes.some(function(id) { return !alignedOutcomeLookup[id]; });
                 var assignmentOutsideSelected = assignmentSelectedOutcomes.some(function(id) { return !alignedOutcomeLookup[id]; });
                 if (quizOutsideSelected && !quizOverride) return Promise.reject(new Error('Select Teacher override and enter a reason before targeting an out-of-Section CLO.'));
                 if (assignmentOutsideSelected && !assignmentOverride) return Promise.reject(new Error('Select Teacher override and enter a reason before targeting an out-of-Section CLO.'));
+                if ($quiz.is(':checked') && quizMissingAlignment) {
+                    if ($quizMissingAlignmentAck.is(':checked')) quizOverride = {kind: 'MISSING_ALIGNMENT', acknowledged: true, reason: 'Teacher confirmed generation without selected LO/CLO alignment.'};
+                }
+                if ($assignment.is(':checked') && assignmentMissingAlignment) {
+                    if ($assignmentMissingAlignmentAck.is(':checked')) assignmentOverride = {kind: 'MISSING_ALIGNMENT', acknowledged: true, reason: 'Teacher confirmed generation without selected LO/CLO alignment.'};
+                }
+                $quiz.prop('disabled', true);
+                $assignment.prop('disabled', true);
                 var payload = {
                     run_id: state.runId,
                     section_ref: section.ref,
@@ -2701,8 +2746,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     quiz_learner_context_acknowledged: $quizAck.is(':checked'),
                     assignment_learner_context_acknowledged: $assignmentAck.is(':checked')
                 };
-                if (quizOverride) payload.quiz_alignment_override = quizOverride;
-                if (assignmentOverride) payload.assignment_alignment_override = assignmentOverride;
+                payload.quiz_alignment_override = quizOverride || {};
+                payload.assignment_alignment_override = assignmentOverride || {};
                 if (instructions && Object.prototype.hasOwnProperty.call(instructions, 'quiz')) payload.quiz_generation_instruction = instructions.quiz;
                 if (instructions && Object.prototype.hasOwnProperty.call(instructions, 'assignment')) payload.assignment_generation_instruction = instructions.assignment;
                 return callBff('set_activity_intents', payload).then(function(result) {
@@ -2737,6 +2782,15 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             }
 
             function generateSelectedActivity(type, instruction, $button) {
+                var selectedOutcomes = (type === 'quiz' ? $quizOutcomes : $assignmentOutcomes).val() || [];
+                var selectedObjectives = (type === 'quiz' ? $quizObjectives : $assignmentObjectives).val() || [];
+                var purpose = (type === 'quiz' ? $quizPurpose : $assignmentPurpose).val();
+                var alignmentMissing = purpose === 'PRACTICE' ? selectedObjectives.length === 0 && selectedOutcomes.length === 0 : selectedOutcomes.length === 0;
+                var missingAlignmentAcknowledged = (type === 'quiz' ? $quizMissingAlignmentAck : $assignmentMissingAlignmentAck).is(':checked');
+                if (alignmentMissing && !missingAlignmentAcknowledged) {
+                    showError('Confirm Teacher Review Required before generating ' + (type === 'quiz' ? 'Quiz' : 'Assignment') + ' without a required LO/CLO.');
+                    return Promise.resolve();
+                }
                 $button.prop('disabled', true).html('<i class="fa fa-spinner fa-spin mr-1"></i> Creating...');
                 $('#btn-activity-finalize').prop('disabled', true);
                 var current = getIntent(type);
@@ -3112,7 +3166,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
     function approveAndExecute() {
         clearError();
         if (state.requiresAiReview && !$('#ack-ai-expanded-content').is(':checked')) {
-            showError('Teacher review is required before approval. Review the AI-expanded activities and confirm the acknowledgment.');
+            showError('Teacher review is required before approval. Review every flagged Activity in this Plan revision and confirm the acknowledgment.');
             return;
         }
         $('#btn-approve-execute').prop('disabled', true);

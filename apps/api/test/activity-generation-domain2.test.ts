@@ -141,3 +141,25 @@ it("rejects hidden unauthorized technical scope before Activity content persiste
   expect(intents.failAttempt).toHaveBeenCalledWith("intent-1", false, expect.stringMatching(/Dijkstra|outside the authorized Material\/Outcome context/iu));
   await app.close();
 });
+
+it("marks generation without selected LO/CLO as Teacher Review Required", async () => {
+  const intents = makeIntentRepo();
+  intents.row.selectedObjectiveIdsJson = [];
+  intents.row.selectedOutcomeIdsJson = [];
+  intents.row.alignmentOverrideJson = { kind: "MISSING_ALIGNMENT", acknowledged: true, reason: "Teacher confirmed generation without selected LO/CLO alignment." };
+  const snapshotRepo = makeSnapshotRepo();
+  const model = { ping: vi.fn(), listModels: vi.fn(), chat: vi.fn().mockResolvedValue({ rawText: JSON.stringify({
+    type: "assignment", title: "Teacher review task", description: "Complete a task using the supplied weekly material.", instructions: ["Submit a response."], learning_objectives: ["Demonstrate understanding of the supplied weekly material for Teacher review."], grade: 100,
+    source_refs: [{ source: "lecture.md", section: "section-01" }], aligned_objective_ids: [], aligned_outcome_ids: [],
+    quality_review: { outcome_alignment: "PASS", learner_level_fit: "PASS", scope_compliance: "PASS", purpose_fit: "PASS", warnings: [] },
+    scope_exceptions: { new_concepts: [], new_prerequisites: [], new_tools_or_frameworks: [], new_technical_requirements: [] },
+  }), message: { role: "assistant", content: "" }, toolCalls: [] }) };
+  const runRepo = { getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning", normalizedSyllabus: syllabus }), getCoreCourseDesignContext: vi.fn().mockResolvedValue(coreContext) };
+  const structureRevisionRepo = { getSealedRevision: vi.fn().mockResolvedValue({ revision: 1, contentJson: { course: { title: "Search" }, sections: [{ ref: "section-01", position: 1, title: "Week 1: Search", summary: "BFS", source_refs: [{ source: "lecture.md", section: "section-01" }], aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["outcome-1"], activity_intents: [] }] } }) };
+  const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: structureRevisionRepo as any, activityIntentRepo: intents as any, snapshotRepo: snapshotRepo as any, modelClient: model as any, riskDashboardRepo: { getCourseState: vi.fn(), getSnapshot: vi.fn(), listStudentHistory: vi.fn() }, fastifyOptions: { logger: false } });
+  const response = await app.inject({ method: "POST", url: "/api/runs/run-1/sections/section-01/activities/assignment-01/generate" });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({ review_required: true, quality_review: { outcome_alignment: "WARN", warnings: expect.arrayContaining(["ALIGNMENT_REVIEW_REQUIRED"]) }, generation_metadata: { alignment_review_required: true, selected_objective_ids: [], selected_outcome_ids: [] } });
+  expect(intents.complete).toHaveBeenCalledWith("intent-1", expect.objectContaining({ reviewRequired: true, generationMetadataJson: expect.objectContaining({ alignment_review_required: true }) }), expect.anything());
+  await app.close();
+});

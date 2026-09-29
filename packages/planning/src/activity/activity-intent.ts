@@ -2,6 +2,12 @@ import type { CoreCourseDesignContext } from "@moodle-agent-poc/contracts";
 import { PlanningError } from "../errors/planning-errors.js";
 
 export type ActivityPurpose = "PRACTICE" | "FORMATIVE" | "SUMMATIVE";
+export type ActivityAlignmentOverrideKind = "OUT_OF_SECTION" | "MISSING_ALIGNMENT";
+export interface ActivityAlignmentOverride extends Record<string, unknown> {
+  kind?: ActivityAlignmentOverrideKind;
+  acknowledged: true;
+  reason: string;
+}
 
 export interface ActivityIntentSemanticInput {
   activity_type: "quiz" | "assignment";
@@ -11,7 +17,7 @@ export interface ActivityIntentSemanticInput {
   learner_context_revision?: number;
   learner_context_acknowledged?: boolean;
   generation_instruction?: string;
-  alignment_override?: { acknowledged: true; reason: string };
+  alignment_override?: ActivityAlignmentOverride;
 }
 
 export interface ValidatedActivityIntent extends ActivityIntentSemanticInput {
@@ -20,7 +26,7 @@ export interface ValidatedActivityIntent extends ActivityIntentSemanticInput {
   learner_context_revision: number;
   learner_context_acknowledged: boolean;
   generation_instruction?: string;
-  alignment_override?: { acknowledged: true; reason: string };
+  alignment_override?: ActivityAlignmentOverride;
 }
 
 function strings(values: readonly string[] | undefined, field: string): string[] {
@@ -44,6 +50,7 @@ export function validateActivityIntent(
   context: CoreCourseDesignContext,
   section: { ref: string; aligned_objective_ids?: readonly string[]; aligned_outcome_ids?: readonly string[] },
   input: ActivityIntentSemanticInput,
+  options: { allowMissingAlignment?: boolean } = {},
 ): ValidatedActivityIntent {
   if (!["PRACTICE", "FORMATIVE", "SUMMATIVE"].includes(input.purpose)) {
     throw new PlanningError("ACTIVITY_INTENT_INVALID", "Exactly one Activity Purpose is required: PRACTICE, FORMATIVE, or SUMMATIVE.");
@@ -69,14 +76,17 @@ export function validateActivityIntent(
   }
 
   const override = input.alignment_override;
-  if (outOfSectionOutcomeIds.length > 0 && !(override?.acknowledged === true && typeof override.reason === "string" && override.reason.trim() !== "")) {
+  const overrideReady = override?.acknowledged === true && typeof override.reason === "string" && override.reason.trim() !== "";
+  const outOfSectionOverride = overrideReady && override?.kind !== "MISSING_ALIGNMENT";
+  const missingAlignmentOverride = overrideReady && override?.kind === "MISSING_ALIGNMENT";
+  if (outOfSectionOutcomeIds.length > 0 && !outOfSectionOverride) {
     throw new PlanningError("ACTIVITY_INTENT_ALIGNMENT_OVERRIDE_REQUIRED", "Selecting an Outcome outside the Section requires an explicit Teacher override.", { out_of_section_outcome_ids: [...new Set(outOfSectionOutcomeIds)], section_ref: section.ref });
   }
   const distinctOutcomeIds = [...new Set(normalizedOutcomeIds)].sort();
-  if (input.purpose === "PRACTICE" && objectiveIds.length === 0 && distinctOutcomeIds.length === 0) {
+  if (input.purpose === "PRACTICE" && objectiveIds.length === 0 && distinctOutcomeIds.length === 0 && !missingAlignmentOverride && !options.allowMissingAlignment) {
     throw new PlanningError("ACTIVITY_INTENT_ALIGNMENT_REQUIRED", "PRACTICE requires at least one selected Objective or Outcome.");
   }
-  if ((input.purpose === "FORMATIVE" || input.purpose === "SUMMATIVE") && distinctOutcomeIds.length === 0) {
+  if ((input.purpose === "FORMATIVE" || input.purpose === "SUMMATIVE") && distinctOutcomeIds.length === 0 && !missingAlignmentOverride && !options.allowMissingAlignment) {
     throw new PlanningError("ACTIVITY_INTENT_ALIGNMENT_REQUIRED", `${input.purpose} requires at least one selected Outcome.`);
   }
 
@@ -96,6 +106,6 @@ export function validateActivityIntent(
     learner_context_revision: learnerRevision,
     learner_context_acknowledged: learnerAcknowledged,
     ...(generationInstruction ? { generation_instruction: generationInstruction } : {}),
-    ...(override ? { alignment_override: { acknowledged: true, reason: override.reason.trim() } } : {}),
+    ...(override ? { alignment_override: { ...(override.kind ? { kind: override.kind } : {}), acknowledged: true, reason: override.reason.trim() } } : {}),
   };
 }

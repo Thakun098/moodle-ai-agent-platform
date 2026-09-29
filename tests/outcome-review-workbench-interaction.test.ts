@@ -346,8 +346,12 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
       if (harnessOptions.deferIntentSaves) await new Promise<void>((resolve) => intentSaveResolvers.push(resolve));
       const quiz = activityIntents.find((item) => item.activity_type === "quiz");
       const assignment = activityIntents.find((item) => item.activity_type === "assignment");
+      if (quiz && body.has("quiz_selected_objective_ids")) quiz.selected_objective_ids = JSON.parse(String(body.get("quiz_selected_objective_ids") || "[]"));
+      if (assignment && body.has("assignment_selected_objective_ids")) assignment.selected_objective_ids = JSON.parse(String(body.get("assignment_selected_objective_ids") || "[]"));
       if (quiz && body.has("quiz_selected_outcome_ids")) quiz.selected_outcome_ids = JSON.parse(String(body.get("quiz_selected_outcome_ids") || "[]"));
       if (assignment && body.has("assignment_selected_outcome_ids")) assignment.selected_outcome_ids = JSON.parse(String(body.get("assignment_selected_outcome_ids") || "[]"));
+      if (quiz && body.has("quiz_alignment_override")) { const value = JSON.parse(String(body.get("quiz_alignment_override") || "{}")); quiz.alignment_override = Object.keys(value).length ? value : null; }
+      if (assignment && body.has("assignment_alignment_override")) { const value = JSON.parse(String(body.get("assignment_alignment_override") || "{}")); assignment.alignment_override = Object.keys(value).length ? value : null; }
       if (quiz && body.has("quiz_generation_instruction")) quiz.generation_instruction = String(body.get("quiz_generation_instruction") || "");
       if (assignment && body.has("assignment_generation_instruction")) assignment.generation_instruction = String(body.get("assignment_generation_instruction") || "");
       data = { intents: activityIntents };
@@ -912,6 +916,33 @@ describe("UX/UI Ticket 04 Activity Week Workbench", () => {
     new FakeSelection(dom, [dom.byText("Save Intent", "button")[0]!]).trigger("click");
     await flushPromises(); await flushPromises();
     expect(dom.query(".activity-intent-save-status").text()).toContain("Saved and ready to generate");
+  });
+
+  it("saves an unaligned provisional Intent, blocks Generate until acknowledgment, then persists the review flag before generation", async () => {
+    const { dom, calls } = await activityHarness("selected");
+    const quizTab = [...dom.all].find((item) => item.attrs.get("data-activity-tab") === "quiz")!;
+    new FakeSelection(dom, [quizTab]).trigger("click");
+    dom.query("#activity-quiz-objectives-section-02").val([]);
+    dom.query("#activity-quiz-outcomes-section-02").val([]).trigger("change");
+    await flushPromises(); await flushPromises();
+
+    const provisionalSave = calls.filter((call) => call.action === "set_activity_intents").at(-1)!;
+    expect(JSON.parse(String(provisionalSave.body.get("quiz_alignment_override")))).toEqual({});
+    expect(dom.query(".activity-alignment-review-warning").text()).toContain("No required LO/CLO selected");
+
+    new FakeSelection(dom, [dom.byText("Retry Generate", "button")[0]!]).trigger("click");
+    await flushPromises();
+    expect(calls.filter((call) => call.action === "generate_activity")).toHaveLength(0);
+
+    const reviewAck = dom.query(".activity-alignment-review-warning").find("input");
+    reviewAck.prop("checked", true).trigger("change");
+    await flushPromises(); await flushPromises();
+    const confirmedSave = calls.filter((call) => call.action === "set_activity_intents").at(-1)!;
+    expect(JSON.parse(String(confirmedSave.body.get("quiz_alignment_override")))).toMatchObject({ kind: "MISSING_ALIGNMENT", acknowledged: true });
+
+    new FakeSelection(dom, [dom.byText("Retry Generate", "button")[0]!]).trigger("click");
+    await flushPromises(); await flushPromises(); await flushPromises();
+    expect(calls.filter((call) => call.action === "generate_activity")).toHaveLength(1);
   });
 
   it("navigates Q1/Q2 while rendering one question and never exposes per-question regenerate", async () => {

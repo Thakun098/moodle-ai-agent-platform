@@ -29,4 +29,18 @@ describe("UX/UI review follow-up: Activity workspace", () => {
     expect(source).toMatch(/\$file\.on\('change',[\s\S]*saveSelectedMaterial\(file\)/);
     expect(source).toContain("Learning Material saved, but Activity status refresh failed");
   });
+
+  it("soft-warns for missing LO/CLO and persists an explicit Teacher-review exception before generation", () => {
+    expect(source).toContain("activity-alignment-review-warning");
+    expect(source).toContain("You may still generate, but this Activity will be marked Teacher Review Required");
+    expect(source).toContain("kind: 'MISSING_ALIGNMENT'");
+    expect(source).toContain("Confirm Teacher Review Required before generating '");
+    expect(source).toContain("without a required LO/CLO.");
+  });
+
+  it("uses one approval acknowledgment for every revision-scoped Teacher review requirement", () => {
+    expect(source).toMatch(/reviewRequirements \|\| \[\]\)\.some\(function\(item\) \{ return item && item\.code; \}\)/);
+    expect(template).toContain("generated without selected LO/CLO alignment");
+    expect(template).toContain("I have reviewed every flagged Activity and acknowledge the current Plan revision.");
+  });
 });

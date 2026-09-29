@@ -239,7 +239,7 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
             learner_context_acknowledged: selected.learnerContextAcknowledged,
             options: selected.optionsJson,
             generation_instruction: selected.generationInstruction,
-            ...(selected.alignmentOverrideJson ? { alignment_override: selected.alignmentOverrideJson as { acknowledged: true; reason: string } } : {}),
+            ...(selected.alignmentOverrideJson ? { alignment_override: selected.alignmentOverrideJson as { kind?: "OUT_OF_SECTION" | "MISSING_ALIGNMENT"; acknowledged: true; reason: string } } : {}),
           },
           grounding: context,
         });
@@ -322,7 +322,7 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
       const completed = await repo.complete(started.id, {
         contentJson: result.activity as unknown as Record<string, unknown>,
         groundingMode: context.mode,
-        reviewRequired: context.reviewRequired,
+        reviewRequired: context.reviewRequired || activityDesignContext?.alignment_review_required === true,
         ...(context.materialSnapshotId ? { materialSnapshotId: context.materialSnapshotId } : {}),
         ...(effectiveGenerationInstruction !== undefined ? { generationInstruction: effectiveGenerationInstruction } : {}),
         ...(result.qualityReview ? { qualityReviewJson: result.qualityReview as unknown as Record<string, unknown> } : {}),

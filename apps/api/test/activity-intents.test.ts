@@ -127,6 +127,10 @@ describe("Activity Intent API — ADR-0002", () => {
     expect(intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({ purpose: "PRACTICE", selected_objective_ids: ["objective-1"], selected_outcome_ids: ["outcome-1"], generation_instruction: "Use a short practice check.", intent_revision: 1 });
     expect(intents.find((item: any) => item.activity_type === "assignment")).toMatchObject({ purpose: "FORMATIVE", selected_outcome_ids: ["outcome-1"], generation_instruction: "Require explanation.", intent_revision: 1 });
 
+    const provisional = await app.inject({ method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents", payload: { assignment: true, assignment_purpose: "FORMATIVE", assignment_selected_outcome_ids: [], assignment_learner_context_revision: 2, assignment_learner_context_acknowledged: true, assignment_alignment_override: {} } });
+    expect(provisional.statusCode).toBe(200);
+    expect(provisional.json().intents.find((item: any) => item.activity_type === "assignment")).toMatchObject({ selected_outcome_ids: [], alignment_override: null });
+
     const outOfSection = await app.inject({ method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents", payload: { quiz: true, quiz_purpose: "FORMATIVE", quiz_selected_outcome_ids: ["outcome-2"], quiz_learner_context_revision: 2, quiz_learner_context_acknowledged: true } });
     expect(outOfSection.statusCode).toBe(422);
     expect(outOfSection.json().error.code).toBe("ACTIVITY_INTENT_ALIGNMENT_OVERRIDE_REQUIRED");
@@ -134,5 +138,9 @@ describe("Activity Intent API — ADR-0002", () => {
     const acknowledged = await app.inject({ method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents", payload: { quiz: true, quiz_purpose: "FORMATIVE", quiz_selected_outcome_ids: ["outcome-2"], quiz_learner_context_revision: 2, quiz_learner_context_acknowledged: true, quiz_alignment_override: { acknowledged: true, reason: "Teacher intentionally targets the cross-section Outcome." } } });
     expect(acknowledged.statusCode).toBe(200);
     expect(acknowledged.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({ alignment_override: { acknowledged: true }, selected_outcome_ids: ["outcome-2"] });
+
+    const missingAlignment = await app.inject({ method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents", payload: { assignment: true, assignment_purpose: "FORMATIVE", assignment_selected_outcome_ids: [], assignment_learner_context_revision: 2, assignment_learner_context_acknowledged: true, assignment_alignment_override: { kind: "MISSING_ALIGNMENT", acknowledged: true, reason: "Generate for Teacher review without a selected CLO." } } });
+    expect(missingAlignment.statusCode).toBe(200);
+    expect(missingAlignment.json().intents.find((item: any) => item.activity_type === "assignment")).toMatchObject({ selected_outcome_ids: [], alignment_override: { kind: "MISSING_ALIGNMENT", acknowledged: true } });
     await app.close();
   });

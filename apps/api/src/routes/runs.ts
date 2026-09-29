@@ -322,12 +322,12 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
     }
 
     const reviewRequirements = Array.isArray(planRevision.reviewRequirements) ? planRevision.reviewRequirements : [];
-    const requiresAiReview = reviewRequirements.some((requirement) => requirement && typeof requirement === "object" && (requirement as { code?: unknown }).code === "AI_EXPANDED_CONTENT");
-    if (requiresAiReview && acknowledge_ai_expanded_content !== true) {
+    const requiresTeacherReview = reviewRequirements.some((requirement) => requirement && typeof requirement === "object" && typeof (requirement as { code?: unknown }).code === "string");
+    if (requiresTeacherReview && acknowledge_ai_expanded_content !== true) {
       reply.status(409).send({
         error: {
           code: "TEACHER_REVIEW_REQUIRED",
-          message: "This Plan Revision contains AI-expanded Activity content. Teacher review acknowledgment is required before Approval.",
+          message: "This Plan Revision contains Activity content marked Teacher Review Required. Acknowledgment is required before Approval.",
           details: { review_requirements: reviewRequirements },
           request_id: request.id,
         },

@@ -1,7 +1,7 @@
 import type { CoreCourseDesignContext, SourceReference } from "@moodle-agent-poc/contracts";
 import type { ActivityGenerationContext } from "../grounding/activity-grounding-resolver.js";
 import { PlanningError } from "../errors/planning-errors.js";
-import { validateActivityIntent, type ActivityPurpose } from "./activity-intent.js";
+import { validateActivityIntent, type ActivityAlignmentOverride, type ActivityPurpose } from "./activity-intent.js";
 
 export const ACTIVITY_DESIGN_PROMPT_VERSION = "activity-design.v0.1";
 export const STRUCTURE_PROMPT_VERSION = "structure-design.v0.1";
@@ -29,7 +29,7 @@ export interface ActivityIntentDesignInput {
   learner_context_acknowledged: boolean;
   options: Record<string, unknown>;
   generation_instruction?: string | null;
-  alignment_override?: { acknowledged: true; reason: string };
+  alignment_override?: ActivityAlignmentOverride;
 }
 
 export interface ActivityDesignContext {
@@ -80,7 +80,8 @@ export interface ActivityDesignContext {
     material_snapshot_id?: string;
   };
   warnings: string[];
-  alignment_override?: { acknowledged: true; reason: string };
+  alignment_review_required: boolean;
+  alignment_override?: ActivityAlignmentOverride;
 }
 
 export interface ActivityGenerationMetadataInput {
@@ -107,6 +108,7 @@ export interface ActivityGenerationMetadata {
   selected_outcome_ids: string[];
   approved_outcome_revisions: Record<string, number>;
   grounding_mode: ActivityGenerationContext["mode"];
+  alignment_review_required: boolean;
   activity_intent_id?: string;
   material_snapshot_id?: string;
 }
@@ -202,6 +204,7 @@ export function buildActivityDesignContext(params: {
       .map((item) => item.code),
     ...(params.coreContext.learner_context.status === "UNSPECIFIED" ? ["LEARNER_CONTEXT_UNSPECIFIED"] : []),
     ...(params.grounding.reviewRequired ? ["SYLLABUS_SCOPED_AI_REVIEW_REQUIRED"] : []),
+    ...(validated.alignment_override?.kind === "MISSING_ALIGNMENT" ? ["ALIGNMENT_REVIEW_REQUIRED"] : []),
   ]);
   const generationInstruction = validated.generation_instruction;
   return {
@@ -252,6 +255,7 @@ export function buildActivityDesignContext(params: {
       ...(params.grounding.materialSnapshotId ? { material_snapshot_id: params.grounding.materialSnapshotId } : {}),
     },
     warnings,
+    alignment_review_required: validated.alignment_override?.kind === "MISSING_ALIGNMENT",
     ...(validated.alignment_override ? { alignment_override: validated.alignment_override } : {}),
   };
 }
@@ -272,6 +276,9 @@ export function formatActivityDesignPrompt(context: ActivityDesignContext): stri
     "Use only this authorized Activity Design View. The application, not the model, owns Activity type, Purpose, selected IDs, deterministic options, and source authority.",
     `Activity Purpose: ${context.activity_intent.purpose}. ${purposeGuidance(context.activity_intent.purpose)}`,
     "Selected Objective/Outcome IDs are authoritative. Echo only these IDs in aligned_objective_ids and aligned_outcome_ids; never invent or select another Outcome, Objective, Competency, prerequisite, framework, tool, or technical requirement.",
+    context.alignment_review_required
+      ? "ALIGNMENT_REVIEW_REQUIRED: no Objective/Outcome was selected by the Teacher. Keep both aligned ID arrays empty, mark outcome_alignment WARN, and make the limitation explicit in quality_review.warnings. Do not infer alignment."
+      : "The selected alignment is the required basis for the Activity and its outcome_alignment self-review.",
     "Material is factual authority in MATERIAL_GROUNDED mode. Pedagogical variation may change names, scenarios, framing, examples, and wording only when the authorized concepts and requirements remain unchanged.",
     context.learner_context.status === "UNSPECIFIED"
       ? "LEARNER_CONTEXT_UNSPECIFIED: learner degree, year, age, and education level are intentionally unspecified. Do not infer any of them; use only the supplied Syllabus, approved Outcomes, and authorized grounding as difficulty signals."
@@ -468,7 +475,9 @@ export function validateActivityDesignOutput(parsed: unknown, context: ActivityD
   const exceptions = exceptionFields.flatMap((field) => scopeExceptionList(scopeExceptions, field).map((value) => `${field}: ${value}`));
   if (exceptions.length > 0) throw new PlanningError("TEACHER_CONSTRAINT_VIOLATION", "Generated Activity introduces content outside the authorized Activity scope.", { scope_exceptions: exceptions });
   assertGeneratedContentScope(output, context);
-  return { qualityReview: normalizeQualityReview(output.quality_review, context.warnings) };
+  const qualityReview = normalizeQualityReview(output.quality_review, context.warnings);
+  if (context.alignment_review_required) qualityReview.outcome_alignment = "WARN";
+  return { qualityReview };
 }
 
 export function buildActivityGenerationMetadata(
@@ -494,6 +503,7 @@ export function buildActivityGenerationMetadata(
     selected_outcome_ids: [...context.activity_intent.selected_outcome_ids],
     approved_outcome_revisions: Object.fromEntries(context.selected_outcomes.map((outcome) => [outcome.outcome_id, outcome.revision])),
     grounding_mode: context.grounding.mode,
+    alignment_review_required: context.alignment_review_required,
     ...(context.grounding.material_snapshot_id ? { material_snapshot_id: context.grounding.material_snapshot_id } : {}),
   };
 }

@@ -42,6 +42,7 @@ export interface FinalizationSelectedActivity {
   activity?: ActivityPlan;
   groundingMode?: "MATERIAL_GROUNDED" | "SYLLABUS_GROUNDED" | "SYLLABUS_SCOPED_AI" | "INSUFFICIENT_EVIDENCE";
   reviewRequired?: boolean;
+  alignmentReviewRequired?: boolean;
   authorizedSources?: readonly SourceReference[];
   currentSourceValid?: boolean;
 }
@@ -128,9 +129,10 @@ function assembleOptionalActivitySections(
       }
       assertGeneratedProvenance(selection.activity, section.ref);
       activityAllowlists.set(selection.activityRef, new Set(sources.flatMap((source) => sourceReferenceKeys(source))));
-      if (selection.reviewRequired || selection.groundingMode === "SYLLABUS_SCOPED_AI") {
+      if (selection.groundingMode === "SYLLABUS_SCOPED_AI" || (selection.reviewRequired && !selection.alignmentReviewRequired)) {
         warnings.push(`Teacher Review Required: ${selection.activityRef} includes AI-expanded content constrained to syllabus scope.`);
       }
+      if (selection.alignmentReviewRequired) warnings.push(`Teacher Review Required: ${selection.activityRef} was generated without a selected Objective or Outcome alignment.`);
       return selection.activity;
     });
 

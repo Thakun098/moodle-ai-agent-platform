@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ActivityIntentRepository, CourseStructureRevisionRepository, getDatabase, RunRepository } from "@moodle-agent-poc/agent-runtime";
 import type { CoreCourseDesignContext } from "@moodle-agent-poc/contracts";
-import { validateActivityIntent, type ActivityPurpose } from "@moodle-agent-poc/planning";
+import { validateActivityIntent, type ActivityAlignmentOverride, type ActivityPurpose } from "@moodle-agent-poc/planning";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
 import { serializeActivityIntent } from "../serializers/activity-intent-response.js";
@@ -65,10 +65,11 @@ function typeValue(body: Record<string, unknown>, type: "quiz" | "assignment", s
   return body[`${type}_${suffix}`] ?? body[suffix];
 }
 
-function overrideInput(body: Record<string, unknown>, type: "quiz" | "assignment") {
+function overrideInput(body: Record<string, unknown>, type: "quiz" | "assignment"): ActivityAlignmentOverride | undefined {
   const value = typeValue(body, type, "alignment_override");
   const record = asRecord(value);
-  if (record.acknowledged === true && typeof record.reason === "string" && record.reason.trim() !== "") return { acknowledged: true as const, reason: record.reason.trim() };
+  const kind = record.kind === "OUT_OF_SECTION" || record.kind === "MISSING_ALIGNMENT" ? record.kind : undefined;
+  if (record.acknowledged === true && typeof record.reason === "string" && record.reason.trim() !== "") return { ...(kind ? { kind } : {}), acknowledged: true as const, reason: record.reason.trim() };
   return undefined;
 }
 
@@ -132,7 +133,7 @@ export const activityIntentRoutes: FastifyPluginAsync<ActivityIntentRoutesOption
           : generationInstruction ?? null;
         const alignmentOverrideValue = typeValue(body, type, "alignment_override");
         const alignmentOverride = alignmentOverrideValue === undefined
-          ? existing?.alignmentOverrideJson as { acknowledged: true; reason: string } | undefined
+          ? existing?.alignmentOverrideJson as { kind?: "OUT_OF_SECTION" | "MISSING_ALIGNMENT"; acknowledged: true; reason: string } | undefined
           : overrideInput(body, type);
         const semantic = context
           ? validateActivityIntent(context, sectionSemantic, {
@@ -144,7 +145,7 @@ export const activityIntentRoutes: FastifyPluginAsync<ActivityIntentRoutesOption
             learner_context_acknowledged: learnerAcknowledged,
             ...(generationInstruction ? { generation_instruction: generationInstruction } : {}),
             ...(alignmentOverride ? { alignment_override: alignmentOverride } : {}),
-          })
+          }, { allowMissingAlignment: true })
           : {
             purpose: (typeof purpose === "string" ? purpose : "PRACTICE") as ActivityPurpose,
             selected_objective_ids: selectedObjectives,

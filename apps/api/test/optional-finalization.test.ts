@@ -97,6 +97,16 @@ describe("Optional Activity Finalization — ADR-0002", () => {
     await app.close();
   });
 
+  it("persists a distinct review requirement when generation had no selected LO/CLO", async () => {
+    const repos = baseRepos([intent({ groundingMode: "SYLLABUS_GROUNDED", reviewRequired: true, alignmentOverrideJson: { kind: "MISSING_ALIGNMENT", acknowledged: true, reason: "Teacher confirmed generation without selected LO/CLO alignment." } })]);
+    const app = buildApp({ config, runRepo: repos.runRepo as any, structureRevisionRepo: repos.structureRepo as any, activityIntentRepo: repos.intentRepo as any, snapshotRepo: repos.snapshotRepo as any, planRepo: repos.planRepo as any, competencySnapshotRepo: repos.competencySnapshotRepo as any, fastifyOptions: { logger: false } });
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-1/plans/course/finalize" });
+    expect(response.statusCode).toBe(201);
+    expect(repos.saved[0].reviewRequirements).toEqual([{ code: "ALIGNMENT_REVIEW_REQUIRED", activity_ref: "assignment-01" }]);
+    expect(repos.saved[0].rawEnvelope.warnings.join(" ")).toMatch(/without a selected Objective or Outcome alignment/iu);
+    await app.close();
+  });
+
   it("allows a confirmed Empty Activity Shell and keeps its warning without AI review requirement", async () => {
     const shell = intent({
       status: "shell", groundingMode: "INSUFFICIENT_EVIDENCE", reviewRequired: false, shellConfirmedAt: "2026-09-07T01:00:00Z",
@@ -113,7 +123,7 @@ describe("Optional Activity Finalization — ADR-0002", () => {
   it("reuses an unchanged Final CoursePlan even when JSONB key order changes, and creates Revision N+1 after Activity content changes", async () => {
     const selected = intent();
     const repos = baseRepos([selected]);
-    const app = buildApp({ config, runRepo: repos.runRepo as any, structureRevisionRepo: repos.structureRepo as any, activityIntentRepo: repos.intentRepo as any, snapshotRepo: repos.snapshotRepo as any, planRepo: repos.planRepo as any, fastifyOptions: { logger: false } });
+    const app = buildApp({ config, runRepo: repos.runRepo as any, structureRevisionRepo: repos.structureRepo as any, activityIntentRepo: repos.intentRepo as any, snapshotRepo: repos.snapshotRepo as any, planRepo: repos.planRepo as any, competencySnapshotRepo: repos.competencySnapshotRepo as any, fastifyOptions: { logger: false } });
 
     const first = await app.inject({ method: "POST", url: "/api/runs/run-1/plans/course/finalize" });
     expect(first.statusCode).toBe(201);

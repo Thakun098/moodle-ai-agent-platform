@@ -130,6 +130,20 @@ describe("Approval Gate & Lifecycle Integration (Phase 16)", () => {
     });
   });
 
+  it("requires acknowledgment for a Plan revision flagged for missing Activity alignment", async () => {
+    const runId = randomUUID();
+    const mockRunRepo = { getRun: vi.fn().mockResolvedValue({ runId, status: "preview", model: testConfig.modelName } as PocRunRecord), approvePlan: vi.fn().mockResolvedValue({ runId, status: "preview", approvedPlanId: samplePlanId, approvedRevision: 1, approvedByMoodleUserId: "42" } as PocRunRecord) } as unknown as RunRepository;
+    const mockPlanRepo = { getPlanRevision: vi.fn().mockResolvedValue({ id: randomUUID(), planId: samplePlanId, revision: 1, runId, planType: "course", operation: "create", validationStatus: "valid", rawEnvelope: sampleCoursePlanEnvelope, reviewRequirements: [{ code: "ALIGNMENT_REVIEW_REQUIRED", activity_ref: "assignment-01" }] } as unknown as PocPlanRevisionRecord) } as unknown as PlanRepository;
+    const app = buildApp({ config: testConfig, runRepo: mockRunRepo, planRepo: mockPlanRepo, candidateRepo: { list: vi.fn(async () => []) } as any, activityIntentRepo: {} as any, competencyReviewRepo: { review: vi.fn(async () => ({ revision: 0, mappings: [] })) } as any, competencySnapshotRepo: { save: vi.fn(async (snapshot: any) => snapshot) } as any });
+    const rejected = await app.inject({ method: "POST", url: `/api/runs/${runId}/approve`, payload: { plan_id: samplePlanId, revision: 1, moodle_user_id: "42" } });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error).toMatchObject({ code: "TEACHER_REVIEW_REQUIRED", details: { review_requirements: [{ code: "ALIGNMENT_REVIEW_REQUIRED" }] } });
+    const acknowledged = await app.inject({ method: "POST", url: `/api/runs/${runId}/approve`, payload: { plan_id: samplePlanId, revision: 1, moodle_user_id: "42", acknowledge_ai_expanded_content: true } });
+    expect(acknowledged.statusCode).toBe(200);
+    expect(mockRunRepo.approvePlan).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
   it("Required Test 1 & 2: Approval of Rev 1 -> Rev 1 remains pinned, unapproved Rev 2 execution is rejected", async () => {
     const runId = randomUUID();
     const rev2Envelope = {

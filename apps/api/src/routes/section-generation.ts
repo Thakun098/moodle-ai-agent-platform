@@ -339,6 +339,7 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
             ? { groundingMode: record.groundingMode as NonNullable<FinalizationSelectedActivity["groundingMode"]> }
             : {}),
           reviewRequired: record.reviewRequired,
+          alignmentReviewRequired: Boolean(record.alignmentOverrideJson && (record.alignmentOverrideJson as { kind?: unknown }).kind === "MISSING_ALIGNMENT"),
           authorizedSources,
           currentSourceValid,
         };
@@ -346,9 +347,13 @@ export const sectionGenerationRoutes: FastifyPluginAsync<SectionGenerationRoutes
         current.push(selection);
         selectedActivitiesBySection.set(section.ref, current);
       }
-      reviewRequirements = persistedIntents
-        .filter((record) => record.status === "generated" && record.reviewRequired)
-        .map((record) => ({ code: "AI_EXPANDED_CONTENT", activity_ref: record.activityRef }));
+      reviewRequirements = persistedIntents.flatMap((record) => {
+        if (record.status !== "generated") return [];
+        const requirements: Array<{ code: string; activity_ref: string }> = [];
+        if (record.groundingMode === "SYLLABUS_SCOPED_AI") requirements.push({ code: "AI_EXPANDED_CONTENT", activity_ref: record.activityRef });
+        if (record.alignmentOverrideJson && (record.alignmentOverrideJson as { kind?: unknown }).kind === "MISSING_ALIGNMENT") requirements.push({ code: "ALIGNMENT_REVIEW_REQUIRED", activity_ref: record.activityRef });
+        return requirements;
+      });
       plan = assembleFinalCoursePlan({
         planId: targetPlanId,
         revision: targetPlanRevision,
