@@ -125,7 +125,117 @@ describe("Course Structure API — ADR-0002", () => {
     await app.close();
   });
 
-  it("rechecks coverage within the <=10-period boundary before sealing", async () => {
+  it("records a teacher-authorized syllabus coverage override when deleting a covered section and allows sealing", async () => {
+    const threeWeekSyllabus = {
+      ...syllabus,
+      schedule_or_topics: [1, 2, 3].map((week) => ({
+        week_or_unit: `สัปดาห์ที่ ${week}`,
+        title: `Topic ${week}`,
+        topics: [],
+        source: { kind: "line" as const, start_line: week },
+      })),
+    };
+    const runRepo = makeRunRepo(threeWeekSyllabus);
+    const structureRepo = makeStructureRepo();
+    structureRepo.revisions.push({
+      id: "s1", runId: "run-1", revision: 1, title: "Structure", summary: "Full coverage", validationStatus: "valid", validationErrors: null,
+      sealedAt: null, sealedByMoodleUserId: null, teacherConstraintsJson: { activityRules: [], warnings: [] }, createdAt: "2026-09-07T00:00:00.000Z",
+      contentJson: {
+        course: { title: "AI" },
+        sections: [1, 2, 3].map((week) => ({
+          ref: `section-0${week}`, position: week, title: `สัปดาห์ที่ ${week}: Topic ${week}`, summary: `Topic ${week}`,
+          source_refs: [{ source: "syllabus.md", section: `สัปดาห์ที่ ${week}` }], activity_intents: [],
+          aligned_objective_ids: [], aligned_outcome_ids: [], alignment_status: "CURRENT",
+        })),
+      },
+    });
+    const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, fastifyOptions: { logger: false } });
+
+    const edited = await app.inject({
+      method: "POST",
+      url: "/api/runs/run-1/course-structure/revisions",
+      payload: {
+        edited_structure: {
+          title: "Structure",
+          summary: "Teacher removed Week 2",
+          content: {
+            course: { title: "AI" },
+            sections: [
+              { ...structureRepo.revisions[0].contentJson.sections[0], position: 1 },
+              { ...structureRepo.revisions[0].contentJson.sections[2], position: 2 },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(edited.statusCode).toBe(201);
+    const revision = JSON.parse(edited.body).structure_revision;
+    expect(revision.teacher_constraints.syllabus_coverage_overrides).toEqual([
+      expect.objectContaining({ anchor: "สัปดาห์ที่ 2", acknowledged: true }),
+    ]);
+
+    const sealed = await app.inject({ method: "POST", url: "/api/runs/run-1/course-structure/seal", payload: { revision: 2 } });
+    expect(sealed.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("does not auto-authorize coverage loss when no section was deleted", async () => {
+    const threeWeekSyllabus = {
+      ...syllabus,
+      schedule_or_topics: [1, 2, 3].map((week) => ({
+        week_or_unit: `สัปดาห์ที่ ${week}`,
+        title: `Topic ${week}`,
+        topics: [],
+        source: { kind: "line" as const, start_line: week },
+      })),
+    };
+    const runRepo = makeRunRepo(threeWeekSyllabus);
+    const structureRepo = makeStructureRepo();
+    structureRepo.revisions.push({
+      id: "s1", runId: "run-1", revision: 1, title: "Structure", summary: "Full coverage", validationStatus: "valid", validationErrors: null,
+      sealedAt: null, sealedByMoodleUserId: null, teacherConstraintsJson: { activityRules: [], warnings: [] }, createdAt: "2026-09-07T00:00:00.000Z",
+      contentJson: {
+        course: { title: "AI" },
+        sections: [1, 2, 3].map((week) => ({
+          ref: `section-0${week}`, position: week, title: `สัปดาห์ที่ ${week}: Topic ${week}`, summary: `Topic ${week}`,
+          source_refs: [{ source: "syllabus.md", section: `สัปดาห์ที่ ${week}` }], activity_intents: [],
+          aligned_objective_ids: [], aligned_outcome_ids: [], alignment_status: "CURRENT",
+        })),
+      },
+    });
+    const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, fastifyOptions: { logger: false } });
+
+    const edited = await app.inject({
+      method: "POST",
+      url: "/api/runs/run-1/course-structure/revisions",
+      payload: {
+        edited_structure: {
+          title: "Structure",
+          summary: "Broken provenance",
+          content: {
+            course: { title: "AI" },
+            sections: structureRepo.revisions[0].contentJson.sections.map((section: any) => ({
+              ...section,
+              title: "Generic topic",
+              source_refs: [],
+            })),
+          },
+        },
+      },
+    });
+
+    expect(edited.statusCode).toBe(201);
+    const revision = JSON.parse(edited.body).structure_revision;
+    expect(revision.teacher_constraints.syllabus_coverage_overrides ?? []).toEqual([]);
+
+    const sealed = await app.inject({ method: "POST", url: "/api/runs/run-1/course-structure/seal", payload: { revision: 2 } });
+    expect(sealed.statusCode).toBe(422);
+    expect(JSON.parse(sealed.body).error.details.missingAnchors).toEqual(["สัปดาห์ที่ 1", "สัปดาห์ที่ 2", "สัปดาห์ที่ 3"]);
+    await app.close();
+  });
+
+  it("rechecks coverage within the <=20-period boundary before sealing", async () => {
     const eightWeekSyllabus = { ...syllabus, schedule_or_topics: Array.from({ length: 8 }, (_, i) => ({ week_or_unit: `Week ${i + 1}`, title: `Topic ${i + 1}`, topics: [], source: { kind: "line" as const, start_line: i + 1 } })) };
     const runRepo = makeRunRepo(eightWeekSyllabus);
     const structureRepo = makeStructureRepo();

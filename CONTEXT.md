@@ -12,6 +12,10 @@ _Avoid_: Final CoursePlan, Preview, implicit activity plan
 An immutable version of the Course Structure. Teacher edits create a new revision; they never mutate an earlier revision.
 _Avoid_: CoursePlan Revision, draft overwrite
 
+**Teacher Structure Coverage Override**:
+An explicit exception created only when the teacher deletes a Course Structure section that previously covered one or more syllabus schedule anchors. The override is limited to those anchors that the deleted section demonstrably covered and is stored with the new Structure Revision. Coverage loss caused only by renamed sections, missing provenance, broken source references, or legacy mapping errors is never auto-authorized and remains a validation failure.
+_Avoid_: global coverage bypass, position-only fallback, silent missing syllabus content
+
 **Structure Instruction**:
 Optional teacher notes supplied during Course Structure generation. They may shape Course Structure presentation or emphasis, but they never create Quiz or Assignment intents. Activity existence is authorized only in the Activity Creation Step.
 _Avoid_: activity rule, implicit Activity Intent

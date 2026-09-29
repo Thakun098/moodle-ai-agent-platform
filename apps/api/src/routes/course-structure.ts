@@ -22,6 +22,8 @@ import {
   createCourseStructureRevisionFromContent,
   PlanningError,
   interpretStructureInstruction,
+  courseStructureSectionCoversAnchor,
+  inspectCourseStructureCoverage,
   validateCourseStructureCoverage,
   type CourseStructureRevision,
 } from "@moodle-agent-poc/planning";
@@ -78,6 +80,80 @@ function parseRevision(value: unknown): number {
     throw new PlanningError("STRUCTURE_INVALID", "revision must be a positive integer.");
   }
   return revision;
+}
+
+interface SyllabusCoverageOverride {
+  anchor: string;
+  acknowledged: true;
+  reason: string;
+}
+
+function syllabusCoverageOverrides(value: unknown): SyllabusCoverageOverride[] {
+  if (!value || typeof value !== "object" || !Array.isArray((value as { syllabus_coverage_overrides?: unknown }).syllabus_coverage_overrides)) {
+    return [];
+  }
+  return (value as { syllabus_coverage_overrides: unknown[] }).syllabus_coverage_overrides.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    if (record.acknowledged !== true || typeof record.anchor !== "string" || record.anchor.trim() === "" || typeof record.reason !== "string" || record.reason.trim() === "") {
+      return [];
+    }
+    return [{ anchor: record.anchor.trim(), acknowledged: true as const, reason: record.reason.trim() }];
+  });
+}
+
+function validateCourseStructureCoverageWithOverrides(
+  syllabus: NormalizedSyllabus,
+  sections: readonly import("@moodle-agent-poc/planning").CourseStructureCoverageSection[],
+  constraints: unknown,
+): { coveredAnchors: string[]; missingAnchors: string[] } {
+  const coverage = inspectCourseStructureCoverage(syllabus, sections);
+  if (coverage.missingAnchors.length === 0) return coverage;
+  const allowed = new Set(syllabusCoverageOverrides(constraints).map((item) => item.anchor));
+  const unapproved = coverage.missingAnchors.filter((anchor) => !allowed.has(anchor));
+  if (unapproved.length > 0) {
+    throw new PlanningError(
+      "PLAN_SCHEMA_INVALID",
+      `Course Structure omitted syllabus coverage anchors: ${unapproved.join(", ")}`,
+      { missingAnchors: unapproved },
+    );
+  }
+  return coverage;
+}
+
+function deriveDeletedSectionCoverageOverrides(params: {
+  syllabus: NormalizedSyllabus;
+  latestSections: readonly import("@moodle-agent-poc/planning").CourseStructureCoverageSection[];
+  nextSections: readonly import("@moodle-agent-poc/planning").CourseStructureCoverageSection[];
+  latestConstraints: unknown;
+}): SyllabusCoverageOverride[] {
+  const currentCoverage = inspectCourseStructureCoverage(params.syllabus, params.latestSections);
+  const nextCoverage = inspectCourseStructureCoverage(params.syllabus, params.nextSections);
+  const currentMissing = new Set(currentCoverage.missingAnchors);
+  const nextMissing = new Set(nextCoverage.missingAnchors);
+  const nextRefs = new Set(params.nextSections.map((section) => section.ref));
+  const removedSections = params.latestSections.filter((section) => !nextRefs.has(section.ref));
+
+  const existing = syllabusCoverageOverrides(params.latestConstraints)
+    .filter((item) => nextMissing.has(item.anchor));
+  const authorized = new Set(existing.map((item) => item.anchor));
+  const added: SyllabusCoverageOverride[] = [];
+
+  for (const anchor of nextCoverage.missingAnchors) {
+    if (authorized.has(anchor) || currentMissing.has(anchor)) continue;
+    const coveringRemovedSections = removedSections.filter((section) =>
+      courseStructureSectionCoversAnchor(anchor, section, params.syllabus),
+    );
+    if (coveringRemovedSections.length === 0) continue;
+    added.push({
+      anchor,
+      acknowledged: true,
+      reason: `Teacher deleted Course Structure section(s) ${coveringRemovedSections.map((section) => section.ref).join(", ")} that covered ${anchor}.`,
+    });
+    authorized.add(anchor);
+  }
+
+  return [...existing, ...added];
 }
 
 function editedStructureBody(body: unknown): { title: string; summary: string; content: unknown } {
@@ -277,6 +353,27 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
         alignmentCoverage = deriveOutcomeCoverage(currentContext, alignedSections, coverageOverrides as any);
       }
     }
+    if (run.normalizedSyllabus) {
+      const latestSections = Array.isArray(latest.contentJson.sections)
+        ? latest.contentJson.sections as unknown as import("@moodle-agent-poc/planning").CourseStructureCoverageSection[]
+        : [];
+      const syllabusCoverage = deriveDeletedSectionCoverageOverrides({
+        syllabus: run.normalizedSyllabus as NormalizedSyllabus,
+        latestSections,
+        nextSections: resolvedSections as import("@moodle-agent-poc/planning").CourseStructureCoverageSection[],
+        latestConstraints,
+      });
+      const constraintsRecord = revisionTeacherConstraints as unknown as Record<string, unknown>;
+      if (syllabusCoverage.length > 0) {
+        revisionTeacherConstraints = {
+          ...constraintsRecord,
+          syllabus_coverage_overrides: syllabusCoverage,
+        } as unknown as import("@moodle-agent-poc/planning").CoursePlanningConstraints;
+      } else if ("syllabus_coverage_overrides" in constraintsRecord) {
+        const { syllabus_coverage_overrides: _removed, ...rest } = constraintsRecord;
+        revisionTeacherConstraints = rest as unknown as import("@moodle-agent-poc/planning").CoursePlanningConstraints;
+      }
+    }
     const revision = createCourseStructureRevisionFromContent({
       id: provisionalRevision.id,
       runId: provisionalRevision.runId,
@@ -357,7 +454,11 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
     }
     const targetContent = target.contentJson;
     const targetSections = Array.isArray(targetContent.sections) ? targetContent.sections : [];
-    validateCourseStructureCoverage(run.normalizedSyllabus as NormalizedSyllabus, targetSections as import("@moodle-agent-poc/planning").CourseStructureCoverageSection[]);
+    validateCourseStructureCoverageWithOverrides(
+      run.normalizedSyllabus as NormalizedSyllabus,
+      targetSections as import("@moodle-agent-poc/planning").CourseStructureCoverageSection[],
+      target.teacherConstraintsJson,
+    );
     const currentContext = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
       ? await (runRepo as typeof runRepo & { getCoreCourseDesignContext: (id: string) => Promise<unknown> }).getCoreCourseDesignContext(runId)
       : null;
