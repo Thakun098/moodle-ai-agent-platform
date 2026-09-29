@@ -31,7 +31,7 @@ _Avoid_: Structure Review, partial plan
 ## Syllabus limits
 
 **Course Period Cap**:
-A valid normalized syllabus may contain at most 10 schedule/course periods, regardless of whether the source labels them Week, Unit, Topic, Module, or another equivalent schedule anchor. If normalization detects more than 10 course periods, ingestion/validation fails deterministically. The system must not silently truncate or ignore excess periods.
+A valid normalized syllabus may contain at most 20 schedule/course periods, regardless of whether the source labels them Week, Unit, Topic, Module, or another equivalent schedule anchor. If normalization detects more than 20 course periods, ingestion/validation fails deterministically. The system must not silently truncate or ignore excess periods.
 _Avoid_: Week-label-only cap, planning-only cap, silent truncation
 
 ## Learning material

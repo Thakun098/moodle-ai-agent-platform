@@ -12,7 +12,7 @@ The syllabus remains the authority for Course Structure. Learning Material remai
 
 ## Decision
 
-1. A normalized syllabus may contain at most 10 schedule/course periods regardless of whether the source labels them Week, Unit, Topic, Module, or another equivalent schedule anchor. More than 10 periods is rejected deterministically. The system must not silently truncate or ignore excess periods.
+1. A normalized syllabus may contain at most 20 schedule/course periods regardless of whether the source labels them Week, Unit, Topic, Module, or another equivalent schedule anchor. More than 20 periods is rejected deterministically. The system must not silently truncate or ignore excess periods.
 2. Initial Course Structure generation does not create Activity Intents from the syllabus or Structure Instruction. Activity existence requires an explicit teacher action in the Activity Creation Step.
 3. Structure Instruction remains optional and may shape Course Structure presentation/emphasis, but it cannot create Quiz/Assignment intents.
 4. After Course Structure preview/seal, the teacher chooses whether to create activities:

@@ -695,7 +695,7 @@ The earlier mandatory Learning-Material stage in Sections 3.1 and 4 is supersede
 The accepted target behavior is now:
 
 ```text
-Syllabus (maximum 10 course periods)
+Syllabus (maximum 20 course periods)
   -> Course Structure only
   -> Teacher Review/Edit + Seal
   -> Optional Activity Creation branch

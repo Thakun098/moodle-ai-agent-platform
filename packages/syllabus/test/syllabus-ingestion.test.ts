@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { extractPdfSyllabus } from "../src/extractors/pdf-extractor.js";
+import { extractDocxSyllabus } from "../src/extractors/docx-extractor.js";
 import { describe, expect, it } from "vitest";
 import {
   ingestSyllabus,
@@ -404,6 +405,36 @@ describe("Syllabus Ingestion Service (packages/syllabus)", () => {
   });
 
   describe("T0404 — DOCX Extraction & R3 Paragraph Provenance", () => {
+    it("extracts and ingests a table-based weekly DOCX schedule without confusing activity cells for topic titles", async () => {
+      const filename = "Course_Syllabus_30700-1004_Tourism_and_Hospitality.docx";
+      const content = readFileSync(resolve(fixturesDir, filename));
+
+      const result = await extractDocxSyllabus({ content, filename });
+
+      expect(result.schedule_or_topics).toHaveLength(18);
+      expect(result.schedule_or_topics[0]).toMatchObject({
+        week_or_unit: "สัปดาห์ที่ 1",
+        title: "ความรู้เบื้องต้นเกี่ยวกับอุตสาหกรรมท่องเที่ยวและการบริการ",
+        topics: ["บรรยาย / อภิปราย"],
+      });
+      expect(result.schedule_or_topics[7]).toMatchObject({
+        week_or_unit: "สัปดาห์ที่ 8",
+        title: "สอบกลางภาค",
+        topics: ["ประเมินผล"],
+      });
+      expect(result.schedule_or_topics[17]).toMatchObject({
+        week_or_unit: "สัปดาห์ที่ 18",
+        title: "สอบปลายภาค",
+        topics: ["ประเมินผล"],
+      });
+      expect(result.schedule_or_topics[0]?.source?.kind).toBe("paragraph");
+      expect(result.schedule_or_topics[1]?.title).not.toBe("วิเคราะห์ประเภทงาน");
+
+      const normalized = await ingestSyllabus({ content, filename });
+      expect(normalized.schedule_or_topics).toHaveLength(18);
+      expect(normalized.schedule_or_topics[17]?.title).toBe("สอบปลายภาค");
+    });
+
     it("extracts text from valid DOCX with strict 1-based non-empty paragraph sequence provenance", async () => {
       const docxBuffer = createMinimalDocxBuffer([
         "Course Title: Introduction to Data Science",
@@ -466,7 +497,7 @@ describe("Syllabus Ingestion Service (packages/syllabus)", () => {
   });
 
   describe("T0405, T0406 — PDF Extraction & Scanned OCR Check", () => {
-    it("preserves all 15 weeks during PDF extraction but rejects ingestion over the course-period cap", async () => {
+    it("preserves and ingests all 15 weeks under the 20-period course cap", async () => {
       const page1 = [
         "Course Title: Data Structures",
         "Course Code: CS240",
@@ -485,7 +516,8 @@ describe("Syllabus Ingestion Service (packages/syllabus)", () => {
       const pdfBuffer = createTwoPagePdf(page1, page2);
       const input = {content: pdfBuffer, filename: "repeated-header-15-week.pdf"};
       const result = await extractPdfSyllabus(input);
-      await expect(ingestSyllabus(input)).rejects.toMatchObject({ code: "COURSE_PERIOD_LIMIT_EXCEEDED", details: { observed: 15, max: 10 } });
+      const normalized = await ingestSyllabus(input);
+      expect(normalized.schedule_or_topics).toHaveLength(15);
 
       expect(result.schedule_or_topics).toHaveLength(15);
       expect(result.schedule_or_topics.map((item) => item.week_or_unit)).toEqual(

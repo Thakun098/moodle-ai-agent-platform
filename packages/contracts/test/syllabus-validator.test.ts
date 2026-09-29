@@ -88,6 +88,25 @@ describe("NormalizedSyllabus Validator", () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  it("accepts up to 20 course periods and rejects 21 at the contract boundary", () => {
+    const build = (count: number): NormalizedSyllabus => ({
+      schema_version: "0.1",
+      learning_objectives: [],
+      schedule_or_topics: Array.from({ length: count }, (_, index) => ({
+        week_or_unit: `Week ${index + 1}`,
+        title: `Topic ${index + 1}`,
+        topics: [],
+      })),
+      raw_text: "Course schedule",
+      metadata: validMetadata,
+    });
+
+    expect(validateNormalizedSyllabus(build(20)).valid).toBe(true);
+    const overLimit = validateNormalizedSyllabus(build(21));
+    expect(overLimit.valid).toBe(false);
+    expect(overLimit.errors.some((error) => error.instancePath === "/schedule_or_topics" && /20/iu.test(error.message ?? ""))).toBe(true);
+  });
+
   it("rejects syllabus with missing schema_version or wrong version", () => {
     const invalid: any = {
       schema_version: "0.2",

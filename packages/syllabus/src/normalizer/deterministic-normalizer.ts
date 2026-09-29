@@ -210,7 +210,7 @@ export function normalizeItems(
 
     if (matchesKnownHeader(normalizedHeader, [
       "schedule", "course schedule", "topics", "weekly schedule", "course content",
-      "แผนการสอน", "แผนการสอน 15 สัปดาห์", "เนื้อหารายสัปดาห์"
+      "แผนการสอน", "แผนการสอน 15 สัปดาห์", "กำหนดการสอน", "เนื้อหารายสัปดาห์"
     ])) {
       if (currentScheduleItem) {
         currentScheduleItem.endIndex = itemIndex - 1;

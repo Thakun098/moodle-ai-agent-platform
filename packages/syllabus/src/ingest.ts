@@ -12,7 +12,7 @@ import { extractTextSyllabus } from "./extractors/text-extractor.js";
 import type { ExtractedDocument, SyllabusInput } from "./types.js";
 
 export const MAX_SYLLABUS_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-export const MAX_SYLLABUS_COURSE_PERIODS = 10;
+export const MAX_SYLLABUS_COURSE_PERIODS = 20;
 
 const EXT_TO_MIME: Record<string, string> = {
   ".txt": "text/plain",
