@@ -163,10 +163,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         return true;
     }
 
-    function showRecoveryBanner(surface, entityRef, serverRevision, applyDraft) {
+    function showRecoveryBanner(surface, entityRef, serverRevision, applyDraft, $hostOverride) {
         var snapshot = readRecoverySnapshot(surface, entityRef);
         if (!snapshot) return;
-        var $host = recoveryHost(surface);
+        var $host = $hostOverride && $hostOverride.length ? $hostOverride : recoveryHost(surface);
         if (!$host.length) return;
         var bannerKey = recoverySnapshotKey(surface, entityRef);
         if ($host.find('[data-recovery-key="' + bannerKey.replace(/"/g, '&quot;') + '"]').length) return;
@@ -1197,6 +1197,147 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         return {label: Object.prototype.hasOwnProperty.call(badges, status) ? status : 'Pending review', badge: badges[status] || 'badge-secondary'};
     }
 
+    /**
+     * Format the label for a section/week based on its title and position.
+     */
+    function weekDisplayLabel(section) {
+        return /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled'));
+    }
+
+    /**
+     * Update Week nav active/ARIA state in-place without rebuilding the rail DOM.
+     */
+    function updateWeekNavSelection(newRef) {
+        var $rail = $('.week-review-rail');
+        if (!$rail.length) return;
+        $rail.find('.week-review-nav-item').each(function() {
+            var $item = $(this);
+            var isNew = $item.attr('data-week-ref') === newRef;
+            $item.toggleClass('active week-nav-current', isNew)
+                 .attr('aria-current', isNew ? 'true' : 'false');
+        });
+    }
+
+    /**
+     * Render only the workspace content for the currently selected week.
+     * The $workspace container is cleared and re-populated; the rail shell is preserved.
+     */
+    function renderWeekWorkspaceContent(sections, $workspace) {
+        $workspace.empty();
+        var selectedWeek = sections.find(function(section) { return section.ref === state.selectedWeekRef; });
+        if (!selectedWeek) return;
+        var selectedWeekLabel = weekDisplayLabel(selectedWeek);
+        $workspace.append($('<div class="week-selected-context alert alert-primary py-2 px-3 mb-3"></div>')
+            .append($('<div class="small text-uppercase font-weight-bold"></div>').text('Currently reviewing'))
+            .append($('<div class="font-weight-bold"></div>').text(selectedWeekLabel)));
+        var visibleSections = sections.filter(function(section) { return section.ref === state.selectedWeekRef; });
+        visibleSections.forEach(function(sec) {
+            var idx = sections.indexOf(sec);
+            renderSectionCard(sec, idx, $workspace);
+        });
+        if (state.selectedWeekRef) {
+            var recoveryIndex = sections.findIndex(function(section) { return section.ref === state.selectedWeekRef; });
+            if (recoveryIndex >= 0) {
+                showRecoveryBanner('structure-week', state.selectedWeekRef, state.structureRevision, function(payload) {
+                    openEditSectionModal(recoveryIndex, payload);
+                }, $workspace);
+            }
+        }
+    }
+
+    /**
+     * Render a single section card with edit/delete/review controls.
+     * Extracted from renderPreview so both full and partial renders share the same code.
+     */
+    function renderSectionCard(sec, idx, $cards) {
+        var secNum = idx + 1;
+        var $secCard = $('<div class="card mb-3 border-light bg-light"></div>');
+        var $secHeader = $('<div class="card-header bg-white d-flex justify-content-between align-items-center py-2"></div>');
+        $secHeader.append($('<span class="font-weight-bold"></span>').text(secNum + '. ' + (sec.title || 'Section ' + secNum)));
+
+        var $editBtn = $('<button type="button" class="btn btn-sm btn-link text-secondary p-0"><i class="fa fa-pencil mr-1"></i>Edit</button>');
+        $editBtn.on('click', function() {
+            guardedNavigate(function() { openEditSectionModal(idx); });
+        });
+        $secHeader.append($editBtn);
+        var $deleteBtn = $('<button type="button" class="btn btn-sm btn-link text-danger p-0 ml-2"><i class="fa fa-trash mr-1"></i>Delete</button>');
+        $deleteBtn.on('click', function(e) {
+            e.preventDefault();
+            deleteSection(idx);
+        });
+        $secHeader.append($deleteBtn);
+        $secCard.append($secHeader);
+
+        var $secBody = $('<div class="card-body py-2 px-3"></div>');
+        if (sec.summary) {
+            $secBody.append($('<p class="text-muted small mb-2"></p>').text(sec.summary));
+        }
+
+        if (!state.stagedMode) {
+            var activities = sec.activities || [];
+            if (activities.length > 0) {
+                var $actList = $('<ul class="list-group list-group-flush mb-0"></ul>');
+                activities.forEach(function(act) {
+                    var isQuiz = (act.type === 'quiz');
+                    var icon = isQuiz ? 'fa-question-circle text-info' : 'fa-file-text text-success';
+                    var typeLabel = isQuiz ? 'Quiz' : 'Assignment';
+                    var $li = $('<li class="list-group-item bg-transparent py-1 px-0 border-0 d-flex align-items-center small"></li>');
+                    $li.append($('<i class="fa ' + icon + ' mr-2"></i>'));
+                    $li.append($('<span></span>').text(typeLabel + ': ' + (act.title || 'Untitled')));
+                    $actList.append($li);
+                });
+                $secBody.append($actList);
+                activities.forEach(function(act) {
+                    if (act.type !== 'quiz') return;
+                    var $quizPreview = $('<div class="border rounded bg-light p-2 mt-2 small"></div>');
+                    renderQuizActivityPreview(act, $quizPreview);
+                    $secBody.append($quizPreview);
+                });
+            }
+        }
+
+        $secCard.append($secBody);
+        if (state.stagedMode && state.currentStructure) {
+            var status = weekReviewStatus(sec);
+            var $review = $('<button type="button" class="btn btn-sm btn-outline-primary mt-2 week-mark-reviewed"></button>').text('Mark Reviewed');
+            var outcomesReady = !(state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION' || (item.item_type === 'LO' && item.status !== 'REVIEWED'); }) && unapprovedSourceOutcomes().length === 0;
+            $review.prop('disabled', status !== 'Pending review' || !outcomesReady);
+            $review.on('click', function() {
+                $review.prop('disabled', true);
+                callBff('mark_week_reviewed', {run_id: state.runId, section_ref: sec.ref, revision: state.structureRevision}).then(function(result) {
+                    state.currentStructure = result.structure_revision;
+                    state.structureRevision = result.structure_revision.revision;
+                    state.currentEnvelope = structurePreviewEnvelope(state.currentStructure);
+                    renderPreview(state.currentEnvelope, state.currentEnvelope);
+                }).catch(function(err) {
+                    $review.prop('disabled', false);
+                    showError('Failed to mark Week reviewed: ' + err.message, err.details);
+                });
+            });
+            $secBody.append($review);
+        }
+        $cards.append($secCard);
+    }
+
+    /**
+     * Perform a partial week selection update: updates state, URL, nav, and workspace
+     * without rebuilding the entire workbench shell (rail, course header, warnings).
+     */
+    function selectWeekPartial(newRef) {
+        var sections = (state.currentEnvelope && state.currentEnvelope.content && state.currentEnvelope.content.sections) || [];
+        if (!sections.some(function(s) { return s.ref === newRef; })) return;
+        state.selectedWeekRef = newRef;
+        var url = new URL(window.location.href);
+        url.searchParams.set('week_ref', newRef);
+        window.history.replaceState(null, '', url.toString());
+        updateWeekNavSelection(newRef);
+        var $workspace = $('.week-review-workspace');
+        if ($workspace.length) {
+            renderWeekWorkspaceContent(sections, $workspace);
+        }
+        renderAlignmentReview(state.currentStructure || {content: {sections: sections}});
+    }
+
     function renderAlignmentReview(structure) {
         var $root = $('#instructional-design-review');
         if (!$root.length) return;
@@ -1278,19 +1419,13 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         if (state.stagedMode && sections.length) {
             if (!sections.some(function(section) { return section.ref === state.selectedWeekRef; })) state.selectedWeekRef = sections[0].ref;
             var $layout = $('<div class="row week-review-workbench"></div>');
-            var $rail = $('<nav class="col-md-4 mb-3 week-review-rail" aria-label="Week review"></nav>');
-            var $workspace = $('<div class="col-md-8 week-review-workspace"></div>');
-            var selectedWeek = sections.find(function(section) { return section.ref === state.selectedWeekRef; });
+            var $rail = $('<nav class="col-md-6 mb-3 week-review-rail" aria-label="Week review"></nav>');
+            var $workspace = $('<div class="col-md-6 week-review-workspace"></div>');
             $rail.append($('<div class="week-rail-heading small text-uppercase text-muted font-weight-bold px-2 py-2"></div>').text('Course weeks'));
-            if (selectedWeek) {
-                var selectedWeekLabel = /^week\s+\d+/i.test(selectedWeek.title || '') ? selectedWeek.title : ('Week ' + selectedWeek.position + ' · ' + (selectedWeek.title || 'Untitled'));
-                $workspace.append($('<div class="week-selected-context alert alert-primary py-2 px-3 mb-3"></div>')
-                    .append($('<div class="small text-uppercase font-weight-bold"></div>').text('Currently reviewing'))
-                    .append($('<div class="font-weight-bold"></div>').text(selectedWeekLabel)));
-            }
+            var $navList = $('<div class="week-review-nav-list"></div>');
             sections.forEach(function(section) {
                 var presentation = weekStatusPresentation(weekReviewStatus(section));
-                var label = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled'));
+                var label = weekDisplayLabel(section);
                 var $week = $('<button type="button" class="list-group-item list-group-item-action text-left week-review-nav-item"></button>')
                     .attr('data-week-ref', section.ref).attr('aria-current', section.ref === state.selectedWeekRef ? 'true' : 'false')
                     .toggleClass('active week-nav-current', section.ref === state.selectedWeekRef)
@@ -1298,101 +1433,26 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     .append($('<span class="badge mt-1"></span>').addClass(presentation.badge).text(presentation.label));
                 $week.on('click', function() {
                     guardedNavigate(function() {
-                        state.selectedWeekRef = section.ref;
-                        var url = new URL(window.location.href);
-                        url.searchParams.set('week_ref', section.ref);
-                        window.history.replaceState(null, '', url.toString());
-                        renderPreview(state.currentEnvelope, state.currentEnvelope);
+                        selectWeekPartial(section.ref);
                     });
                 });
-                $rail.append($week);
+                $navList.append($week);
             });
+            $rail.append($navList);
             $layout.append($rail).append($workspace);
             $container.append($layout);
             $cards = $workspace;
+            renderWeekWorkspaceContent(sections, $workspace);
+        } else {
+            // Non-staged mode: render all sections inline
+            var visibleSections = sections;
+            visibleSections.forEach(function(sec) {
+                var idx = sections.indexOf(sec);
+                renderSectionCard(sec, idx, $cards);
+            });
         }
-        var visibleSections = state.stagedMode ? sections.filter(function(section) { return section.ref === state.selectedWeekRef; }) : sections;
-        visibleSections.forEach(function(sec) {
-            var idx = sections.indexOf(sec);
-            var secNum = idx + 1;
-            var $secCard = $('<div class="card mb-3 border-light bg-light"></div>');
-            var $secHeader = $('<div class="card-header bg-white d-flex justify-content-between align-items-center py-2"></div>');
-            $secHeader.append($('<span class="font-weight-bold"></span>').text(secNum + '. ' + (sec.title || 'Section ' + secNum)));
-
-            var $editBtn = $('<button type="button" class="btn btn-sm btn-link text-secondary p-0"><i class="fa fa-pencil mr-1"></i>Edit</button>');
-            $editBtn.on('click', function() {
-                guardedNavigate(function() { openEditSectionModal(idx); });
-            });
-            $secHeader.append($editBtn);
-            var $deleteBtn = $('<button type="button" class="btn btn-sm btn-link text-danger p-0 ml-2"><i class="fa fa-trash mr-1"></i>Delete</button>');
-            $deleteBtn.on('click', function(e) {
-                e.preventDefault();
-                deleteSection(idx);
-            });
-            $secHeader.append($deleteBtn);
-            $secCard.append($secHeader);
-
-            var $secBody = $('<div class="card-body py-2 px-3"></div>');
-            if (sec.summary) {
-                $secBody.append($('<p class="text-muted small mb-2"></p>').text(sec.summary));
-            }
-
-            if (!state.stagedMode) {
-                var activities = sec.activities || [];
-                if (activities.length > 0) {
-                    var $actList = $('<ul class="list-group list-group-flush mb-0"></ul>');
-                    activities.forEach(function(act) {
-                        var isQuiz = (act.type === 'quiz');
-                        var icon = isQuiz ? 'fa-question-circle text-info' : 'fa-file-text text-success';
-                        var typeLabel = isQuiz ? 'Quiz' : 'Assignment';
-                        var $li = $('<li class="list-group-item bg-transparent py-1 px-0 border-0 d-flex align-items-center small"></li>');
-                        $li.append($('<i class="fa ' + icon + ' mr-2"></i>'));
-                        $li.append($('<span></span>').text(typeLabel + ': ' + (act.title || 'Untitled')));
-                        $actList.append($li);
-                    });
-                    $secBody.append($actList);
-                    activities.forEach(function(act) {
-                        if (act.type !== 'quiz') return;
-                        var $quizPreview = $('<div class="border rounded bg-light p-2 mt-2 small"></div>');
-                        renderQuizActivityPreview(act, $quizPreview);
-                        $secBody.append($quizPreview);
-                    });
-                }
-            }
-
-            $secCard.append($secBody);
-            if (state.stagedMode && state.currentStructure) {
-                var status = weekReviewStatus(sec);
-                var $review = $('<button type="button" class="btn btn-sm btn-outline-primary mt-2 week-mark-reviewed"></button>').text('Mark Reviewed');
-                var outcomesReady = !(state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION' || (item.item_type === 'LO' && item.status !== 'REVIEWED'); }) && unapprovedSourceOutcomes().length === 0;
-                $review.prop('disabled', status !== 'Pending review' || !outcomesReady);
-                $review.on('click', function() {
-                    $review.prop('disabled', true);
-                    callBff('mark_week_reviewed', {run_id: state.runId, section_ref: sec.ref, revision: state.structureRevision}).then(function(result) {
-                        state.currentStructure = result.structure_revision;
-                        state.structureRevision = result.structure_revision.revision;
-                        state.currentEnvelope = structurePreviewEnvelope(state.currentStructure);
-                        renderPreview(state.currentEnvelope, state.currentEnvelope);
-                    }).catch(function(err) {
-                        $review.prop('disabled', false);
-                        showError('Failed to mark Week reviewed: ' + err.message, err.details);
-                    });
-                });
-                $secBody.append($review);
-            }
-            $cards.append($secCard);
-        });
 
         showRecoveryBanner('course-identity', 'course', courseIdentityDraftRevision(), openEditCourseTitleModal);
-
-        if (state.stagedMode && state.selectedWeekRef) {
-            var recoveryIndex = sections.findIndex(function(section) { return section.ref === state.selectedWeekRef; });
-            if (recoveryIndex >= 0) {
-                showRecoveryBanner('structure-week', state.selectedWeekRef, state.structureRevision, function(payload) {
-                    openEditSectionModal(recoveryIndex, payload);
-                });
-            }
-        }
 
         renderAlignmentReview(state.currentStructure || {content: {sections: sections}});
 

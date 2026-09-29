@@ -746,3 +746,28 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Course Structure selector — deterministic 10-per-column layout (Issue 27). */
+.week-review-nav-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+}
+
+.week-review-nav-list > .week-review-nav-item {
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+@media (min-width: 768px) {
+    .week-review-nav-list {
+        grid-template-columns: none;
+        grid-template-rows: repeat(10, minmax(0, auto));
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
+    }
+}
+
+.week-review-rail {
+    overflow-x: hidden;
+}
