@@ -11,12 +11,7 @@ Thumbs.db
 
 # Local/generated analysis artifacts
 .claude/
+.agent-work/
 graphify-out/
 scratch-*.json
-
-# Agent/browser acceptance scratch workspace.
-# Keep the two tracked handoff/status documents, ignore generated probes,
-# screenshots, browser profiles, temporary patch scripts, and result dumps.
-.agent-work/*
-!.agent-work/status.md
-!.agent-work/moodle-ui-acceptance.md
+.agents

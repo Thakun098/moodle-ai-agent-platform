@@ -1,54 +1,51 @@
-# Phase 15 QA Protocol
+# QA Protocol
 
-## Frozen fixtures
-- `synthetic-basic.md` — minimal deterministic syllabus fixture.
-- `representative-software-engineering.md` — representative technical course.
-- `representative-project-management.md` — representative non-code professional course.
+## Purpose
 
-## Planning / AI quality rubric
-Human reviewers score each dimension from 1–5 using the anchors in `HUMAN_AI_QUALITY_RUBRIC`:
+The QA package separates deterministic technical validity from human evaluation of instructional quality. Do not treat a technically valid plan as proof of pedagogical quality.
+
+## Representative fixtures
+
+- `fixtures/synthetic-basic.md` — minimal deterministic syllabus fixture.
+- `fixtures/representative-software-engineering.md` — representative technical course.
+- `fixtures/representative-project-management.md` — representative non-code professional course.
+
+## Human instructional-quality rubric
+
+Human reviewers score each dimension from 1–5 using the anchors exposed by the QA package:
+
 1. Grounding and source fidelity — 25%
 2. Requirement coverage — 25%
 3. Instructional design quality — 20%
 4. Specificity and actionability — 15%
 5. Assessment appropriateness — 15%
 
-Automated technical success must not be used as a substitute for these human scores.
+If no human review was performed, report AI quality as `not_evaluated` rather than inferring a score from automated metrics.
 
 ## Technical metrics
-For every repeated technical trial record:
+
+For repeated technical trials record:
+
 - tool-schema calls and valid calls;
 - MCP/tool calls and successful calls;
-- whether deterministic end-to-end verification was attempted and passed;
+- deterministic verification attempts and passes;
 - model, tool, and total latency when observable.
 
-Aggregate metrics:
-- tool-schema validity rate = valid schema calls / schema calls;
-- MCP/tool execution success = successful tool calls / tool calls;
-- verification pass rate = passed verifications / attempted verifications;
-- latency = min/max/mean/p50/p95.
+Aggregate validity/success rates from their explicit denominators. Report latency with enough detail to distinguish typical and tail behavior.
 
-## Repeated planning protocol
-Freeze provider, model, fixtures, prompt code, temperature, and output-contract adapter at batch start. Run each fixture three times. A provider/model/prompt/adapter change requires a new batch identifier or result file; never silently mix observations.
+## Repeated-run discipline
 
-Current provider labels supported by the QA runner:
-- `ollama`
-- `groq`
-- `unsloth` (OpenAI-compatible LAN endpoint)
+Freeze provider, model, fixtures, prompt/code revision, temperature, and structured-output adapter for a batch. A provider/model/prompt/adapter change starts a new batch; never silently mix observations from different configurations.
 
-The automated test suite exercises the technical collector with nine fixed observations (3 fixtures × 3 repetitions). This proves the QA calculation/reporting pipeline deterministically; the fixed values are not presented as live-model quality results.
+The executable QA tests validate the collector/reporting behavior. Provider/model experiment results are historical evidence and belong in the workspace ticket/SOC/Audit evidence store rather than as permanent repo-local result files.
 
-Live repeated planning results are stored separately under `packages/qa/results/` and summarized in `PHASE15_RESULTS.md`.
+## Provider independence
 
-## Provider-specific structured-output rule
-The frozen Plan contract is provider-independent.
-- Ollama may use native schema format support.
-- Groq may use provider `json_schema` support plus local Ajv/domain validation.
-- OpenAI-compatible Unsloth endpoints using `json_object` receive the exact planner schema as an adapter-level system instruction; Ajv/domain validation remains authoritative.
-
-Provider adapters must not mutate the frozen planning contracts merely to satisfy a serving backend.
+The planning contract remains provider-independent. Provider adapters may use provider-specific structured-output mechanisms, but local contract/domain validation remains authoritative and adapters must not mutate the domain contract to fit one serving backend.
 
 ## Result separation
-A QA report always contains two independent sections:
-- `technical`: objective execution/validation/latency metrics.
-- `aiQuality`: human rubric result, or explicitly `not_evaluated` when no human evaluation exists.
+
+Every QA report keeps two independent sections:
+
+- `technical` — objective execution/validation/latency metrics.
+- `aiQuality` — human rubric result or explicitly `not_evaluated`.

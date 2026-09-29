@@ -12,6 +12,15 @@ Syllabus → AI Platform API → Ollama/Groq/Unsloth
 
 สำหรับขั้นตอน bootstrap/deploy/update ที่เป็น source of truth ให้ใช้ [`DEPLOYMENT.md`](DEPLOYMENT.md)
 
+สำหรับ agent/engineering workflow:
+
+- `AGENTS.md` — repo guardrails + Matt skills pointers
+- `CONTEXT.md` — concise domain glossary only
+- `docs/adr/` — accepted/superseded architectural decisions
+- `docs/agents/` — issue-tracker and domain-doc configuration consumed by Matt Pocock engineering skills
+
+สถานะงานและ acceptance evidence ไม่เก็บเป็น repo-local diary แล้ว แต่เก็บที่ `C:\moodle-prac\ai-platform-coordination\tickets` และ daily SOC/Audit ตามที่ `docs/agents/issue-tracker.md` ระบุ
+
 ## สิ่งที่ต้องมี
 
 - Windows PowerShell
@@ -181,8 +190,9 @@ Invoke-RestMethod http://127.0.0.1:3000/api/categories | ConvertTo-Json -Depth 1
 จากนั้นเปิด Moodle ที่ [http://localhost:8000](http://localhost:8000) และเข้าเมนูของ `local_agentpoc` เพื่อทดสอบ flow หลัก:
 
 ```text
-Upload syllabus → Generate plan → Preview → Select category
-→ Approve → Execute → Verify
+Upload syllabus → Course Design / Course Structure → Teacher Review & Seal
+→ optional Activity Structure → Finalize → Official Preview
+→ Teacher Approval → Execute → Verify
 ```
 
 ไฟล์ syllabus ที่รองรับคือ `.txt`, `.md`, `.docx` และ PDF ที่มี text layer; scanned PDF ที่ต้องใช้ OCR ยังไม่รองรับ
@@ -268,8 +278,13 @@ Site administration → Plugins → Local plugins → Teacher AI Assistance 2
 ## โครงสร้างสำคัญ
 
 ```text
+AGENTS.md                    Agent guardrails + Matt skills pointers
+CONTEXT.md                   Domain glossary
+docs/agents/                 Matt skills repo configuration
+docs/adr/                    Durable architecture decisions
 apps/api/                    Fastify API
 apps/moodle-mcp-server/      Moodle MCP Server แบบ stdio
+packages/contracts/          Executable JSON/TypeScript contracts + validators
 packages/agent-runtime/      Agent loop, MCP client, persistence
 packages/planning/           Course/Assignment/Quiz planners
 packages/execution/          Plan execution ผ่าน MCP
