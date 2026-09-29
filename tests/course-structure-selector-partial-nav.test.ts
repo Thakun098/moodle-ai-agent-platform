@@ -69,6 +69,15 @@ describe("Issue 27: Course Structure selector partial navigation", () => {
     expect(styles).not.toContain("max-height: 480px");
   });
 
+  it("adds deliberate Week-card padding and desktop column separation without changing the 10-row flow", () => {
+    expect(styles).toMatch(
+      /\.week-review-nav-list\s*>\s*\.week-review-nav-item\s*\{[\s\S]*padding:\s*0\.625rem\s+0\.75rem/
+    );
+    expect(styles).toMatch(
+      /@media\s*\(min-width:\s*768px\)[\s\S]*\.week-review-nav-list\s*\{[\s\S]*row-gap:\s*0\.5rem[\s\S]*column-gap:\s*0\.875rem/
+    );
+  });
+
   it("gives the two-column selector enough desktop width and keeps compact viewports overflow-safe", () => {
     expect(source).toContain('class="col-md-6 mb-3 week-review-rail"');
     expect(source).toContain('class="col-md-6 week-review-workspace"');

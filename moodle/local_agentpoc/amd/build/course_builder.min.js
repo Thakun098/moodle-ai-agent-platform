@@ -1210,11 +1210,31 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
     function updateWeekNavSelection(newRef) {
         var $rail = $('.week-review-rail');
         if (!$rail.length) return;
-        $rail.find('.week-review-nav-item').each(function() {
-            var $item = $(this);
+        $rail.find('.week-review-nav-item').each(function(index, element) {
+            var $item = $(element);
             var isNew = $item.attr('data-week-ref') === newRef;
             $item.toggleClass('active week-nav-current', isNew)
                  .attr('aria-current', isNew ? 'true' : 'false');
+        });
+    }
+
+    /**
+     * Update one Week review badge in-place so the rail node and scroll position stay stable.
+     */
+    function updateWeekNavReviewStatus(sectionRef) {
+        var sections = state.currentStructure && state.currentStructure.content && Array.isArray(state.currentStructure.content.sections)
+            ? state.currentStructure.content.sections
+            : [];
+        var section = sections.find(function(item) { return item.ref === sectionRef; });
+        if (!section) return;
+        var presentation = weekStatusPresentation(weekReviewStatus(section));
+        $('.week-review-rail').find('.week-review-nav-item').each(function(index, element) {
+            var $item = $(element);
+            if ($item.attr('data-week-ref') !== sectionRef) return;
+            $item.find('.badge')
+                .removeClass('badge-secondary badge-info badge-primary badge-success badge-warning')
+                .addClass(presentation.badge)
+                .text(presentation.label);
         });
     }
 
@@ -1308,7 +1328,14 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     state.currentStructure = result.structure_revision;
                     state.structureRevision = result.structure_revision.revision;
                     state.currentEnvelope = structurePreviewEnvelope(state.currentStructure);
-                    renderPreview(state.currentEnvelope, state.currentEnvelope);
+                    updateWeekNavReviewStatus(sec.ref);
+                    updateWeekNavSelection(state.selectedWeekRef);
+                    var $workspace = $('.week-review-workspace');
+                    if ($workspace.length) {
+                        renderWeekWorkspaceContent(state.currentEnvelope.content.sections || [], $workspace);
+                    }
+                    renderAlignmentReview(state.currentStructure);
+                    updateStructureContinueState();
                 }).catch(function(err) {
                     $review.prop('disabled', false);
                     showError('Failed to mark Week reviewed: ' + err.message, err.details);

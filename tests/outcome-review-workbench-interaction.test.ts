@@ -646,6 +646,28 @@ describe("UX/UI Ticket 03 Week review workbench", () => {
     expect(reloaded.dom.query(".week-review-rail").text()).toContain("Ready to configure");
   });
 
+  it("preserves the Course Structure rail node and scroll position after Mark Reviewed", async () => {
+    const { dom } = harness({ approvedClo: true, reviewedLo: true, weekCount: 18, selectedWeekRef: "section-011" });
+    await flushPromises(); await flushPromises(); await flushPromises();
+
+    const railBefore = dom.query(".week-review-rail");
+    expect(railBefore.length).toBe(1);
+    const railNode = railBefore.elements[0]!;
+    railBefore.scrollTop(240);
+
+    dom.query(".week-mark-reviewed").trigger("click");
+    await flushPromises(); await flushPromises();
+
+    const railAfter = dom.query(".week-review-rail");
+    expect(railAfter.elements[0]).toBe(railNode);
+    expect(railAfter.scrollTop()).toBe(240);
+    expect(dom.query(".week-review-workspace").text()).toContain("Week 11");
+
+    const selected = [...dom.all].find((item) => item.attrs.get("data-week-ref") === "section-011");
+    expect(selected?.attrs.get("aria-current")).toBe("true");
+    expect(selected?.allText()).toContain("Ready to configure");
+  });
+
   it("renders only the five approved Week labels and disables local review when Stale", async () => {
     const statuses = ["Pending review", "Ready to configure", "In progress", "Ready", "Stale"];
     const { dom } = harness({ approvedClo: true, reviewedLo: true, weekCount: 5, weekStatuses: statuses, selectedWeekRef: "section-05" });

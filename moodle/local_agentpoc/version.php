@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_agentpoc';
-$plugin->version   = 2026092904;
+$plugin->version   = 2026092905;
 $plugin->requires  = 2025100600; // Requires Moodle 5.1.x baseline (P7-D1).
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = 'v0.1.51';
+$plugin->release   = 'v0.1.52';
