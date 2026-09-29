@@ -19,8 +19,14 @@ define([], function() {
     function render(context) {
         if (!context) return '';
         var learner = context.learner_context;
+        var language = context.primary_output_language || {};
+        var languageLabel = language.code === 'th' ? 'Thai' : language.code === 'en' ? 'English' : 'Unknown';
         var html = '<h3 class="h5">Course design context</h3><p>Source: ' + escape(context.source_syllabus.filename) +
             ' · Revision ' + escape(context.revision) + '</p>';
+        html += '<div class="alert alert-info py-2 primary-output-language"><strong>Primary Output Language:</strong> ' +
+            escape(languageLabel) + (language.code ? ' (' + escape(language.code) + ')' : '') +
+            (language.derived_from ? ' · Derived from ' + escape(String(language.derived_from).replace(/_/g, ' ').toLowerCase()) : '') +
+            '</div>';
         html += list('Learning Objectives', context.learning_objectives);
         html += list('Source Learning Outcomes — awaiting Teacher review', context.source_learning_outcomes);
         html += '<h4 class="h6">Learner context: ' + escape(learner.status) + '</h4>';

@@ -231,9 +231,10 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
   });
 
   it.each([
-    ["rich", "# Course\nLearner level: Undergraduate\nPrerequisites: Algebra\n## Learning Objectives\n- Develop skills\n## Learning Outcomes\n- Write a loop\nWeek 1: Loops", "PROVIDED_BY_SYLLABUS", 1],
-    ["incomplete", "# Course\nWeek 1: Loops", "UNSPECIFIED", 0],
-  ])("persists and reloads %s Core Context from PostgreSQL", async (_name, text, status, count) => {
+    ["rich", "# Course\nLearner level: Undergraduate\nPrerequisites: Algebra\n## Learning Objectives\n- Develop skills\n## Learning Outcomes\n- Write a loop\nWeek 1: Loops", "PROVIDED_BY_SYLLABUS", 1, "en"],
+    ["incomplete", "# Course\nWeek 1: Loops", "UNSPECIFIED", 0, "en"],
+    ["thai-technical", "# การพัฒนาโปรแกรม\n## วัตถุประสงค์การเรียนรู้\n- อธิบายหลักการและประยุกต์ใช้เพื่อแก้ปัญหา\nสัปดาห์ที่ 1: การออกแบบโปรแกรมด้วย Python API และ SQL\n- ฝึกวิเคราะห์ปัญหาอย่างเป็นระบบ", "UNSPECIFIED", 0, "th"],
+  ])("persists and reloads %s Core Context from PostgreSQL", async (_name, text, status, count, languageCode) => {
     const upload = createMultipartPayload("context.md", String(text), "text/markdown");
     const post = await app.inject({ method: "POST", url: "/api/runs", headers: upload.headers, payload: upload.body });
     expect(post.statusCode).toBe(201);
@@ -242,6 +243,8 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
     expect(persisted).toEqual(result.core_course_design_context);
     expect(persisted?.learner_context.status).toBe(status);
     expect(persisted?.source_learning_outcomes).toHaveLength(Number(count));
+    expect(persisted?.primary_output_language.code).toBe(languageCode);
+    expect(["SCHEDULE_OR_TOPICS", "OBJECTIVES_OUTCOMES", "COURSE_TITLE", "DETERMINISTIC_DEFAULT"]).toContain(persisted?.primary_output_language.derived_from);
     const reload = await app.inject({ method: "GET", url: "/api/runs/" + result.run_id + "/core-context" });
     expect(reload.statusCode).toBe(200);
     expect(reload.json().core_course_design_context).toEqual(persisted);
@@ -271,6 +274,7 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
     expect(data.syllabus.objectives_count).toBe(9);
     expect(data.core_course_design_context.learning_objectives).toHaveLength(4);
     expect(data.core_course_design_context.source_learning_outcomes).toHaveLength(5);
+    expect(data.core_course_design_context.primary_output_language).toEqual({ code: "th", derived_from: "SCHEDULE_OR_TOPICS" });
     expect(data.core_course_design_context.course.learning_hours[0]?.text).toBe("2-2-3");
     expect(data.core_course_design_context.assessment_requirements).toHaveLength(6);
     expect(data.core_course_design_context.missing_information.some(
@@ -632,6 +636,7 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
     const outcomeOnly = {
       ...reloaded.json().core_course_design_context,
       revision: 3,
+      primary_output_language: { code: "th", derived_from: "COURSE_TITLE" },
       approved_learning_outcomes: [{
         outcome_id: "outcome-teacher-1",
         text: "Explain the course introduction",
@@ -648,6 +653,7 @@ describe("POST /api/runs & GET /api/runs/:runId Lifecycle Integration", () => {
       revision: 1,
       teacher_acknowledged_unspecified: true,
     });
+    expect(afterOutcome?.primary_output_language).toEqual(initial?.primary_output_language);
 
     await runRepo.saveCoreCourseDesignContextRevision({
       ...afterOutcome!,

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CoreCourseDesignContext, DesignFact, DesignMissingInformation, NormalizedSyllabus } from "@moodle-agent-poc/contracts";
+import { derivePrimaryOutputLanguage } from "./primary-output-language.js";
 
 type Field = "objectives" | "outcomes" | "ambiguous" | "title" | "code" | "description" | "duration" | "learning_hours" | "delivery_mode" | "target_learners" | "education_level" | "year_level" | "prerequisites" | "prior_knowledge" | "assessment" | "grading" | "constraints" | "schedule";
 
@@ -303,6 +304,7 @@ export function deriveCoreCourseDesignContext(syllabus: NormalizedSyllabus, runI
       sha256: syllabus.metadata.sha256,
       text_sha256: hash(syllabus.raw_text),
     },
+    primary_output_language: derivePrimaryOutputLanguage(syllabus, fields.outcomes.map((item) => item.text)),
     course,
     learner_context: {
       revision,

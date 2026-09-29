@@ -15,13 +15,14 @@ afterEach(() => vi.unstubAllGlobals());
 const sourceRef = { source: "syllabus", sha256: "a".repeat(64), start_line: 1, end_line: 1, text: "Week 1" };
 const materialRef = { source: "lecture.md", section: "section-01" };
 
-function context(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS", acknowledged = status === "UNSPECIFIED"): CoreCourseDesignContext {
+function context(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS", acknowledged = status === "UNSPECIFIED", languageCode: "th" | "en" = "en"): CoreCourseDesignContext {
   return {
     schema_version: "0.1",
     policy_version: "instructional-design.v0.1",
     revision: 4,
     run_id: "run-1",
     source_syllabus: { normalized_syllabus_version: "0.1", filename: "syllabus.md", sha256: "b".repeat(64), text_sha256: "c".repeat(64) },
+    primary_output_language: { code: languageCode, derived_from: "SCHEDULE_OR_TOPICS" },
     course: {},
     learner_context: {
       revision: 2,
@@ -61,9 +62,9 @@ const grounding = {
   materialSnapshotId: "snapshot-1",
 };
 
-function design(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS", learnerAcknowledged = status === "UNSPECIFIED") {
+function design(status: CoreCourseDesignContext["learner_context"]["status"] = "PROVIDED_BY_SYLLABUS", learnerAcknowledged = status === "UNSPECIFIED", languageCode: "th" | "en" = "en") {
   return buildActivityDesignContext({
-    coreContext: context(status, learnerAcknowledged),
+    coreContext: context(status, learnerAcknowledged, languageCode),
     structureRevision: 7,
     section: { ref: "section-01", position: 1, title: "Week 1: Search", summary: "Search fundamentals", aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["outcome-1"] },
     intent: {
@@ -122,6 +123,48 @@ describe("Activity Design Context", () => {
       activity_intent_id: "intent-1", activity_intent_revision: 6, learner_context_revision: 2, selected_outcome_ids: ["outcome-1"],
       approved_outcome_revisions: { "outcome-1": 3 }, material_snapshot_id: "snapshot-1",
     });
+  });
+
+  it("corrects a material Activity language mismatch once and then accepts the corrected Thai response", async () => {
+    const current = design("PROVIDED_BY_SYLLABUS", false, "th");
+    const wrong = {
+      type: "assignment", title: "Provider title",
+      description: "Explain the design choices and justify the implementation in a detailed written report.",
+      instructions: ["Compare the alternatives and discuss the reasoning behind the selected approach."],
+      grade: 100, source_refs: [materialRef], aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["outcome-1"],
+      quality_review: review(), scope_exceptions: scopeExceptions(),
+    };
+    const corrected = {
+      ...wrong,
+      description: "อธิบายแนวทางการออกแบบและเหตุผลของวิธีที่เลือกโดยเชื่อมโยงกับหลักฐานที่กำหนด",
+      instructions: ["เปรียบเทียบทางเลือกและสรุปเหตุผลของการตัดสินใจอย่างเป็นระบบ"],
+    };
+    const modelClient = {
+      ping: vi.fn(), listModels: vi.fn(),
+      chat: vi.fn()
+        .mockResolvedValueOnce({ rawText: JSON.stringify(wrong), message: { role: "assistant", content: "" }, toolCalls: [] })
+        .mockResolvedValueOnce({ rawText: JSON.stringify(corrected), message: { role: "assistant", content: "" }, toolCalls: [] }),
+    };
+    const section = { ref: "section-01", position: 1, title: "สัปดาห์ที่ 1", summary: "การค้นหา", source_refs: [materialRef], activityIntents: [{ ref: "assignment-01", type: "assignment" as const, title: "งานค้นหา", source_refs: [], origin: "teacher_instruction" as const }] };
+    const result = await generateActivity({ modelClient, section, intent: section.activityIntents[0]!, generationContext: grounding, constraints: { activityRules: [], warnings: [] }, designContext: current });
+    expect(result.status).toBe("generated");
+    expect(modelClient.chat).toHaveBeenCalledTimes(2);
+    expect(modelClient.chat.mock.calls[1]?.[0].messages.some((message: { content: string }) => message.content.includes("single bounded language-correction attempt"))).toBe(true);
+  });
+
+  it("fails closed after one Activity language correction attempt remains materially wrong", async () => {
+    const current = design("PROVIDED_BY_SYLLABUS", false, "th");
+    const wrong = {
+      type: "assignment", title: "Provider title",
+      description: "Explain the design choices and justify the implementation in a detailed written report.",
+      instructions: ["Compare the alternatives and discuss the reasoning behind the selected approach."],
+      grade: 100, source_refs: [materialRef], aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["outcome-1"],
+      quality_review: review(), scope_exceptions: scopeExceptions(),
+    };
+    const modelClient = { ping: vi.fn(), listModels: vi.fn(), chat: vi.fn().mockResolvedValue({ rawText: JSON.stringify(wrong), message: { role: "assistant", content: "" }, toolCalls: [] }) };
+    const section = { ref: "section-01", position: 1, title: "สัปดาห์ที่ 1", summary: "การค้นหา", source_refs: [materialRef], activityIntents: [{ ref: "assignment-01", type: "assignment" as const, title: "งานค้นหา", source_refs: [], origin: "teacher_instruction" as const }] };
+    await expect(generateActivity({ modelClient, section, intent: section.activityIntents[0]!, generationContext: grounding, constraints: { activityRules: [], warnings: [] }, designContext: current })).rejects.toMatchObject({ code: "OUTPUT_LANGUAGE_POLICY_VIOLATION" });
+    expect(modelClient.chat).toHaveBeenCalledTimes(2);
   });
 
   it("derives Assignment objectives from authorized Outcome/Objectives instead of free-form prompt fallback", async () => {

@@ -1,7 +1,8 @@
-import type { CoreCourseDesignContext, SourceReference } from "@moodle-agent-poc/contracts";
+import { derivePrimaryOutputLanguageAuthority, type CoreCourseDesignContext, type SourceReference } from "@moodle-agent-poc/contracts";
 import type { ActivityGenerationContext } from "../grounding/activity-grounding-resolver.js";
 import { PlanningError } from "../errors/planning-errors.js";
 import { validateActivityIntent, type ActivityAlignmentOverride, type ActivityPurpose } from "./activity-intent.js";
+import { primaryOutputLanguagePrompt } from "../language/output-language-policy.js";
 
 export const ACTIVITY_DESIGN_PROMPT_VERSION = "activity-design.v0.1";
 export const STRUCTURE_PROMPT_VERSION = "structure-design.v0.1";
@@ -49,6 +50,7 @@ export interface ActivityDesignContext {
   };
   selected_objectives: Array<{ objective_id: string; text: string; source_refs: unknown[] }>;
   selected_outcomes: Array<{ outcome_id: string; text: string; source_outcome_ids: string[]; revision: number; source_refs: unknown[] }>;
+  primary_output_language: CoreCourseDesignContext["primary_output_language"];
   learner_context: {
     revision: number;
     status: CoreCourseDesignContext["learner_context"]["status"];
@@ -104,6 +106,7 @@ export interface ActivityGenerationMetadata {
   section_ref: string;
   activity_intent_revision: number;
   learner_context_revision: number;
+  primary_output_language: CoreCourseDesignContext["primary_output_language"];
   selected_objective_ids: string[];
   selected_outcome_ids: string[];
   approved_outcome_revisions: Record<string, number>;
@@ -145,6 +148,17 @@ export function purposeGuidance(purpose: ActivityPurpose): string {
   if (purpose === "PRACTICE") return "Prioritize rehearsal, safe attempts, reinforcement, and useful feedback; do not present the Activity as automatic Competency Evidence.";
   if (purpose === "FORMATIVE") return "Use questions/tasks that reveal progress and misconceptions so the Teacher can adjust learning support; emphasize observable Outcome evidence.";
   return "Measure the selected Outcome(s) defensibly with clear grading, adequate coverage, and appropriate cognitive demand; remain a Teacher-reviewed Activity, not automatic Competency Evidence.";
+}
+
+function primaryOutputLanguageForContext(context: CoreCourseDesignContext): CoreCourseDesignContext["primary_output_language"] {
+  return context.primary_output_language ?? derivePrimaryOutputLanguageAuthority({
+    schedule_or_topics: context.schedule_or_topics.flatMap((item) => [item.title, ...item.topics]),
+    objectives_outcomes: [
+      ...context.learning_objectives.map((item) => item.source_text),
+      ...context.source_learning_outcomes.map((item) => item.source_text),
+    ],
+    course_title: (context.course.title ?? []).map((item) => item.text),
+  });
 }
 
 export function buildActivityDesignContext(params: {
@@ -198,6 +212,7 @@ export function buildActivityDesignContext(params: {
     };
   });
 
+  const primaryOutputLanguage = primaryOutputLanguageForContext(params.coreContext);
   const warnings = uniqueStrings([
     ...params.coreContext.missing_information
       .filter((item) => item.applies_to_stage.includes("ACTIVITY_GENERATION") && item.severity !== "BLOCKING")
@@ -224,6 +239,7 @@ export function buildActivityDesignContext(params: {
     },
     selected_objectives: selectedObjectives,
     selected_outcomes: selectedOutcomes,
+    primary_output_language: primaryOutputLanguage,
     learner_context: {
       revision: params.coreContext.learner_context.revision,
       status: params.coreContext.learner_context.status,
@@ -265,6 +281,7 @@ export function formatActivityDesignPrompt(context: ActivityDesignContext): stri
     section: context.section,
     selected_objectives: context.selected_objectives,
     selected_outcomes: context.selected_outcomes,
+    primary_output_language: context.primary_output_language,
     learner_context: context.learner_context,
     activity_intent: context.activity_intent,
     grounding: context.grounding,
@@ -273,7 +290,8 @@ export function formatActivityDesignPrompt(context: ActivityDesignContext): stri
   };
   return [
     "You are an Instructional Designer specializing in Constructive Alignment.",
-    "Use only this authorized Activity Design View. The application, not the model, owns Activity type, Purpose, selected IDs, deterministic options, and source authority.",
+    "Use only this authorized Activity Design View. The application, not the model, owns Activity type, Purpose, selected IDs, deterministic options, source authority, and Primary Output Language.",
+    primaryOutputLanguagePrompt(context.primary_output_language),
     `Activity Purpose: ${context.activity_intent.purpose}. ${purposeGuidance(context.activity_intent.purpose)}`,
     "Selected Objective/Outcome IDs are authoritative. Echo only these IDs in aligned_objective_ids and aligned_outcome_ids; never invent or select another Outcome, Objective, Competency, prerequisite, framework, tool, or technical requirement.",
     context.alignment_review_required
@@ -520,6 +538,7 @@ export function buildActivityGenerationMetadata(
     ...(context.activity_intent.id ? { activity_intent_id: context.activity_intent.id } : {}),
     activity_intent_revision: context.activity_intent.intent_revision,
     learner_context_revision: context.learner_context.revision,
+    primary_output_language: context.primary_output_language,
     selected_objective_ids: [...context.activity_intent.selected_objective_ids],
     selected_outcome_ids: [...context.activity_intent.selected_outcome_ids],
     approved_outcome_revisions: Object.fromEntries(context.selected_outcomes.map((outcome) => [outcome.outcome_id, outcome.revision])),

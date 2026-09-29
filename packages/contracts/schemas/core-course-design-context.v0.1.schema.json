@@ -42,6 +42,30 @@
       ],
       "additionalProperties": false
     },
+    "primary_output_language": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "enum": [
+            "th",
+            "en"
+          ]
+        },
+        "derived_from": {
+          "enum": [
+            "SCHEDULE_OR_TOPICS",
+            "OBJECTIVES_OUTCOMES",
+            "COURSE_TITLE",
+            "DETERMINISTIC_DEFAULT"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "derived_from"
+      ],
+      "additionalProperties": false
+    },
     "course": {
       "type": "object",
       "properties": {
@@ -1117,6 +1141,7 @@
     "revision",
     "run_id",
     "source_syllabus",
+    "primary_output_language",
     "course",
     "learner_context",
     "learning_objectives",

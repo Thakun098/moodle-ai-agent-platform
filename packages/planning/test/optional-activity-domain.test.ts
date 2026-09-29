@@ -29,6 +29,17 @@ describe("optional activity domain", () => {
   });
   it("allows only explicitly confirmed insufficient-evidence shells", () => {
     expect(createEmptyActivityShell({ ref: "quiz-01", type: "quiz", title: "Quiz", status: "insufficient_evidence" }, true)).toMatchObject({ questions: [] });
+    const thaiShell = createEmptyActivityShell(
+      { ref: "assignment-01", type: "assignment", title: "งานมอบหมาย", status: "insufficient_evidence" },
+      true,
+      undefined,
+      "th",
+    );
+    expect(thaiShell).toMatchObject({
+      description: "รอผู้สอนกรอกเนื้อหา",
+      instructions: ["ผู้สอนจะเป็นผู้ระบุภายหลัง"],
+      learning_objectives: ["ผู้สอนจะเป็นผู้ระบุภายหลัง"],
+    });
     expect(() => createEmptyActivityShell({ ref: "quiz-01", type: "quiz", title: "Quiz", status: "failed" }, true)).toThrow();
     expect(() => createEmptyActivityShell({ ref: "quiz-01", type: "quiz", title: "Quiz", status: "insufficient_evidence" }, false)).toThrow();
   });

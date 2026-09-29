@@ -8,3 +8,4 @@ export * from "./normalizer/deterministic-normalizer.js";
 export * from "./types.js";
 
 export * from "./core-course-design-context.js";
+export * from "./primary-output-language.js";

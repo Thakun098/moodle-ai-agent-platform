@@ -21,12 +21,25 @@ export interface DesignMissingInformation {
   severity: "INFO" | "WARNING" | "REQUIRES_CONFIRMATION" | "BLOCKING";
   applies_to_stage: DesignStage[];
 }
+export type PrimaryOutputLanguageCode = "th" | "en";
+export type PrimaryOutputLanguageBasis =
+  | "SCHEDULE_OR_TOPICS"
+  | "OBJECTIVES_OUTCOMES"
+  | "COURSE_TITLE"
+  | "DETERMINISTIC_DEFAULT";
+
+export interface PrimaryOutputLanguageAuthority {
+  code: PrimaryOutputLanguageCode;
+  derived_from: PrimaryOutputLanguageBasis;
+}
+
 export interface CoreCourseDesignContext {
   schema_version: "0.1";
   policy_version: "instructional-design.v0.1";
   revision: number;
   run_id: string;
   source_syllabus: { normalized_syllabus_version: "0.1"; filename: string; sha256: string; text_sha256: string };
+  primary_output_language: PrimaryOutputLanguageAuthority;
   course: Partial<Record<"title" | "code" | "description" | "duration" | "learning_hours" | "delivery_mode", DesignFact[]>>;
   learner_context: {
     revision: number;
