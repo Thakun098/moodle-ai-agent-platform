@@ -993,7 +993,9 @@ describe("UX/UI Ticket 04 Activity Week Workbench", () => {
     expect(dom.query(".activity-context-inspector").text()).toContain("Grounding: MATERIAL_GROUNDED");
     expect(dom.query(".activity-context-inspector").text()).toContain("Provenance: AI Generated");
     expect(dom.query(".activity-context-inspector").text()).toContain("AI self-review");
-    expect(dom.query(".activity-context-inspector").text()).toContain("Questions");
+    expect(dom.query(".activity-context-inspector").text()).not.toContain("Questions");
+    expect(dom.query(".activity-week-workspace").text()).toContain("Generation Settings");
+    expect(dom.query(".activity-week-workspace").text()).toContain("Questions");
   });
 
   it("uses one shared Learner Context acknowledgment across Activity generation", async () => {

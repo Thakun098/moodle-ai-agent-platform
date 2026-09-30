@@ -54,7 +54,7 @@ describe("Issue 29 integrated Course/Activity workbench acceptance contract", ()
   });
 
   it("uses the next unused integrated Moodle plugin version", () => {
-    expect(version).toContain("$plugin->version   = 2026092907;");
-    expect(version).toContain("$plugin->release   = 'v0.1.54';");
+    expect(version).toContain("$plugin->version   = 2026093001;");
+    expect(version).toContain("$plugin->release   = 'v0.1.55';");
   });
 });

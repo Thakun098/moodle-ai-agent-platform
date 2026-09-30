@@ -2346,7 +2346,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             var $assignmentOverrideReason = $('<input type="text" class="form-control form-control-sm mt-1" placeholder="Reason for targeting an out-of-Section Outcome">');
             var $quizPrompt = null;
             var $assignmentPrompt = null;
-            var activeAdvanced = null;
             var pendingIntentSave = Promise.resolve({ok: true});
 
             function fillMultiSelect($select, items, selected) {
@@ -3024,6 +3023,24 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 var $prompt = $('<textarea class="form-control form-control-sm mb-2 activity-generation-prompt" rows="3"></textarea>').attr('placeholder', isQuiz ? 'e.g., Focus on concepts from this week and keep questions beginner-friendly...' : "e.g., Ask students to build a small class that applies this week's concepts...");
                 if (isQuiz) $quizPrompt = $prompt; else $assignmentPrompt = $prompt;
                 if (intent.generation_instruction) $prompt.val(intent.generation_instruction);
+                var terminal = intent.status === 'generated' || intent.status === 'shell' || intent.status === 'creating' || intent.status === 'retry_exhausted';
+                var $generationSettings = $('<div class="border rounded bg-light p-2 mb-3 activity-generation-settings"></div>');
+                $generationSettings.append($('<div class="small font-weight-bold mb-2"></div>').text('Generation Settings'));
+                if (isQuiz) {
+                    var $row = $('<div class="form-row"></div>');
+                    var $countGroup = $('<div class="form-group col-4 mb-1"></div>').append('<label class="small mb-1">Questions</label>').append($quizCount);
+                    var $typeGroup = $('<div class="form-group col-5 mb-1"></div>').append('<label class="small mb-1">Type</label>').append($quizType);
+                    var $choiceGroup = $('<div class="form-group col-3 mb-1"></div>').append('<label class="small mb-1">Choices</label>').append($quizChoices);
+                    $row.append($countGroup).append($typeGroup).append($choiceGroup);
+                    $generationSettings.append($row);
+                    $quizCount.prop('disabled', terminal);
+                    $quizType.prop('disabled', terminal);
+                    $quizChoices.prop('disabled', terminal || $quizType.val() !== 'multichoice');
+                } else {
+                    $generationSettings.append($('<div class="form-group mb-1"></div>').append('<label class="small mb-1">Grade</label>').append($assignmentGrade));
+                    $assignmentGrade.prop('disabled', terminal);
+                }
+                $panel.append($generationSettings);
                 $panel.append($promptLabel).append($prompt);
                 var $promptStatus = $('<div class="activity-intent-save-status small mb-2"></div>');
                 function setPromptSaveStatus(className, iconClass, text) {
@@ -3051,27 +3068,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     persistSelection(instructions).then(function() { renderPanels(); }).catch(function(err) { $saveIntent.prop('disabled', false).text('Save Intent'); showError('Failed to save Activity Intent: ' + err.message, err.details); });
                 });
                 $panel.append($saveIntent);
-
-                var terminal = intent.status === 'generated' || intent.status === 'shell' || intent.status === 'creating' || intent.status === 'retry_exhausted';
-                var $advanced = $('<details class="mb-3"></details>');
-                $advanced.append($('<summary class="small font-weight-bold text-secondary" style="cursor:pointer;">Advanced Settings</summary>'));
-                var $advancedBody = $('<div class="border rounded bg-light p-2 mt-2"></div>');
-                if (isQuiz) {
-                    var $row = $('<div class="form-row"></div>');
-                    var $countGroup = $('<div class="form-group col-4 mb-1"></div>').append('<label class="small mb-1">Questions</label>').append($quizCount);
-                    var $typeGroup = $('<div class="form-group col-5 mb-1"></div>').append('<label class="small mb-1">Type</label>').append($quizType);
-                    var $choiceGroup = $('<div class="form-group col-3 mb-1"></div>').append('<label class="small mb-1">Choices</label>').append($quizChoices);
-                    $row.append($countGroup).append($typeGroup).append($choiceGroup);
-                    $advancedBody.append($row);
-                    $quizCount.prop('disabled', terminal);
-                    $quizType.prop('disabled', terminal);
-                    $quizChoices.prop('disabled', terminal || $quizType.val() !== 'multichoice');
-                } else {
-                    $advancedBody.append($('<div class="form-group mb-1"></div>').append('<label class="small mb-1">Grade</label>').append($assignmentGrade));
-                    $assignmentGrade.prop('disabled', terminal);
-                }
-                $advanced.append($advancedBody);
-                if (activeTab === type) activeAdvanced = $advanced;
 
                 renderGeneratedPreview(intent, $panel);
 
@@ -3109,7 +3105,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             function renderPanels() {
                 var intents = state.activityIntents[section.ref] || [];
                 activeTab = state.selectedActivityTabByWeek[section.ref] || activeTab || 'material';
-                activeAdvanced = null;
                 var quizIntent = getIntent('quiz');
                 var assignmentIntent = getIntent('assignment');
                 $quiz.prop('checked', Boolean(quizIntent));
@@ -3133,7 +3128,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     $material.removeClass('text-muted');
                 }
                 applyActivityTab();
-                if (activeAdvanced) $activityInspector.append(activeAdvanced);
                 var weekStale = intents.some(function(item) { return item.status === 'stale'; });
                 var weekReady = intents.length && intents.every(function(item) { return item.status === 'generated' || item.status === 'shell'; });
                 var weekCreating = intents.some(function(item) { return item.status === 'creating'; });
