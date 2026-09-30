@@ -25,13 +25,13 @@ function positiveInteger(value: unknown, fallback: number, min = 1): number {
   return parsed;
 }
 
-function buildOptions(type: "quiz" | "assignment", sectionTitle: string, body: Record<string, unknown>, config: AppConfig): Record<string, unknown> {
+function buildOptions(type: "quiz" | "assignment", sectionTitle: string, body: Record<string, unknown>, config: AppConfig, languageCode: "th" | "en" = "en"): Record<string, unknown> {
   if (type === "quiz") {
     const options = asRecord(body.quiz_options);
     const questionType = typeof options.question_type === "string" ? options.question_type.trim().toLowerCase() : "multichoice";
     if (!["multichoice", "truefalse", "shortanswer", "essay"].includes(questionType)) throw new Error("Unsupported quiz question_type.");
     return {
-      title: typeof options.title === "string" && options.title.trim() ? options.title.trim() : `Quiz: ${sectionTitle}`,
+      title: typeof options.title === "string" && options.title.trim() ? options.title.trim() : (languageCode === "th" ? `แบบทดสอบ: ${sectionTitle}` : `Quiz: ${sectionTitle}`),
       question_count: positiveInteger(options.question_count, config.defaultQuizQuestionCount),
       question_type: questionType,
       choices_per_question: positiveInteger(options.choices_per_question, config.defaultQuizChoiceCount, 2),
@@ -41,7 +41,7 @@ function buildOptions(type: "quiz" | "assignment", sectionTitle: string, body: R
   }
   const options = asRecord(body.assignment_options);
   return {
-    title: typeof options.title === "string" && options.title.trim() ? options.title.trim() : `Assignment: ${sectionTitle}`,
+    title: typeof options.title === "string" && options.title.trim() ? options.title.trim() : (languageCode === "th" ? `งานมอบหมาย: ${sectionTitle}` : `Assignment: ${sectionTitle}`),
     grade: positiveInteger(options.grade, config.defaultAssignmentGrade),
   };
 }
@@ -97,8 +97,12 @@ export const activityIntentRoutes: FastifyPluginAsync<ActivityIntentRoutesOption
     const hasQuiz = typeof body.quiz === "boolean";
     const hasAssignment = typeof body.assignment === "boolean";
     if (!hasQuiz && !hasAssignment) return reply.status(400).send({ error: { code: "BAD_REQUEST", message: "At least one of quiz or assignment must be a boolean.", details: null, request_id: request.id } });
-    await beginInstructionalDesignMutation(runRepo, runId);
+    const hasCoreContextReader = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function";
     const context = await contextFromRunRepo(runRepo, runId);
+    if (hasCoreContextReader && !context) {
+      return reply.status(409).send({ error: { code: "PRIMARY_OUTPUT_LANGUAGE_CONTEXT_UNAVAILABLE", message: "Current Core Course Design Context is unavailable; Activity Intent defaults cannot verify Primary Output Language authority.", details: null, request_id: request.id } });
+    }
+    await beginInstructionalDesignMutation(runRepo, runId);
     const repo = getIntentRepo();
     if (context && typeof (repo as { markStaleForContext?: unknown }).markStaleForContext === "function") await repo.markStaleForContext(runId, sealed.revision, context.revision);
     const sectionTitle = typeof section.title === "string" && section.title.trim() ? section.title : sectionRef;
@@ -111,7 +115,7 @@ export const activityIntentRoutes: FastifyPluginAsync<ActivityIntentRoutesOption
           if (existing) await repo.remove(existing.id);
           continue;
         }
-                const activityOptions = buildOptions(type, sectionTitle, body, options.config);
+                const activityOptions = buildOptions(type, sectionTitle, body, options.config, context?.primary_output_language?.code ?? "en");
         const purposeValue = typeValue(body, type, "purpose");
         const purpose = purposeValue ?? existing?.purpose ?? "PRACTICE";
         const selectedObjectivesInput = arrayInput(body, `${type}_selected_objective_ids`) ?? arrayInput(body, "selected_objective_ids");
@@ -145,7 +149,7 @@ export const activityIntentRoutes: FastifyPluginAsync<ActivityIntentRoutesOption
             learner_context_acknowledged: learnerAcknowledged,
             ...(generationInstruction ? { generation_instruction: generationInstruction } : {}),
             ...(alignmentOverride ? { alignment_override: alignmentOverride } : {}),
-          }, { allowMissingAlignment: true })
+          }, { allowMissingAlignment: true, allowUnacknowledgedLearnerContext: true })
           : {
             purpose: (typeof purpose === "string" ? purpose : "PRACTICE") as ActivityPurpose,
             selected_objective_ids: selectedObjectives,

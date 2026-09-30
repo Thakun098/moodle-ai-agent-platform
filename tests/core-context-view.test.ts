@@ -13,6 +13,9 @@ describe("Teacher Core Context summary", () => {
     expect(html).toContain("Learning Objectives");
     expect(html).toContain("Source Learning Outcomes");
     expect(html).toContain("UNSPECIFIED");
+    expect(html).toContain("Primary Output Language:");
+    expect(html).toContain("English (en)");
+    expect(html).toContain("Derived from");
     expect(html).toContain("REQUIRES_CONFIRMATION");
     expect(html).toContain("DERIVE_COMPETENCIES");
     expect(html).toContain("Source line");

@@ -189,9 +189,14 @@ export const courseStructureRoutes: FastifyPluginAsync<CourseStructureRoutesOpti
       reply.status(422).send({ error: { code: "UNPROCESSABLE_ENTITY", message: `Run ${runId} does not contain a normalized syllabus for structure planning.`, details: null, request_id: request.id } });
       return;
     }
-    const coreContext = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
+    const hasCoreContextReader = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function";
+    const coreContext = hasCoreContextReader
       ? await (runRepo as typeof runRepo & { getCoreCourseDesignContext: (id: string) => Promise<unknown> }).getCoreCourseDesignContext(runId)
       : null;
+    if (hasCoreContextReader && !coreContext) {
+      reply.status(409).send({ error: { code: "PRIMARY_OUTPUT_LANGUAGE_CONTEXT_UNAVAILABLE", message: "Current Core Course Design Context is unavailable; Course Structure generation cannot verify Primary Output Language authority.", details: null, request_id: request.id } });
+      return;
+    }
     if (await structureRepo.getLatestRevision(runId)) {
       reply.status(409).send({ error: { code: "CONFLICT", message: `A course structure revision already exists for run ${runId}. Create an edited revision instead.`, details: null, request_id: request.id } });
       return;

@@ -35,3 +35,4 @@ export * from "./competency/competency-mapping.js";
 export * from "./activity/activity-design.js";
 export * from "./activity/activity-intent.js";
 export * from "./activity/teacher-edit-validation.js";
+export * from "./language/output-language-policy.js";

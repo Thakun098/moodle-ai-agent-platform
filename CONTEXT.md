@@ -66,6 +66,18 @@ The explicit Teacher confirmation required before generating an Activity when Le
 
 _Avoid_: Generate-implies-consent, auto-acknowledgment
 
+**Learner Context**:
+Source-backed or Teacher-provided information about the intended learners. When the source does not provide it, its status is explicitly UNSPECIFIED rather than inferred.
+_Avoid_: guessed learner profile, inferred education level
+
+**Primary Output Language**:
+The single run-level language authority deterministically derived from semantic Syllabus content. Derivation uses natural-language signal and ignores codes, identifiers, technical/product tokens, code, and URLs. Mixed-language tie-breaking is deterministic: Schedule/Topics first, then Objectives/Outcomes, then Course Title; a degenerate no-signal source uses the compatibility default. The authority applies to newly authored teacher/student-facing educational prose in Course Structure and Activity generation. Technical terms, product names, code, identifiers, and verbatim source quotations may remain in their conventional/source form. The Teacher can see the derived authority but does not override it in this scope. A material generator mismatch receives one bounded correction attempt and then fails closed.
+_Avoid_: UI-locale inference, per-generator language choice, silent English fallback in Thai prose, manual override, unbounded language retries
+
+**Learner Context Acknowledgment**:
+The explicit Teacher confirmation attached to the current Learner Context revision when its status is UNSPECIFIED. It is made once for that learner context and inherited by all Activities that use the same revision; unrelated Outcome/CLO changes do not require re-acknowledgment.
+_Avoid_: per-Activity consent, Generate-implies-consent, auto-acknowledgment
+
 **Teacher Review Required**:
 
 A durable review condition for Activity content that used bounded AI elaboration within syllabus scope. Approval remains blocked until the current Plan Revision is explicitly reviewed.

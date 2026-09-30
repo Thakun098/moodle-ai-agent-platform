@@ -9,6 +9,12 @@ import { PlanningError } from "../errors/planning-errors.js";
 import { buildProvenanceAllowlist, validateSourceReferences } from "../domain/planning-domain-validator.js";
 import { courseStructureSectionCoversAnchor, inspectCourseStructureCoverage } from "../validators/course-structure-coverage-validator.js";
 import { formatCoreCourseDesignProjection } from "../structure/instructional-design-alignment.js";
+import {
+  collectStructureEducationalProse,
+  inspectPrimaryOutputLanguage,
+  primaryOutputLanguageCorrectionPrompt,
+  primaryOutputLanguagePrompt,
+} from "../language/output-language-policy.js";
 
 const nonBlank = { type: "string", minLength: 1, pattern: "\\S" };
 // Groq's structured-output validator rejects the provider-generated nullable
@@ -54,10 +60,10 @@ function normalizeModelSourceRefs(value: unknown, filename: string): import("@mo
   });
 }
 
-function normalizeStructureModelPayload(raw: any, filename: string, allowSparseSectionFields = false): any {
+function normalizeStructureModelPayload(raw: any, filename: string, allowSparseSectionFields = false, languageCode: "th" | "en" = "en"): any {
   const rawContent = raw && typeof raw.content === "object" && raw.content !== null ? raw.content : raw;
   const rawCourse = rawContent?.course && typeof rawContent.course === "object" ? rawContent.course : {};
-  const courseTitle = rawCourse.title || rawContent?.course_title || raw?.course_title || raw?.title || "Untitled Course";
+  const courseTitle = rawCourse.title || rawContent?.course_title || raw?.course_title || raw?.title || (languageCode === "th" ? "รายวิชาไม่มีชื่อ" : "Untitled Course");
   const courseCode = rawCourse.course_code || rawContent?.course_code || raw?.course_code;
   const courseSummary = rawCourse.summary || rawContent?.course_summary || raw?.course_summary;
   const sections = Array.isArray(rawContent?.sections) ? rawContent.sections.map((section: any, index: number) => {
@@ -66,11 +72,11 @@ function normalizeStructureModelPayload(raw: any, filename: string, allowSparseS
       : section?.position;
     const title = allowSparseSectionFields
       ? [section?.title, section?.section_title, section?.name, section?.week_or_unit]
-        .find((value): value is string => typeof value === "string" && value.trim() !== "") ?? `Section ${index + 1}`
+        .find((value): value is string => typeof value === "string" && value.trim() !== "") ?? (languageCode === "th" ? `ส่วนที่ ${index + 1}` : `Section ${index + 1}`)
       : section?.title;
     const summary = allowSparseSectionFields
       ? [section?.summary, section?.section_summary, section?.description, title]
-        .find((value): value is string => typeof value === "string" && value.trim() !== "") ?? `Section ${index + 1}`
+        .find((value): value is string => typeof value === "string" && value.trim() !== "") ?? (languageCode === "th" ? `ส่วนที่ ${index + 1}` : `Section ${index + 1}`)
       : section?.summary;
     return {
       ...section,
@@ -89,7 +95,7 @@ function normalizeStructureModelPayload(raw: any, filename: string, allowSparseS
   return {
     ...raw,
     title: raw?.title || courseTitle,
-    summary: raw?.summary || courseSummary || `Course structure generated from ${filename}.`,
+    summary: raw?.summary || courseSummary || (languageCode === "th" ? `โครงสร้างรายวิชาที่สร้างจาก ${filename}` : `Course structure generated from ${filename}.`),
     content: {
       course: {
         title: courseTitle,
@@ -267,19 +273,48 @@ export class CourseStructurePlanner {
   constructor(private readonly modelClient: ModelClient, private readonly scheduler = new ModelRequestScheduler()) {}
 
   async plan(syllabus: NormalizedSyllabus, _constraints: CoursePlanningConstraints, model?: string, timeoutMs?: number, outputMode: "schema" | "json" = "schema", coreContext?: CoreCourseDesignContext): Promise<CourseStructureDraft> {
+    const languageAuthority = coreContext?.primary_output_language;
     const userPrompt = [buildCourseStructureUserPrompt(syllabus, _constraints.originalInstruction), coreContext ? formatCoreCourseDesignProjection(coreContext) : ""].filter(Boolean).join("\n\n");
-    const response = await this.scheduler.chat(this.modelClient, {
+    const baseMessages = [
+      {
+        role: "system" as const,
+        content: [
+          COURSE_STRUCTURE_SYSTEM_PROMPT,
+          "Every section MUST include activity_intents (an array; use [] when there are no intents).",
+          ...(languageAuthority ? [primaryOutputLanguagePrompt(languageAuthority)] : []),
+        ].join("\n"),
+      },
+      { role: "user" as const, content: userPrompt },
+    ];
+    const requestStructure = async (correction = false) => this.scheduler.chat(this.modelClient, {
       ...(model ? { model } : {}),
-      messages: [
-        { role: "system", content: `${COURSE_STRUCTURE_SYSTEM_PROMPT}\nEvery section MUST include activity_intents (an array; use [] when there are no intents).` },
-        { role: "user", content: userPrompt },
-      ],
+      messages: correction && languageAuthority
+        ? [...baseMessages, { role: "user" as const, content: primaryOutputLanguageCorrectionPrompt(languageAuthority) }]
+        : baseMessages,
       format: outputMode === "json" ? "json" : buildCourseStructureSchema(syllabus),
       ...(timeoutMs ? { options: { timeoutMs } } : {}),
     });
-    let parsed: any;
-    try { parsed = JSON.parse(response.rawText); } catch (error) { throw new Error(`Structure planner returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`); }
-    parsed = normalizeStructureModelPayload(parsed, syllabus.metadata.filename, outputMode === "json");
+    const parseResponse = (rawText: string): any => {
+      let value: any;
+      try { value = JSON.parse(rawText); } catch (error) { throw new Error(`Structure planner returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`); }
+      return normalizeStructureModelPayload(value, syllabus.metadata.filename, outputMode === "json", languageAuthority?.code ?? "en");
+    };
+
+    let parsed = parseResponse((await requestStructure()).rawText);
+    if (languageAuthority) {
+      let inspection = inspectPrimaryOutputLanguage(collectStructureEducationalProse(parsed), languageAuthority, [syllabus.raw_text]);
+      if (!inspection.valid) {
+        parsed = parseResponse((await requestStructure(true)).rawText);
+        inspection = inspectPrimaryOutputLanguage(collectStructureEducationalProse(parsed), languageAuthority, [syllabus.raw_text]);
+        if (!inspection.valid) {
+          throw new PlanningError(
+            "OUTPUT_LANGUAGE_POLICY_VIOLATION",
+            `Course Structure output materially violates Primary Output Language ${inspection.expected_label} after one correction attempt.`,
+            inspection,
+          );
+        }
+      }
+    }
     const content = parsed.content;
     if (!content || typeof content !== "object" || Array.isArray(content) || !content.course || !Array.isArray(content.sections)) {
       throw new PlanningError(

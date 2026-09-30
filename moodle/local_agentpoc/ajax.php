@@ -226,6 +226,12 @@ try {
             $response['data'] = $client->get_course_structure($runid);
             break;
 
+        case 'acknowledge_learner_context':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $learnercontextrevision = required_param('learner_context_revision', PARAM_INT);
+            $response['data'] = $client->acknowledge_learner_context($runid, $learnercontextrevision);
+            break;
+
         case 'set_activity_intents':
             $runid = required_param('run_id', PARAM_ALPHANUMEXT);
             $sectionref = required_param('section_ref', PARAM_ALPHANUMEXT);

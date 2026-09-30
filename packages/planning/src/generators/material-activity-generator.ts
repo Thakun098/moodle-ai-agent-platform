@@ -16,6 +16,11 @@ import type { CoursePlanningConstraints } from "../instructions/planning-constra
 import { ModelRequestScheduler } from "../scheduling/model-request-scheduler.js";
 import type { ActivityIntent, SectionStructureDraft } from "../types.js";
 import { validateActivityShapeConstraints, validateSectionActivityProvenance, type ActivityRuleScopeMap } from "../validators/teacher-constraint-validator.js";
+import {
+  collectActivityEducationalProse,
+  inspectPrimaryOutputLanguage,
+  primaryOutputLanguageCorrectionPrompt,
+} from "../language/output-language-policy.js";
 
 export type ActivityGenerationResult =
   | { status: "generated"; activity: ActivityPlan; qualityReview?: ActivityQualityReview; generationMetadata?: ActivityGenerationMetadata }
@@ -199,7 +204,7 @@ function firstPositiveNumber(record: Record<string, unknown>, keys: readonly str
   return undefined;
 }
 
-function normalizeQuizActivity(activity: QuizPlan, intent: ActivityIntent, section: SectionStructureDraft, sourceRefs: MaterialContext["sourceRefs"], activityOrdinal: number): QuizPlan {
+function normalizeQuizActivity(activity: QuizPlan, intent: ActivityIntent, section: SectionStructureDraft, sourceRefs: MaterialContext["sourceRefs"], activityOrdinal: number, languageCode: "th" | "en" = "en"): QuizPlan {
   if (!Array.isArray(activity.questions) || activity.questions.length === 0) {
     throw new PlanningError("MODEL_RESPONSE_INVALID", `Generated Quiz "${intent.title}" must contain at least one question.`);
   }
@@ -221,7 +226,7 @@ function normalizeQuizActivity(activity: QuizPlan, intent: ActivityIntent, secti
           type: "truefalse",
           question: questionText,
           correct_answer: typeof question.correct_answer === "boolean" ? question.correct_answer : String(question.answer).toLowerCase() === "true",
-          feedback: typeof question.feedback === "string" && question.feedback.trim() ? question.feedback : "Answer grounded in the authorized Learning Material.",
+          feedback: typeof question.feedback === "string" && question.feedback.trim() ? question.feedback : (languageCode === "th" ? "คำตอบอิงจากหลักฐานการเรียนรู้ที่ได้รับอนุญาต" : "Answer grounded in the authorized Learning Material."),
           default_mark: firstPositiveNumber(intent.options ?? {}, ["default_mark"]) ?? (typeof question.default_mark === "number" && question.default_mark > 0 ? question.default_mark : 1),
           source_refs: normalizedSourceRefs,
         };
@@ -289,13 +294,13 @@ function normalizeQuizActivity(activity: QuizPlan, intent: ActivityIntent, secti
       question: questionText.trim(),
       choices: choiceRefs as [typeof choiceRefs[0], typeof choiceRefs[1], ...typeof choiceRefs],
       correct_choice_refs: [answerRef],
-      feedback: typeof question.feedback === "string" && question.feedback.trim() ? question.feedback : "Answer grounded in the authorized Learning Material.",
+      feedback: typeof question.feedback === "string" && question.feedback.trim() ? question.feedback : (languageCode === "th" ? "คำตอบอิงจากหลักฐานการเรียนรู้ที่ได้รับอนุญาต" : "Answer grounded in the authorized Learning Material."),
       default_mark: firstPositiveNumber(intent.options ?? {}, ["default_mark"]) ?? (typeof question.default_mark === "number" && question.default_mark > 0 ? question.default_mark : 1),
       source_refs: normalizedSourceRefs,
     } as QuestionPlan;
   });
   const activitySourceRefs = Array.isArray(activity.source_refs) ? activity.source_refs : [];
-  return { ref: intent.ref ?? `quiz-${String(section.position).padStart(2, "0")}`, type: "quiz", title: intent.title, description: typeof activity.description === "string" && activity.description.trim() ? activity.description : `${intent.title} generated from authorized Learning Material.`, source_refs: activitySourceRefs.length ? activitySourceRefs : [...sourceRefs], questions };
+  return { ref: intent.ref ?? `quiz-${String(section.position).padStart(2, "0")}`, type: "quiz", title: intent.title, description: typeof activity.description === "string" && activity.description.trim() ? activity.description : (languageCode === "th" ? `${intent.title} สร้างจากหลักฐานการเรียนรู้ที่ได้รับอนุญาต` : `${intent.title} generated from authorized Learning Material.`), source_refs: activitySourceRefs.length ? activitySourceRefs : [...sourceRefs], questions };
 }
 
 function normalizeActivity(parsed: any, intent: ActivityIntent, section: SectionStructureDraft, context: { sourceRefs: MaterialContext["sourceRefs"] }, activityOrdinal: number, generationInstruction?: string, designContext?: ActivityDesignContext): ActivityPlan {
@@ -333,7 +338,7 @@ function normalizeActivity(parsed: any, intent: ActivityIntent, section: Section
       source_refs: Array.isArray(assignment.source_refs) && assignment.source_refs.length ? assignment.source_refs as AssignmentPlan["source_refs"] : [...context.sourceRefs],
     };
   }
-  return normalizeQuizActivity(activity as QuizPlan, intent, section, context.sourceRefs, activityOrdinal);
+  return normalizeQuizActivity(activity as QuizPlan, intent, section, context.sourceRefs, activityOrdinal, designContext?.primary_output_language.code ?? "en");
 }
 
 export async function generateActivity(params: {
@@ -391,25 +396,55 @@ export async function generateActivity(params: {
     ? `Return exactly ONE Activity JSON object matching the requested Activity type and constraints. Never return a JSON array and do not wrap the Activity in status/activity. Evidence sufficiency has already been resolved deterministically before this model call.`
     : `Return exactly one JSON object, never a JSON array. For a successful result use {\"status\":\"generated\",\"activity\":{...}}. For unsupported content use {\"status\":\"blocked\",\"reason\":\"INSUFFICIENT_EVIDENCE\",\"message\":\"...\"}.`;
   const designPrompt = params.designContext ? formatActivityDesignPrompt(params.designContext) : undefined;
-  const response = await (params.scheduler ?? new ModelRequestScheduler()).chat(params.modelClient, {
+  const scheduler = params.scheduler ?? new ModelRequestScheduler();
+  const baseMessages = [
+    { role: "system" as const, content: `${responseInstruction} ${authorityInstruction} Teacher Instruction controls activity form and constraints. An Additional generation instruction may shape the task, question focus, examples, or presentation inside the authorized Activity scope; it cannot create, delete, or change ActivityIntent type/count, override deterministic constraints, or introduce content outside the authorized Material/Syllabus scope. For Quiz output, satisfy the deterministic question count/type/choice constraints exactly. For multiple-choice questions, identify exactly one correct choice using correct_choice_refs, correct_choice, correct_answer, answer, or an explicit *_index field. For Assignment output, always provide non-empty description, instructions, learning_objectives, grade, and source_refs.` },
+    { role: "user" as const, content: `Section:\n${JSON.stringify({ ref: section.ref, title: section.title, summary: section.summary })}\nActivity intent:\n${JSON.stringify(intent)}\nTeacher constraints:\n${JSON.stringify(params.constraints)}\nGrounding mode:\n${context.mode}\nAdditional Activity Prompt (optional, scope-bounded content guidance):\n${params.generationInstruction?.trim() || "None"}\nAuthorized Activity context:\n${context.text}\nAuthorized scope/source references:\n${JSON.stringify(context.sourceRefs)}` },
+    ...(designPrompt ? [{ role: "user" as const, content: designPrompt }] : []),
+  ];
+  const requestActivity = async (correction = false) => scheduler.chat(params.modelClient, {
     ...(params.model ? { model: params.model } : {}),
-    messages: [
-      { role: "system", content: `${responseInstruction} ${authorityInstruction} Teacher Instruction controls activity form and constraints. An Additional generation instruction may shape the task, question focus, examples, or presentation inside the authorized Activity scope; it cannot create, delete, or change ActivityIntent type/count, override deterministic constraints, or introduce content outside the authorized Material/Syllabus scope. For Quiz output, satisfy the deterministic question count/type/choice constraints exactly. For multiple-choice questions, identify exactly one correct choice using correct_choice_refs, correct_choice, correct_answer, answer, or an explicit *_index field. For Assignment output, always provide non-empty description, instructions, learning_objectives, grade, and source_refs.` },
-      { role: "user", content: `Section:\n${JSON.stringify({ ref: section.ref, title: section.title, summary: section.summary })}\nActivity intent:\n${JSON.stringify(intent)}\nTeacher constraints:\n${JSON.stringify(params.constraints)}\nGrounding mode:\n${context.mode}\nAdditional Activity Prompt (optional, scope-bounded content guidance):\n${params.generationInstruction?.trim() || "None"}\nAuthorized Activity context:\n${context.text}\nAuthorized scope/source references:\n${JSON.stringify(context.sourceRefs)}` },
-      ...(designPrompt ? [{ role: "user" as const, content: designPrompt }] : []),
-    ],
+    messages: correction && params.designContext
+      ? [...baseMessages, { role: "user" as const, content: primaryOutputLanguageCorrectionPrompt(params.designContext.primary_output_language) }]
+      : baseMessages,
     // ADR-0002 resolves insufficient evidence before the model call, so the
     // new flow can use a direct Activity schema. Legacy MaterialContext callers
     // retain JSON-object mode and the tagged generated/blocked wrapper.
     format: usesDomain2Schema ? generatedActivitySchema(intent.type, params.constraints, params.designContext) : "json",
     ...(params.timeoutMs ? { options: { timeoutMs: params.timeoutMs } } : {}),
   });
-  let parsed: any;
-  try {
-    parsed = JSON.parse(response.rawText);
-    if (Array.isArray(parsed) && parsed.length === 1) parsed = parsed[0];
-  } catch (error) {
-    throw new PlanningError("MODEL_RESPONSE_INVALID", `Material activity generator returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`, null, { cause: error });
+  const parseResponse = (rawText: string): any => {
+    try {
+      let value = JSON.parse(rawText);
+      if (Array.isArray(value) && value.length === 1) value = value[0];
+      return value;
+    } catch (error) {
+      throw new PlanningError("MODEL_RESPONSE_INVALID", `Material activity generator returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`, null, { cause: error });
+    }
+  };
+
+  let parsed = parseResponse((await requestActivity()).rawText);
+  if (params.designContext && parsed?.status !== "blocked") {
+    let inspection = inspectPrimaryOutputLanguage(
+      collectActivityEducationalProse(parsed),
+      params.designContext.primary_output_language,
+      [context.text, ...context.sourceRefs.map((ref) => ref.text ?? "")],
+    );
+    if (!inspection.valid) {
+      parsed = parseResponse((await requestActivity(true)).rawText);
+      inspection = inspectPrimaryOutputLanguage(
+      collectActivityEducationalProse(parsed),
+      params.designContext.primary_output_language,
+      [context.text, ...context.sourceRefs.map((ref) => ref.text ?? "")],
+    );
+      if (!inspection.valid) {
+        throw new PlanningError(
+          "OUTPUT_LANGUAGE_POLICY_VIOLATION",
+          `Generated Activity materially violates Primary Output Language ${inspection.expected_label} after one correction attempt.`,
+          inspection,
+        );
+      }
+    }
   }
   if (parsed?.status === "blocked") {
     if (!["INSUFFICIENT_MATERIAL", "INSUFFICIENT_EVIDENCE"].includes(parsed.reason) || typeof parsed.message !== "string" || !parsed.message.trim()) {

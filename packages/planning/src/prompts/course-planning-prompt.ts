@@ -53,10 +53,11 @@ Return only:
 
 Do not write downstream activity materialization content in this stage.
 
- Language Preservation:
-- Detect the primary natural language used by the syllabus.
-- Write newly authored structure prose in that language.
-- Preserve technical terms, identifiers, product names, and code syntax.
+Language Preservation:
+- When the application supplies a Primary Output Language authority, treat it as authoritative and do not infer or select a different output language.
+- For legacy calls without that authority, preserve the primary natural language used by the syllabus.
+- Write newly authored structure prose in the authorized/preserved language.
+- Preserve technical terms, identifiers, product names, code syntax, and verbatim source quotations.
 
 Grounding and coverage:
 - Use only facts, topics, objectives, assessments, and source references present in the supplied syllabus.

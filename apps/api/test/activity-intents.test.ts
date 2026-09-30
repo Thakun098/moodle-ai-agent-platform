@@ -144,3 +144,87 @@ describe("Activity Intent API — ADR-0002", () => {
     expect(missingAlignment.json().intents.find((item: any) => item.activity_type === "assignment")).toMatchObject({ selected_outcome_ids: [], alignment_override: { kind: "MISSING_ALIGNMENT", acknowledged: true } });
     await app.close();
   });
+
+
+it("stores learner acknowledgment as derived metadata instead of per-Activity authority", async () => {
+  const currentContext: CoreCourseDesignContext = {
+    schema_version: "0.1", policy_version: "instructional-design.v0.1", revision: 4, run_id: "run-1",
+    source_syllabus: { normalized_syllabus_version: "0.1", filename: "syllabus.md", sha256: "a".repeat(64), text_sha256: "b".repeat(64) }, course: {},
+    learner_context: { revision: 2, status: "UNSPECIFIED", target_learners: [], education_level: [], year_level: [], prerequisites: [], prior_knowledge: [], teacher_acknowledged_unspecified: false },
+    learning_objectives: [{ objective_id: "objective-1", source_text: "Design", source_refs: [], status: "SOURCE" }],
+    source_learning_outcomes: [],
+    approved_learning_outcomes: [],
+    schedule_or_topics: [], assessment_requirements: [], grading_policy: [], constraints: [], missing_information: [{
+      code: "LEARNER_CONTEXT_UNSPECIFIED", field: "learner_context", message: "Learner context is unspecified.", severity: "REQUIRES_CONFIRMATION", applies_to_stage: ["ACTIVITY_GENERATION"],
+    }],
+    provenance: { extractor_version: "syllabus-semantics.v0.2", location_basis: "NORMALIZED_RAW_TEXT_LINES" },
+  };
+  const rows: any[] = [];
+  const repo = {
+    rows,
+    listSection: vi.fn(async (_run: string, _revision: number, sectionRef: string) => rows.filter((row) => row.sectionRef === sectionRef && row.status !== "removed")),
+    select: vi.fn(async (input: any) => {
+      const existing = rows.find((row) => row.activityType === input.activityType);
+      if (existing) { Object.assign(existing, input); return existing; }
+      const row = { ...input, status: "selected", intentRevision: 1, attemptCount: 0, groundingMode: null, materialSnapshotId: null, reviewRequired: false, shellConfirmedAt: null, contentJson: null, error: null, updatedAt: "2026-09-29T00:00:00Z" };
+      rows.push(row);
+      return row;
+    }),
+    remove: vi.fn(async () => true),
+    markStaleForContext: vi.fn(),
+  };
+  const runRepo = {
+    getRun: vi.fn().mockResolvedValue({ runId: "run-1", status: "planning" }),
+    getCoreCourseDesignContext: vi.fn().mockImplementation(async () => currentContext),
+  };
+  const structureRepo = {
+    getSealedRevision: vi.fn().mockResolvedValue({
+      id: "structure-1", runId: "run-1", revision: 1, sealedAt: "2026-09-29T00:00:00Z",
+      contentJson: { course: { title: "AI" }, sections: [{ ref: "section-01", position: 1, title: "Week 1", summary: "Week 1", aligned_objective_ids: ["objective-1"], aligned_outcome_ids: [], activity_intents: [] }] },
+    }),
+  };
+  const app = buildApp({ config, runRepo: runRepo as any, structureRevisionRepo: structureRepo as any, activityIntentRepo: repo as any, fastifyOptions: { logger: false } });
+
+  const unacknowledged = await app.inject({
+    method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents",
+    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 2, quiz_learner_context_acknowledged: true },
+  });
+  expect(unacknowledged.statusCode).toBe(200);
+  expect(unacknowledged.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({
+    learner_context_revision: 2,
+    learner_context_acknowledged: false,
+  });
+
+  currentContext.learner_context.teacher_acknowledged_unspecified = true;
+  const inherited = await app.inject({
+    method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents",
+    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 2, quiz_learner_context_acknowledged: false },
+  });
+  expect(inherited.statusCode).toBe(200);
+  expect(inherited.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({
+    learner_context_revision: 2,
+    learner_context_acknowledged: true,
+  });
+
+  currentContext.revision = 5;
+  currentContext.learner_context.revision = 3;
+  currentContext.learner_context.teacher_acknowledged_unspecified = false;
+  const staleSave = await app.inject({
+    method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents",
+    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 2 },
+  });
+  expect(staleSave.statusCode).toBe(422);
+  expect(staleSave.json().error.code).toBe("ACTIVITY_INTENT_LEARNER_CONTEXT_STALE");
+
+  const rebound = await app.inject({
+    method: "PUT", url: "/api/runs/run-1/sections/section-01/activity-intents",
+    payload: { quiz: true, quiz_purpose: "PRACTICE", quiz_selected_objective_ids: ["objective-1"], quiz_learner_context_revision: 3 },
+  });
+  expect(rebound.statusCode).toBe(200);
+  expect(rebound.json().intents.find((item: any) => item.activity_type === "quiz")).toMatchObject({
+    learner_context_revision: 3,
+    learner_context_acknowledged: false,
+  });
+
+  await app.close();
+});

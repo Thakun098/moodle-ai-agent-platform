@@ -106,11 +106,11 @@ function constraintsFor(intent: ActivityIntentRecord, sectionPosition: number): 
   };
 }
 
-function titleFor(intent: ActivityIntentRecord, sectionTitle: string): string {
+function titleFor(intent: ActivityIntentRecord, sectionTitle: string, languageCode: "th" | "en" = "en"): string {
   const configured = intent.optionsJson.title;
-  return typeof configured === "string" && configured.trim()
-    ? configured.trim()
-    : `${intent.activityType === "quiz" ? "Quiz" : "Assignment"}: ${sectionTitle}`;
+  if (typeof configured === "string" && configured.trim()) return configured.trim();
+  if (languageCode === "th") return `${intent.activityType === "quiz" ? "แบบทดสอบ" : "งานมอบหมาย"}: ${sectionTitle}`;
+  return `${intent.activityType === "quiz" ? "Quiz" : "Assignment"}: ${sectionTitle}`;
 }
 
 function toMaterialSnapshot(record: MaterialSnapshotRecord): MaterialSnapshot {
@@ -227,7 +227,7 @@ export async function saveTeacherActivityEdit(
       id: intent.id,
       ref: intent.activityRef,
       type: intent.activityType,
-      title: titleFor(intent, section.title),
+      title: titleFor(intent, section.title, coreContext.primary_output_language?.code ?? "en"),
       purpose: intent.purpose,
       intent_revision: intent.intentRevision,
       selected_objective_ids: intent.selectedObjectiveIdsJson,

@@ -18,6 +18,7 @@ const context: CoreCourseDesignContext = {
   revision: 1,
   run_id: "run-1",
   source_syllabus: { normalized_syllabus_version: "0.1", filename: "syllabus.md", sha256: "a".repeat(64), text_sha256: "b".repeat(64) },
+  primary_output_language: { code: "en", derived_from: "SCHEDULE_OR_TOPICS" },
   course: {},
   learner_context: { revision: 1, status: "UNSPECIFIED", target_learners: [], education_level: [], year_level: [], prerequisites: [], prior_knowledge: [], teacher_acknowledged_unspecified: false },
   learning_objectives: [{ objective_id: "objective-1", source_text: "Explain loops", source_refs: [], status: "SOURCE" }],
@@ -72,5 +73,78 @@ describe("Ticket 18 DESIGN_STRUCTURE prompt", () => {
     expect(captured.messages[1].content).toContain("No Quiz, Assignment");
     expect(draft.content.sections[0]).toMatchObject({ aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["source-outcome-1"], activityIntents: [] });
     expect((buildCourseStructureSchema(syllabus) as any).properties.content.properties.sections.items.properties.aligned_outcome_ids).toBeDefined();
+  });
+
+  it("projects one Primary Output Language authority and performs only one Structure correction attempt", async () => {
+    const thaiContext: CoreCourseDesignContext = {
+      ...context,
+      primary_output_language: { code: "th", derived_from: "SCHEDULE_OR_TOPICS" },
+    };
+    const wrong = {
+      title: "Loops",
+      summary: "Explain the course structure and organize the learning sequence in a clear progression for learners.",
+      warnings: [],
+      assumptions: [],
+      content: {
+        course: { title: "Loops", summary: "Describe the learning progression and connect each section to the course goals." },
+        sections: [{
+          ref: "section-01", position: 1, title: "Week 1",
+          summary: "Introduce the core ideas and explain how learners will apply them in practical exercises.",
+          source_refs: [], aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["source-outcome-1"], activity_intents: [],
+        }],
+      },
+    };
+    const corrected = {
+      ...wrong,
+      summary: "จัดโครงสร้างรายวิชาให้ผู้เรียนค่อย ๆ พัฒนาความเข้าใจและเชื่อมโยงแนวคิดอย่างเป็นระบบ",
+      content: {
+        ...wrong.content,
+        course: { title: "Loops", summary: "วางลำดับการเรียนรู้และเชื่อมโยงแต่ละส่วนกับเป้าหมายของรายวิชา" },
+        sections: [{ ...wrong.content.sections[0], summary: "แนะนำแนวคิดหลักและให้ผู้เรียนประยุกต์ใช้ผ่านกิจกรรมที่สอดคล้องกับเนื้อหา" }],
+      },
+    };
+    const client: ModelClient = {
+      chat: vi.fn()
+        .mockResolvedValueOnce({ message: { role: "assistant", content: "" }, toolCalls: [], rawText: JSON.stringify(wrong) })
+        .mockResolvedValueOnce({ message: { role: "assistant", content: "" }, toolCalls: [], rawText: JSON.stringify(corrected) }),
+      listModels: vi.fn(),
+      ping: vi.fn(),
+    };
+    const draft = await new CourseStructurePlanner(client).plan(syllabus, { activityRules: [], warnings: [] }, "test", undefined, "json", thaiContext);
+    expect(draft.summary).toContain("จัดโครงสร้าง");
+    expect(client.chat).toHaveBeenCalledTimes(2);
+    const firstRequest = (client.chat as any).mock.calls[0][0];
+    const secondRequest = (client.chat as any).mock.calls[1][0];
+    expect(firstRequest.messages[0].content).toContain("Primary Output Language authority: Thai");
+    expect(secondRequest.messages.some((message: { content: string }) => message.content.includes("single bounded language-correction attempt"))).toBe(true);
+  });
+
+  it("fails Structure generation when the bounded language correction remains wrong", async () => {
+    const thaiContext: CoreCourseDesignContext = {
+      ...context,
+      primary_output_language: { code: "th", derived_from: "SCHEDULE_OR_TOPICS" },
+    };
+    const wrong = {
+      title: "Loops",
+      summary: "Explain the course structure and organize the learning sequence in a clear progression for learners.",
+      warnings: [],
+      assumptions: [],
+      content: {
+        course: { title: "Loops", summary: "Describe the learning progression and connect each section to the course goals." },
+        sections: [{
+          ref: "section-01", position: 1, title: "Week 1",
+          summary: "Introduce the core ideas and explain how learners will apply them in practical exercises.",
+          source_refs: [], aligned_objective_ids: ["objective-1"], aligned_outcome_ids: ["source-outcome-1"], activity_intents: [],
+        }],
+      },
+    };
+    const client: ModelClient = {
+      chat: vi.fn().mockResolvedValue({ message: { role: "assistant", content: "" }, toolCalls: [], rawText: JSON.stringify(wrong) }),
+      listModels: vi.fn(),
+      ping: vi.fn(),
+    };
+    await expect(new CourseStructurePlanner(client).plan(syllabus, { activityRules: [], warnings: [] }, "test", undefined, "json", thaiContext))
+      .rejects.toMatchObject({ code: "OUTPUT_LANGUAGE_POLICY_VIOLATION" });
+    expect(client.chat).toHaveBeenCalledTimes(2);
   });
 });

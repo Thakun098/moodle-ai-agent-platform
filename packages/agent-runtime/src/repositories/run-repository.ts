@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { assertInitialCoreCourseDesignContext } from "@moodle-agent-poc/contracts";
+import { assertInitialCoreCourseDesignContext, derivePrimaryOutputLanguageAuthority } from "@moodle-agent-poc/contracts";
 import { coreCourseDesignContexts } from "../db/schema/core-course-design-contexts.js";
 import { competencyCandidate } from "../db/schema/competency-candidates.js";
 import { activityIntent } from "../db/schema/activity-intents.js";
-import type { CoreCourseDesignContext, NormalizedSyllabus } from "@moodle-agent-poc/contracts";
+import type { CoreCourseDesignContext, NormalizedSyllabus, PrimaryOutputLanguageAuthority } from "@moodle-agent-poc/contracts";
 import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import type { AppDatabase } from "../db/connection.js";
 import {
@@ -27,6 +27,30 @@ function canonicalJson(value: unknown): string {
     return item;
   };
   return JSON.stringify(sort(value));
+}
+
+function learnerContextSemanticShape(context: CoreCourseDesignContext["learner_context"]): Omit<CoreCourseDesignContext["learner_context"], "revision" | "teacher_acknowledged_unspecified"> {
+  const { revision: _revision, teacher_acknowledged_unspecified: _acknowledged, ...semantic } = context;
+  return semantic;
+}
+
+function deriveLegacyPrimaryOutputLanguage(context: CoreCourseDesignContext): PrimaryOutputLanguageAuthority {
+  return derivePrimaryOutputLanguageAuthority({
+    schedule_or_topics: (context.schedule_or_topics ?? []).flatMap((item) => [item.title, ...(item.topics ?? [])]),
+    objectives_outcomes: [
+      ...(context.learning_objectives ?? []).map((item) => item.source_text),
+      ...(context.source_learning_outcomes ?? []).map((item) => item.source_text),
+    ],
+    course_title: (context.course?.title ?? []).map((item) => item.text),
+  });
+}
+
+function normalizePrimaryOutputLanguage(context: CoreCourseDesignContext): CoreCourseDesignContext {
+  if (context.primary_output_language) return context;
+  return {
+    ...context,
+    primary_output_language: deriveLegacyPrimaryOutputLanguage(context),
+  };
 }
 
 export class RunRepository {
@@ -59,7 +83,50 @@ export class RunRepository {
   async getCoreCourseDesignContext(runId: string): Promise<CoreCourseDesignContext | null> {
     const [row] = await this.db.select().from(coreCourseDesignContexts)
       .where(eq(coreCourseDesignContexts.runId, runId)).orderBy(desc(coreCourseDesignContexts.revision)).limit(1);
-    return row?.context ?? null;
+    return row?.context ? normalizePrimaryOutputLanguage(row.context) : null;
+  }
+
+  async acknowledgeUnspecifiedLearnerContext(runId: string, expectedLearnerContextRevision: number): Promise<CoreCourseDesignContext> {
+    return this.db.transaction(async tx => {
+      const [run] = await tx.select().from(pocRun).where(eq(pocRun.runId, runId)).for("update");
+      if (!run) throw codedError("NOT_FOUND", `Run ${runId} not found.`);
+      const [latest] = await tx.select().from(coreCourseDesignContexts)
+        .where(eq(coreCourseDesignContexts.runId, runId)).orderBy(desc(coreCourseDesignContexts.revision)).limit(1);
+      if (!latest) throw codedError("CORE_CONTEXT_NOT_FOUND", "No persisted Core Course Design Context for this run.", 404);
+      const latestContext = normalizePrimaryOutputLanguage(latest.context);
+      if (latestContext.learner_context.revision !== expectedLearnerContextRevision) {
+        throw codedError("LEARNER_CONTEXT_STALE", "Learner Context revision is stale; reload the current Core Context before acknowledging.");
+      }
+      if (latestContext.learner_context.status !== "UNSPECIFIED") {
+        throw codedError("LEARNER_CONTEXT_ACK_NOT_REQUIRED", "Learner Context acknowledgment is only valid while learner context is UNSPECIFIED.");
+      }
+      if (latestContext.learner_context.teacher_acknowledged_unspecified) return latestContext;
+      if (["executing", "awaiting_verification", "completed"].includes(run.status)) {
+        throw codedError(
+          "INSTRUCTIONAL_DESIGN_MUTATION_LOCKED",
+          `Instructional Design authority cannot change while run ${runId} is ${run.status}.`,
+        );
+      }
+      const next: CoreCourseDesignContext = {
+        ...latestContext,
+        revision: latestContext.revision + 1,
+        learner_context: {
+          ...latestContext.learner_context,
+          teacher_acknowledged_unspecified: true,
+        },
+      };
+      await tx.insert(coreCourseDesignContexts).values({ runId, revision: next.revision, context: next });
+      const shouldEnterPlanning = run.status === "preview" || run.status === "failed";
+      await tx.update(pocRun).set({
+        ...(shouldEnterPlanning ? { status: "planning" as const, error: null } : {}),
+        approvedPlanId: null,
+        approvedRevision: null,
+        approvedAt: null,
+        approvedByMoodleUserId: null,
+        updatedAt: new Date().toISOString(),
+      }).where(eq(pocRun.runId, runId));
+      return next;
+    });
   }
 
   /**
@@ -187,14 +254,41 @@ export class RunRepository {
       const [latest] = await tx.select().from(coreCourseDesignContexts).where(eq(coreCourseDesignContexts.runId, context.run_id)).orderBy(desc(coreCourseDesignContexts.revision)).limit(1);
       if (!latest || context.revision !== latest.revision + 1) throw new Error("Core Context revision must advance from the current revision");
       if (latest.context.source_syllabus.sha256 !== context.source_syllabus.sha256 || latest.context.source_syllabus.text_sha256 !== context.source_syllabus.text_sha256) throw new Error("Core Context source is immutable");
-      const previousOutcomes = new Map(latest.context.approved_learning_outcomes.map((outcome) => [outcome.outcome_id, canonicalJson(outcome)]));
-      const nextOutcomes = new Map(context.approved_learning_outcomes.map((outcome) => [outcome.outcome_id, canonicalJson(outcome)]));
+      const latestContext = normalizePrimaryOutputLanguage(latest.context);
+      const latestLearnerContext = latestContext.learner_context;
+      const requestedLearnerContext = context.learner_context;
+      let normalizedLearnerContext = requestedLearnerContext;
+      if (latestLearnerContext && requestedLearnerContext) {
+        const learnerContextChanged = canonicalJson(learnerContextSemanticShape(latestLearnerContext))
+          !== canonicalJson(learnerContextSemanticShape(requestedLearnerContext));
+        normalizedLearnerContext = learnerContextChanged
+          ? {
+              ...requestedLearnerContext,
+              revision: latestLearnerContext.revision + 1,
+              teacher_acknowledged_unspecified: false,
+            }
+          : {
+              ...requestedLearnerContext,
+              revision: latestLearnerContext.revision,
+              teacher_acknowledged_unspecified: latestLearnerContext.teacher_acknowledged_unspecified,
+            };
+      } else if (latestLearnerContext && !requestedLearnerContext) {
+        normalizedLearnerContext = latestLearnerContext;
+      }
+      const authoritativePrimaryOutputLanguage = latestContext.primary_output_language;
+      const normalizedContext: CoreCourseDesignContext = {
+        ...context,
+        primary_output_language: authoritativePrimaryOutputLanguage,
+        ...(normalizedLearnerContext ? { learner_context: normalizedLearnerContext } : {}),
+      };
+      const previousOutcomes = new Map(latestContext.approved_learning_outcomes.map((outcome) => [outcome.outcome_id, canonicalJson(outcome)]));
+      const nextOutcomes = new Map(normalizedContext.approved_learning_outcomes.map((outcome) => [outcome.outcome_id, canonicalJson(outcome)]));
       const changedOutcomeIds = new Set([...new Set([...previousOutcomes.keys(), ...nextOutcomes.keys()])]
         .filter((outcomeId) => previousOutcomes.get(outcomeId) !== nextOutcomes.get(outcomeId)));
       const candidates = changedOutcomeIds.size > 0
-        ? await tx.select().from(competencyCandidate).where(eq(competencyCandidate.runId, context.run_id)).for("update")
+        ? await tx.select().from(competencyCandidate).where(eq(competencyCandidate.runId, normalizedContext.run_id)).for("update")
         : [];
-      await tx.insert(coreCourseDesignContexts).values({ runId: context.run_id, revision: context.revision, context });
+      await tx.insert(coreCourseDesignContexts).values({ runId: normalizedContext.run_id, revision: normalizedContext.revision, context: normalizedContext });
       for (const candidate of candidates) {
         if (candidate.status !== "APPROVED" || !candidate.derivedFromOutcomeIdsJson.some((outcomeId) => changedOutcomeIds.has(outcomeId))) continue;
         await tx.update(competencyCandidate).set({
@@ -210,11 +304,11 @@ export class RunRepository {
         error: "Core Course Design Context changed. Regenerate this Activity before finalization.",
         updatedAt: new Date().toISOString(),
       }).where(and(
-        eq(activityIntent.runId, context.run_id),
+        eq(activityIntent.runId, normalizedContext.run_id),
         inArray(activityIntent.status, ["generated", "shell", "creating"]),
-        or(isNull(activityIntent.contextRevision), ne(activityIntent.contextRevision, context.revision)),
+        or(isNull(activityIntent.contextRevision), ne(activityIntent.contextRevision, normalizedContext.revision)),
       ));
-      await tx.update(pocRun).set({ updatedAt: new Date().toISOString() }).where(eq(pocRun.runId, context.run_id));
+      await tx.update(pocRun).set({ updatedAt: new Date().toISOString() }).where(eq(pocRun.runId, normalizedContext.run_id));
     });
   }
 

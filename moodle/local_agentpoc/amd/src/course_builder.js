@@ -163,10 +163,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         return true;
     }
 
-    function showRecoveryBanner(surface, entityRef, serverRevision, applyDraft) {
+    function showRecoveryBanner(surface, entityRef, serverRevision, applyDraft, $hostOverride) {
         var snapshot = readRecoverySnapshot(surface, entityRef);
         if (!snapshot) return;
-        var $host = recoveryHost(surface);
+        var $host = $hostOverride && $hostOverride.length ? $hostOverride : recoveryHost(surface);
         if (!$host.length) return;
         var bannerKey = recoverySnapshotKey(surface, entityRef);
         if ($host.find('[data-recovery-key="' + bannerKey.replace(/"/g, '&quot;') + '"]').length) return;
@@ -275,6 +275,53 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
     function showCoreContext(context) {
         state.coreContext = context || null;
         $('#core-course-design-context').html(coreContextView.render(context)).toggleClass('d-none', !context);
+    }
+
+    function learnerContextNeedsAcknowledgment() {
+        return Boolean(
+            state.coreContext &&
+            state.coreContext.learner_context &&
+            state.coreContext.learner_context.status === 'UNSPECIFIED' &&
+            state.coreContext.learner_context.teacher_acknowledged_unspecified !== true
+        );
+    }
+
+    function renderLearnerContextAcknowledgmentControl(onAcknowledged) {
+        var learner = state.coreContext && state.coreContext.learner_context;
+        if (!learner || learner.status !== 'UNSPECIFIED') return null;
+        var $panel = $('<div class="alert mb-3 learner-context-acknowledgment"></div>')
+            .addClass(learner.teacher_acknowledged_unspecified === true ? 'alert-success' : 'alert-warning');
+        $panel.append($('<div class="font-weight-bold"></div>').text('Learner Context: UNSPECIFIED'));
+        $panel.append($('<div class="small mb-2"></div>').text(
+            learner.teacher_acknowledged_unspecified === true
+                ? 'Teacher acknowledgment applies to Learner Context revision ' + learner.revision + ' and is shared by all Activities.'
+                : 'Learner details are not specified. Acknowledge this once for Learner Context revision ' + learner.revision + ' before generating Activities.'
+        ));
+        if (learner.teacher_acknowledged_unspecified === true) {
+            $panel.append($('<span class="badge badge-success"></span>').text('Acknowledged'));
+            return $panel;
+        }
+        var $ack = $('<input type="checkbox" class="mr-2 learner-context-shared-ack">');
+        var $label = $('<label class="mb-0 small font-weight-bold"></label>').append($ack).append(' I acknowledge learner context is unspecified');
+        $ack.on('change', function() {
+            if (!$ack.is(':checked')) return;
+            $ack.prop('disabled', true);
+            callBff('acknowledge_learner_context', {
+                run_id: state.runId,
+                learner_context_revision: learner.revision
+            }).then(function(result) {
+                var context = result && result.core_course_design_context;
+                if (!context) throw new Error('Acknowledgment response did not include Core Course Design Context.');
+                showCoreContext(context);
+                state.coreContextRevision = context.revision;
+                if (typeof onAcknowledged === 'function') onAcknowledged();
+            }).catch(function(err) {
+                $ack.prop('checked', false).prop('disabled', false);
+                showError('Failed to acknowledge Learner Context: ' + err.message, err.details);
+            });
+        });
+        $panel.append($label);
+        return $panel;
     }
 
     function showError(message, details) {
@@ -1197,6 +1244,174 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         return {label: Object.prototype.hasOwnProperty.call(badges, status) ? status : 'Pending review', badge: badges[status] || 'badge-secondary'};
     }
 
+    /**
+     * Format the label for a section/week based on its title and position.
+     */
+    function weekDisplayLabel(section) {
+        return /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled'));
+    }
+
+    /**
+     * Update Week nav active/ARIA state in-place without rebuilding the rail DOM.
+     */
+    function updateWeekNavSelection(newRef) {
+        var $rail = $('.week-review-rail');
+        if (!$rail.length) return;
+        $rail.find('.week-review-nav-item').each(function(index, element) {
+            var $item = $(element);
+            var isNew = $item.attr('data-week-ref') === newRef;
+            $item.toggleClass('active week-nav-current', isNew)
+                 .attr('aria-current', isNew ? 'true' : 'false');
+        });
+    }
+
+    /**
+     * Update one Week review badge in-place so the rail node and scroll position stay stable.
+     */
+    function updateWeekNavReviewStatus(sectionRef) {
+        var sections = state.currentStructure && state.currentStructure.content && Array.isArray(state.currentStructure.content.sections)
+            ? state.currentStructure.content.sections
+            : [];
+        var section = sections.find(function(item) { return item.ref === sectionRef; });
+        if (!section) return;
+        var presentation = weekStatusPresentation(weekReviewStatus(section));
+        $('.week-review-rail').find('.week-review-nav-item').each(function(index, element) {
+            var $item = $(element);
+            if ($item.attr('data-week-ref') !== sectionRef) return;
+            $item.find('.badge')
+                .removeClass('badge-secondary badge-info badge-primary badge-success badge-warning')
+                .addClass(presentation.badge)
+                .text(presentation.label);
+        });
+    }
+
+    /**
+     * Render only the workspace content for the currently selected week.
+     * The $workspace container is cleared and re-populated; the rail shell is preserved.
+     */
+    function renderWeekWorkspaceContent(sections, $workspace) {
+        $workspace.empty();
+        var selectedWeek = sections.find(function(section) { return section.ref === state.selectedWeekRef; });
+        if (!selectedWeek) return;
+        var selectedWeekLabel = weekDisplayLabel(selectedWeek);
+        $workspace.append($('<div class="week-selected-context alert alert-primary py-2 px-3 mb-3"></div>')
+            .append($('<div class="small text-uppercase font-weight-bold"></div>').text('Currently reviewing'))
+            .append($('<div class="font-weight-bold"></div>').text(selectedWeekLabel)));
+        var visibleSections = sections.filter(function(section) { return section.ref === state.selectedWeekRef; });
+        visibleSections.forEach(function(sec) {
+            var idx = sections.indexOf(sec);
+            renderSectionCard(sec, idx, $workspace);
+        });
+        if (state.selectedWeekRef) {
+            var recoveryIndex = sections.findIndex(function(section) { return section.ref === state.selectedWeekRef; });
+            if (recoveryIndex >= 0) {
+                showRecoveryBanner('structure-week', state.selectedWeekRef, state.structureRevision, function(payload) {
+                    openEditSectionModal(recoveryIndex, payload);
+                }, $workspace);
+            }
+        }
+    }
+
+    /**
+     * Render a single section card with edit/delete/review controls.
+     * Extracted from renderPreview so both full and partial renders share the same code.
+     */
+    function renderSectionCard(sec, idx, $cards) {
+        var secNum = idx + 1;
+        var $secCard = $('<div class="card mb-3 border-light bg-light"></div>');
+        var $secHeader = $('<div class="card-header bg-white d-flex justify-content-between align-items-center py-2"></div>');
+        $secHeader.append($('<span class="font-weight-bold"></span>').text(secNum + '. ' + (sec.title || 'Section ' + secNum)));
+
+        var $editBtn = $('<button type="button" class="btn btn-sm btn-link text-secondary p-0"><i class="fa fa-pencil mr-1"></i>Edit</button>');
+        $editBtn.on('click', function() {
+            guardedNavigate(function() { openEditSectionModal(idx); });
+        });
+        $secHeader.append($editBtn);
+        var $deleteBtn = $('<button type="button" class="btn btn-sm btn-link text-danger p-0 ml-2"><i class="fa fa-trash mr-1"></i>Delete</button>');
+        $deleteBtn.on('click', function(e) {
+            e.preventDefault();
+            deleteSection(idx);
+        });
+        $secHeader.append($deleteBtn);
+        $secCard.append($secHeader);
+
+        var $secBody = $('<div class="card-body py-2 px-3"></div>');
+        if (sec.summary) {
+            $secBody.append($('<p class="text-muted small mb-2"></p>').text(sec.summary));
+        }
+
+        if (!state.stagedMode) {
+            var activities = sec.activities || [];
+            if (activities.length > 0) {
+                var $actList = $('<ul class="list-group list-group-flush mb-0"></ul>');
+                activities.forEach(function(act) {
+                    var isQuiz = (act.type === 'quiz');
+                    var icon = isQuiz ? 'fa-question-circle text-info' : 'fa-file-text text-success';
+                    var typeLabel = isQuiz ? 'Quiz' : 'Assignment';
+                    var $li = $('<li class="list-group-item bg-transparent py-1 px-0 border-0 d-flex align-items-center small"></li>');
+                    $li.append($('<i class="fa ' + icon + ' mr-2"></i>'));
+                    $li.append($('<span></span>').text(typeLabel + ': ' + (act.title || 'Untitled')));
+                    $actList.append($li);
+                });
+                $secBody.append($actList);
+                activities.forEach(function(act) {
+                    if (act.type !== 'quiz') return;
+                    var $quizPreview = $('<div class="border rounded bg-light p-2 mt-2 small"></div>');
+                    renderQuizActivityPreview(act, $quizPreview);
+                    $secBody.append($quizPreview);
+                });
+            }
+        }
+
+        $secCard.append($secBody);
+        if (state.stagedMode && state.currentStructure) {
+            var status = weekReviewStatus(sec);
+            var $review = $('<button type="button" class="btn btn-sm btn-outline-primary mt-2 week-mark-reviewed"></button>').text('Mark Reviewed');
+            var outcomesReady = !(state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION' || (item.item_type === 'LO' && item.status !== 'REVIEWED'); }) && unapprovedSourceOutcomes().length === 0;
+            $review.prop('disabled', status !== 'Pending review' || !outcomesReady);
+            $review.on('click', function() {
+                $review.prop('disabled', true);
+                callBff('mark_week_reviewed', {run_id: state.runId, section_ref: sec.ref, revision: state.structureRevision}).then(function(result) {
+                    state.currentStructure = result.structure_revision;
+                    state.structureRevision = result.structure_revision.revision;
+                    state.currentEnvelope = structurePreviewEnvelope(state.currentStructure);
+                    updateWeekNavReviewStatus(sec.ref);
+                    updateWeekNavSelection(state.selectedWeekRef);
+                    var $workspace = $('.week-review-workspace');
+                    if ($workspace.length) {
+                        renderWeekWorkspaceContent(state.currentEnvelope.content.sections || [], $workspace);
+                    }
+                    renderAlignmentReview(state.currentStructure);
+                    updateStructureContinueState();
+                }).catch(function(err) {
+                    $review.prop('disabled', false);
+                    showError('Failed to mark Week reviewed: ' + err.message, err.details);
+                });
+            });
+            $secBody.append($review);
+        }
+        $cards.append($secCard);
+    }
+
+    /**
+     * Perform a partial week selection update: updates state, URL, nav, and workspace
+     * without rebuilding the entire workbench shell (rail, course header, warnings).
+     */
+    function selectWeekPartial(newRef) {
+        var sections = (state.currentEnvelope && state.currentEnvelope.content && state.currentEnvelope.content.sections) || [];
+        if (!sections.some(function(s) { return s.ref === newRef; })) return;
+        state.selectedWeekRef = newRef;
+        var url = new URL(window.location.href);
+        url.searchParams.set('week_ref', newRef);
+        window.history.replaceState(null, '', url.toString());
+        updateWeekNavSelection(newRef);
+        var $workspace = $('.week-review-workspace');
+        if ($workspace.length) {
+            renderWeekWorkspaceContent(sections, $workspace);
+        }
+        renderAlignmentReview(state.currentStructure || {content: {sections: sections}});
+    }
+
     function renderAlignmentReview(structure) {
         var $root = $('#instructional-design-review');
         if (!$root.length) return;
@@ -1209,6 +1424,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         var $heading = $('<div class="font-weight-bold mb-2"></div>').text('Instructional Designer review · DESIGN_STRUCTURE');
         $root.append($heading);
         $root.append($('<div class="small text-muted mb-3"></div>').text('Sections are aligned to authorized Objective/Outcome IDs. Activity creation remains a separate Teacher-authorized step.'));
+        var $learnerContextControl = renderLearnerContextAcknowledgmentControl(function() {
+            renderAlignmentReview(state.currentStructure);
+        });
+        if ($learnerContextControl) $root.append($learnerContextControl);
         var sections = structure.content && Array.isArray(structure.content.sections) ? structure.content.sections : [];
         sections.filter(function(section) { return !state.selectedWeekRef || section.ref === state.selectedWeekRef; }).forEach(function(section) {
             var $card = $('<div class="border rounded p-2 mb-2"></div>');
@@ -1278,19 +1497,13 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         if (state.stagedMode && sections.length) {
             if (!sections.some(function(section) { return section.ref === state.selectedWeekRef; })) state.selectedWeekRef = sections[0].ref;
             var $layout = $('<div class="row week-review-workbench"></div>');
-            var $rail = $('<nav class="col-md-4 mb-3 week-review-rail" aria-label="Week review"></nav>');
-            var $workspace = $('<div class="col-md-8 week-review-workspace"></div>');
-            var selectedWeek = sections.find(function(section) { return section.ref === state.selectedWeekRef; });
+            var $rail = $('<nav class="col-md-6 mb-3 week-review-rail" aria-label="Week review"></nav>');
+            var $workspace = $('<div class="col-md-6 week-review-workspace"></div>');
             $rail.append($('<div class="week-rail-heading small text-uppercase text-muted font-weight-bold px-2 py-2"></div>').text('Course weeks'));
-            if (selectedWeek) {
-                var selectedWeekLabel = /^week\s+\d+/i.test(selectedWeek.title || '') ? selectedWeek.title : ('Week ' + selectedWeek.position + ' · ' + (selectedWeek.title || 'Untitled'));
-                $workspace.append($('<div class="week-selected-context alert alert-primary py-2 px-3 mb-3"></div>')
-                    .append($('<div class="small text-uppercase font-weight-bold"></div>').text('Currently reviewing'))
-                    .append($('<div class="font-weight-bold"></div>').text(selectedWeekLabel)));
-            }
+            var $navList = $('<div class="week-review-nav-list"></div>');
             sections.forEach(function(section) {
                 var presentation = weekStatusPresentation(weekReviewStatus(section));
-                var label = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled'));
+                var label = weekDisplayLabel(section);
                 var $week = $('<button type="button" class="list-group-item list-group-item-action text-left week-review-nav-item"></button>')
                     .attr('data-week-ref', section.ref).attr('aria-current', section.ref === state.selectedWeekRef ? 'true' : 'false')
                     .toggleClass('active week-nav-current', section.ref === state.selectedWeekRef)
@@ -1298,101 +1511,26 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     .append($('<span class="badge mt-1"></span>').addClass(presentation.badge).text(presentation.label));
                 $week.on('click', function() {
                     guardedNavigate(function() {
-                        state.selectedWeekRef = section.ref;
-                        var url = new URL(window.location.href);
-                        url.searchParams.set('week_ref', section.ref);
-                        window.history.replaceState(null, '', url.toString());
-                        renderPreview(state.currentEnvelope, state.currentEnvelope);
+                        selectWeekPartial(section.ref);
                     });
                 });
-                $rail.append($week);
+                $navList.append($week);
             });
+            $rail.append($navList);
             $layout.append($rail).append($workspace);
             $container.append($layout);
             $cards = $workspace;
+            renderWeekWorkspaceContent(sections, $workspace);
+        } else {
+            // Non-staged mode: render all sections inline
+            var visibleSections = sections;
+            visibleSections.forEach(function(sec) {
+                var idx = sections.indexOf(sec);
+                renderSectionCard(sec, idx, $cards);
+            });
         }
-        var visibleSections = state.stagedMode ? sections.filter(function(section) { return section.ref === state.selectedWeekRef; }) : sections;
-        visibleSections.forEach(function(sec) {
-            var idx = sections.indexOf(sec);
-            var secNum = idx + 1;
-            var $secCard = $('<div class="card mb-3 border-light bg-light"></div>');
-            var $secHeader = $('<div class="card-header bg-white d-flex justify-content-between align-items-center py-2"></div>');
-            $secHeader.append($('<span class="font-weight-bold"></span>').text(secNum + '. ' + (sec.title || 'Section ' + secNum)));
-
-            var $editBtn = $('<button type="button" class="btn btn-sm btn-link text-secondary p-0"><i class="fa fa-pencil mr-1"></i>Edit</button>');
-            $editBtn.on('click', function() {
-                guardedNavigate(function() { openEditSectionModal(idx); });
-            });
-            $secHeader.append($editBtn);
-            var $deleteBtn = $('<button type="button" class="btn btn-sm btn-link text-danger p-0 ml-2"><i class="fa fa-trash mr-1"></i>Delete</button>');
-            $deleteBtn.on('click', function(e) {
-                e.preventDefault();
-                deleteSection(idx);
-            });
-            $secHeader.append($deleteBtn);
-            $secCard.append($secHeader);
-
-            var $secBody = $('<div class="card-body py-2 px-3"></div>');
-            if (sec.summary) {
-                $secBody.append($('<p class="text-muted small mb-2"></p>').text(sec.summary));
-            }
-
-            if (!state.stagedMode) {
-                var activities = sec.activities || [];
-                if (activities.length > 0) {
-                    var $actList = $('<ul class="list-group list-group-flush mb-0"></ul>');
-                    activities.forEach(function(act) {
-                        var isQuiz = (act.type === 'quiz');
-                        var icon = isQuiz ? 'fa-question-circle text-info' : 'fa-file-text text-success';
-                        var typeLabel = isQuiz ? 'Quiz' : 'Assignment';
-                        var $li = $('<li class="list-group-item bg-transparent py-1 px-0 border-0 d-flex align-items-center small"></li>');
-                        $li.append($('<i class="fa ' + icon + ' mr-2"></i>'));
-                        $li.append($('<span></span>').text(typeLabel + ': ' + (act.title || 'Untitled')));
-                        $actList.append($li);
-                    });
-                    $secBody.append($actList);
-                    activities.forEach(function(act) {
-                        if (act.type !== 'quiz') return;
-                        var $quizPreview = $('<div class="border rounded bg-light p-2 mt-2 small"></div>');
-                        renderQuizActivityPreview(act, $quizPreview);
-                        $secBody.append($quizPreview);
-                    });
-                }
-            }
-
-            $secCard.append($secBody);
-            if (state.stagedMode && state.currentStructure) {
-                var status = weekReviewStatus(sec);
-                var $review = $('<button type="button" class="btn btn-sm btn-outline-primary mt-2 week-mark-reviewed"></button>').text('Mark Reviewed');
-                var outcomesReady = !(state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION' || (item.item_type === 'LO' && item.status !== 'REVIEWED'); }) && unapprovedSourceOutcomes().length === 0;
-                $review.prop('disabled', status !== 'Pending review' || !outcomesReady);
-                $review.on('click', function() {
-                    $review.prop('disabled', true);
-                    callBff('mark_week_reviewed', {run_id: state.runId, section_ref: sec.ref, revision: state.structureRevision}).then(function(result) {
-                        state.currentStructure = result.structure_revision;
-                        state.structureRevision = result.structure_revision.revision;
-                        state.currentEnvelope = structurePreviewEnvelope(state.currentStructure);
-                        renderPreview(state.currentEnvelope, state.currentEnvelope);
-                    }).catch(function(err) {
-                        $review.prop('disabled', false);
-                        showError('Failed to mark Week reviewed: ' + err.message, err.details);
-                    });
-                });
-                $secBody.append($review);
-            }
-            $cards.append($secCard);
-        });
 
         showRecoveryBanner('course-identity', 'course', courseIdentityDraftRevision(), openEditCourseTitleModal);
-
-        if (state.stagedMode && state.selectedWeekRef) {
-            var recoveryIndex = sections.findIndex(function(section) { return section.ref === state.selectedWeekRef; });
-            if (recoveryIndex >= 0) {
-                showRecoveryBanner('structure-week', state.selectedWeekRef, state.structureRevision, function(payload) {
-                    openEditSectionModal(recoveryIndex, payload);
-                });
-            }
-        }
 
         renderAlignmentReview(state.currentStructure || {content: {sections: sections}});
 
@@ -1997,6 +2135,30 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         writeRecoverySnapshot('activity-content', activityRef, baseRevision, payload);
     }
 
+    function activityWeekDisplayLabel(section) {
+        var title = section.title || 'Untitled week';
+        return /^week\s+\d+/i.test(title) ? title : ('Week ' + section.position + ' · ' + title);
+    }
+
+    function activityWeekStatusPresentation(intents) {
+        var stale = intents.some(function(intent) { return intent.status === 'stale'; });
+        var ready = intents.length && intents.every(function(intent) { return intent.status === 'generated' || intent.status === 'shell'; });
+        var creating = intents.some(function(intent) { return intent.status === 'creating'; });
+        var label = stale ? 'Stale' : ready ? 'Ready' : creating ? 'In progress' : 'Pending review';
+        var badge = label === 'Ready' ? 'badge-success' : label === 'In progress' ? 'badge-primary' : label === 'Stale' ? 'badge-warning' : 'badge-secondary';
+        return {label: label, badge: badge};
+    }
+
+    function updateActivityWeekNavStatus($rail, sectionRef, intents) {
+        var presentation = activityWeekStatusPresentation(intents);
+        $rail.find('.activity-week-nav-item').each(function(_index, element) {
+            var $week = $(element);
+            if ($week.attr('data-week-ref') !== sectionRef) return;
+            $week.find('.badge').removeClass('badge-success badge-primary badge-warning badge-secondary')
+                .addClass(presentation.badge).text(presentation.label);
+        });
+    }
+
     function renderActivityStructureStage() {
         var renderVersion = ++state.activityRenderVersion;
         var $container = $('#activity-structure-container');
@@ -2006,6 +2168,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         if (!state.selectedActivityWeekRef || !sections.some(function(section) { return section.ref === state.selectedActivityWeekRef; })) {
             state.selectedActivityWeekRef = state.selectedWeekRef && sections.some(function(section) { return section.ref === state.selectedWeekRef; }) ? state.selectedWeekRef : sections[0].ref;
         }
+        var $learnerContextFallback = renderLearnerContextAcknowledgmentControl(function() {
+            renderActivityStructureStage();
+        });
+        if ($learnerContextFallback) $container.append($learnerContextFallback);
         var $layout = $('<div class="row activity-review-workbench"></div>');
         var $rail = $('<nav class="col-lg-3 mb-3 activity-week-rail" aria-label="Activity Week navigator"></nav>');
         var $workspace = $('<section class="col-lg-6 mb-3 activity-week-workspace" aria-live="polite"></section>');
@@ -2019,24 +2185,21 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         var selectedActivityWeek = sections.find(function(section) { return section.ref === state.selectedActivityWeekRef; });
         $rail.append($('<div class="week-rail-heading small text-uppercase text-muted font-weight-bold px-2 py-2"></div>').text('Course weeks'));
         if (selectedActivityWeek) {
-            var selectedActivityWeekLabel = /^week\s+\d+/i.test(selectedActivityWeek.title || '') ? selectedActivityWeek.title : ('Week ' + selectedActivityWeek.position + ' · ' + (selectedActivityWeek.title || 'Untitled week'));
+            var selectedActivityWeekLabel = activityWeekDisplayLabel(selectedActivityWeek);
             $workspace.append($('<div class="activity-selected-week-context alert alert-primary py-2 px-3 mb-3"></div>')
                 .append($('<div class="small text-uppercase font-weight-bold"></div>').text('Currently configuring'))
                 .append($('<div class="font-weight-bold"></div>').text(selectedActivityWeekLabel)));
         }
         sections.forEach(function(section) {
             var intents = state.activityIntents[section.ref] || [];
-            var stale = intents.some(function(intent) { return intent.status === 'stale'; });
-            var ready = intents.length && intents.every(function(intent) { return intent.status === 'generated' || intent.status === 'shell'; });
-            var creating = intents.some(function(intent) { return intent.status === 'creating'; });
-            var status = stale ? 'Stale' : ready ? 'Ready' : creating ? 'In progress' : 'Pending review';
-            var statusBadge = status === 'Ready' ? 'badge-success' : status === 'In progress' ? 'badge-primary' : status === 'Stale' ? 'badge-warning' : 'badge-secondary';
-            var label = /^week\s+\d+/i.test(section.title || '') ? section.title : ('Week ' + section.position + ' · ' + (section.title || 'Untitled week'));
+            var statusPresentation = activityWeekStatusPresentation(intents);
+            var label = activityWeekDisplayLabel(section);
             var $week = $('<button type="button" class="list-group-item list-group-item-action text-left activity-week-nav-item"></button>')
                 .attr('data-week-ref', section.ref).attr('aria-current', section.ref === state.selectedActivityWeekRef ? 'true' : 'false')
+                .attr('title', label)
                 .toggleClass('active week-nav-current', section.ref === state.selectedActivityWeekRef)
-                .append($('<span class="d-block font-weight-bold"></span>').text(label))
-                .append($('<span class="badge mt-1"></span>').addClass(statusBadge).text(status));
+                .append($('<span class="activity-week-nav-title font-weight-bold"></span>').text(label))
+                .append($('<span class="badge mt-1"></span>').addClass(statusPresentation.badge).text(statusPresentation.label));
             $week.on('click', function() {
                 guardedNavigate(function() {
                     state.selectedActivityWeekRef = section.ref;
@@ -2061,14 +2224,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             callBff('get_activity_intents', {run_id: state.runId, section_ref: backgroundSection.ref}).then(function(result) {
                 if (renderVersion !== state.activityRenderVersion) return;
                 state.activityIntents[backgroundSection.ref] = result.intents || [];
-                var intents = state.activityIntents[backgroundSection.ref];
-                var stale = intents.some(function(item) { return item.status === 'stale'; });
-                var ready = intents.length && intents.every(function(item) { return item.status === 'generated' || item.status === 'shell'; });
-                var creating = intents.some(function(item) { return item.status === 'creating'; });
-                var status = stale ? 'Stale' : ready ? 'Ready' : creating ? 'In progress' : 'Pending review';
-                var $badge = $rail.find('[data-week-ref="' + backgroundSection.ref + '"] .badge');
-                $badge.removeClass('badge-success badge-primary badge-warning badge-secondary')
-                    .addClass(status === 'Ready' ? 'badge-success' : status === 'In progress' ? 'badge-primary' : status === 'Stale' ? 'badge-warning' : 'badge-secondary').text(status);
+                updateActivityWeekNavStatus($rail, backgroundSection.ref, state.activityIntents[backgroundSection.ref]);
             }).catch(function(err) {
                 if (renderVersion === state.activityRenderVersion) showError('Failed to load Activity state for ' + (backgroundSection.title || backgroundSection.ref) + ': ' + err.message, err.details);
             }).finally(function() {
@@ -2182,8 +2338,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             $assignmentObjectives.attr('id', 'activity-assignment-objectives-' + section.ref);
             $quizOutcomes.attr('id', 'activity-quiz-outcomes-' + section.ref);
             $assignmentOutcomes.attr('id', 'activity-assignment-outcomes-' + section.ref);
-            var $quizAck = $('<input type="checkbox" class="mr-1">');
-            var $assignmentAck = $('<input type="checkbox" class="mr-1">');
             var $quizOverrideAck = $('<input type="checkbox" class="mr-1">');
             var $assignmentOverrideAck = $('<input type="checkbox" class="mr-1">');
             var $quizMissingAlignmentAck = $('<input type="checkbox" class="mr-1">');
@@ -2192,7 +2346,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             var $assignmentOverrideReason = $('<input type="text" class="form-control form-control-sm mt-1" placeholder="Reason for targeting an out-of-Section Outcome">');
             var $quizPrompt = null;
             var $assignmentPrompt = null;
-            var activeAdvanced = null;
             var pendingIntentSave = Promise.resolve({ok: true});
 
             function fillMultiSelect($select, items, selected) {
@@ -2224,14 +2377,12 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 var $purpose = isQuiz ? $quizPurpose : $assignmentPurpose;
                 var $objectives = isQuiz ? $quizObjectives : $assignmentObjectives;
                 var $outcomes = isQuiz ? $quizOutcomes : $assignmentOutcomes;
-                var $ack = isQuiz ? $quizAck : $assignmentAck;
                 var $overrideAck = isQuiz ? $quizOverrideAck : $assignmentOverrideAck;
                 var $overrideReason = isQuiz ? $quizOverrideReason : $assignmentOverrideReason;
                 var $missingAlignmentAck = isQuiz ? $quizMissingAlignmentAck : $assignmentMissingAlignmentAck;
                 if (intent) {
                     $purpose.val(intent.purpose || (isQuiz ? 'PRACTICE' : 'FORMATIVE'));
                     $objectives.val(intent.selected_objective_ids || []);
-                    $ack.prop('checked', intent.learner_context_acknowledged === true);
                     var missingAlignmentOverride = intent.alignment_override && intent.alignment_override.kind === 'MISSING_ALIGNMENT';
                     $overrideAck.prop('checked', Boolean(intent.alignment_override && intent.alignment_override.acknowledged && !missingAlignmentOverride));
                     $overrideReason.val(!missingAlignmentOverride && intent.alignment_override && intent.alignment_override.reason || '');
@@ -2258,9 +2409,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $alignment.append($missingAlignmentWarning);
                 $alignment.append($('<label class="small d-block mt-2 mb-0"></label>').append($overrideAck).append(' Allow out-of-Section Outcome / CLO (Teacher override)'));
                 $alignment.append($overrideReason);
-                if (state.coreContext && state.coreContext.learner_context && state.coreContext.learner_context.status === 'UNSPECIFIED') {
-                    $alignment.append($('<label class="small d-block mt-2 mb-0"></label>').append($ack).append(' I acknowledge learner context is unspecified'));
-                }
                 var terminal = intent && ['creating', 'retry_exhausted'].indexOf(intent.status) !== -1;
                 $purpose.prop('disabled', terminal);
                 $objectives.prop('disabled', terminal);
@@ -2285,7 +2433,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 $overrideReason.off('input.scopegate change.scopegate').on('input.scopegate change.scopegate', function() {
                     setOutcomeOverrideAvailability($outcomes, $overrideAck, $overrideReason);
                 });
-                [$purpose, $objectives, $outcomes, $ack].forEach(function($control) {
+                [$purpose, $objectives, $outcomes].forEach(function($control) {
                     $control.off('change.intent20').on('change.intent20', function() {
                         updateMissingAlignmentWarning();
                         saveSelection();
@@ -2295,7 +2443,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     updateMissingAlignmentWarning();
                     saveSelection();
                 });
-                $ack.prop('disabled', terminal);
                 updateMissingAlignmentWarning();
                 $panel.append($alignment);
             }
@@ -2385,7 +2532,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 if (quizIntent) {
                     $quizPurpose.val(quizIntent.purpose || 'PRACTICE');
                     $quizObjectives.val(quizIntent.selected_objective_ids || []);
-                    $quizAck.prop('checked', quizIntent.learner_context_acknowledged === true);
                     var quizMissingAlignment = quizIntent.alignment_override && quizIntent.alignment_override.kind === 'MISSING_ALIGNMENT';
                     $quizOverrideAck.prop('checked', Boolean(quizIntent.alignment_override && quizIntent.alignment_override.acknowledged && !quizMissingAlignment));
                     $quizOverrideReason.val(!quizMissingAlignment && quizIntent.alignment_override && quizIntent.alignment_override.reason || '');
@@ -2396,7 +2542,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 if (assignmentIntent) {
                     $assignmentPurpose.val(assignmentIntent.purpose || 'FORMATIVE');
                     $assignmentObjectives.val(assignmentIntent.selected_objective_ids || []);
-                    $assignmentAck.prop('checked', assignmentIntent.learner_context_acknowledged === true);
                     var assignmentMissingAlignment = assignmentIntent.alignment_override && assignmentIntent.alignment_override.kind === 'MISSING_ALIGNMENT';
                     $assignmentOverrideAck.prop('checked', Boolean(assignmentIntent.alignment_override && assignmentIntent.alignment_override.acknowledged && !assignmentMissingAlignment));
                     $assignmentOverrideReason.val(!assignmentMissingAlignment && assignmentIntent.alignment_override && assignmentIntent.alignment_override.reason || '');
@@ -2743,8 +2888,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     assignment_selected_objective_ids: $assignmentObjectives.val() || [],
                     quiz_selected_outcome_ids: quizSelectedOutcomes,
                     assignment_selected_outcome_ids: assignmentSelectedOutcomes,
-                    quiz_learner_context_acknowledged: $quizAck.is(':checked'),
-                    assignment_learner_context_acknowledged: $assignmentAck.is(':checked')
+                    quiz_learner_context_revision: state.coreContext && state.coreContext.learner_context ? state.coreContext.learner_context.revision : undefined,
+                    assignment_learner_context_revision: state.coreContext && state.coreContext.learner_context ? state.coreContext.learner_context.revision : undefined
                 };
                 payload.quiz_alignment_override = quizOverride || {};
                 payload.assignment_alignment_override = assignmentOverride || {};
@@ -2782,6 +2927,13 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             }
 
             function generateSelectedActivity(type, instruction, $button) {
+                if (learnerContextNeedsAcknowledgment()) {
+                    showError('Acknowledge the shared Learner Context: UNSPECIFIED control before generating any Activity.');
+                    var $learnerAck = $('#activity-structure-container .learner-context-shared-ack').first();
+                    if ($learnerAck[0] && typeof $learnerAck[0].scrollIntoView === 'function') $learnerAck[0].scrollIntoView({block: 'center'});
+                    $learnerAck.trigger('focus');
+                    return Promise.resolve();
+                }
                 var selectedOutcomes = (type === 'quiz' ? $quizOutcomes : $assignmentOutcomes).val() || [];
                 var selectedObjectives = (type === 'quiz' ? $quizObjectives : $assignmentObjectives).val() || [];
                 var purpose = (type === 'quiz' ? $quizPurpose : $assignmentPurpose).val();
@@ -2852,6 +3004,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 }
 
                 appendSemanticControls(type, intent, $panel);
+                if (!materialState.snapshotId) {
+                    $panel.append($('<div class="alert alert-info py-2 px-2 mb-2 activity-syllabus-fallback-callout"></div>')
+                        .text('Source: Syllabus fallback. If syllabus evidence requires AI expansion, AI expansion remains Teacher Review Required. Learner-context acknowledgment is separate and explicit.'));
+                }
                 if (intent.grounding_mode) {
                     var grounding = 'Grounding: ' + intent.grounding_mode;
                     if (intent.review_required) grounding += ' • Teacher review required';
@@ -2867,6 +3023,24 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                 var $prompt = $('<textarea class="form-control form-control-sm mb-2 activity-generation-prompt" rows="3"></textarea>').attr('placeholder', isQuiz ? 'e.g., Focus on concepts from this week and keep questions beginner-friendly...' : "e.g., Ask students to build a small class that applies this week's concepts...");
                 if (isQuiz) $quizPrompt = $prompt; else $assignmentPrompt = $prompt;
                 if (intent.generation_instruction) $prompt.val(intent.generation_instruction);
+                var terminal = intent.status === 'generated' || intent.status === 'shell' || intent.status === 'creating' || intent.status === 'retry_exhausted';
+                var $generationSettings = $('<div class="border rounded bg-light p-2 mb-3 activity-generation-settings"></div>');
+                $generationSettings.append($('<div class="small font-weight-bold mb-2"></div>').text('Generation Settings'));
+                if (isQuiz) {
+                    var $row = $('<div class="form-row"></div>');
+                    var $countGroup = $('<div class="form-group col-4 mb-1"></div>').append('<label class="small mb-1">Questions</label>').append($quizCount);
+                    var $typeGroup = $('<div class="form-group col-5 mb-1"></div>').append('<label class="small mb-1">Type</label>').append($quizType);
+                    var $choiceGroup = $('<div class="form-group col-3 mb-1"></div>').append('<label class="small mb-1">Choices</label>').append($quizChoices);
+                    $row.append($countGroup).append($typeGroup).append($choiceGroup);
+                    $generationSettings.append($row);
+                    $quizCount.prop('disabled', terminal);
+                    $quizType.prop('disabled', terminal);
+                    $quizChoices.prop('disabled', terminal || $quizType.val() !== 'multichoice');
+                } else {
+                    $generationSettings.append($('<div class="form-group mb-1"></div>').append('<label class="small mb-1">Grade</label>').append($assignmentGrade));
+                    $assignmentGrade.prop('disabled', terminal);
+                }
+                $panel.append($generationSettings);
                 $panel.append($promptLabel).append($prompt);
                 var $promptStatus = $('<div class="activity-intent-save-status small mb-2"></div>');
                 function setPromptSaveStatus(className, iconClass, text) {
@@ -2894,27 +3068,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     persistSelection(instructions).then(function() { renderPanels(); }).catch(function(err) { $saveIntent.prop('disabled', false).text('Save Intent'); showError('Failed to save Activity Intent: ' + err.message, err.details); });
                 });
                 $panel.append($saveIntent);
-
-                var terminal = intent.status === 'generated' || intent.status === 'shell' || intent.status === 'creating' || intent.status === 'retry_exhausted';
-                var $advanced = $('<details class="mb-3"></details>');
-                $advanced.append($('<summary class="small font-weight-bold text-secondary" style="cursor:pointer;">Advanced Settings</summary>'));
-                var $advancedBody = $('<div class="border rounded bg-light p-2 mt-2"></div>');
-                if (isQuiz) {
-                    var $row = $('<div class="form-row"></div>');
-                    var $countGroup = $('<div class="form-group col-4 mb-1"></div>').append('<label class="small mb-1">Questions</label>').append($quizCount);
-                    var $typeGroup = $('<div class="form-group col-5 mb-1"></div>').append('<label class="small mb-1">Type</label>').append($quizType);
-                    var $choiceGroup = $('<div class="form-group col-3 mb-1"></div>').append('<label class="small mb-1">Choices</label>').append($quizChoices);
-                    $row.append($countGroup).append($typeGroup).append($choiceGroup);
-                    $advancedBody.append($row);
-                    $quizCount.prop('disabled', terminal);
-                    $quizType.prop('disabled', terminal);
-                    $quizChoices.prop('disabled', terminal || $quizType.val() !== 'multichoice');
-                } else {
-                    $advancedBody.append($('<div class="form-group mb-1"></div>').append('<label class="small mb-1">Grade</label>').append($assignmentGrade));
-                    $assignmentGrade.prop('disabled', terminal);
-                }
-                $advanced.append($advancedBody);
-                if (activeTab === type) activeAdvanced = $advanced;
 
                 renderGeneratedPreview(intent, $panel);
 
@@ -2952,7 +3105,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             function renderPanels() {
                 var intents = state.activityIntents[section.ref] || [];
                 activeTab = state.selectedActivityTabByWeek[section.ref] || activeTab || 'material';
-                activeAdvanced = null;
                 var quizIntent = getIntent('quiz');
                 var assignmentIntent = getIntent('assignment');
                 $quiz.prop('checked', Boolean(quizIntent));
@@ -2976,7 +3128,6 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
                     $material.removeClass('text-muted');
                 }
                 applyActivityTab();
-                if (activeAdvanced) $activityInspector.append(activeAdvanced);
                 var weekStale = intents.some(function(item) { return item.status === 'stale'; });
                 var weekReady = intents.length && intents.every(function(item) { return item.status === 'generated' || item.status === 'shell'; });
                 var weekCreating = intents.some(function(item) { return item.status === 'creating'; });
@@ -3101,6 +3252,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             var activityRead = callBff('get_activity_intents', {run_id: state.runId, section_ref: section.ref}).then(function(result) {
                 if (renderVersion !== state.activityRenderVersion) return;
                 state.activityIntents[section.ref] = result.intents || [];
+                updateActivityWeekNavStatus($rail, section.ref, state.activityIntents[section.ref]);
                 syncOptionInputs();
                 renderPanels();
             }).catch(function(err) {

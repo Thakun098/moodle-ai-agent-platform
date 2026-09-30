@@ -241,6 +241,15 @@ class ai_platform_client {
         return $this->request('GET', '/api/runs/' . urlencode($runid) . '/course-structure');
     }
 
+    /** Explicitly acknowledges the current UNSPECIFIED Learner Context revision. */
+    public function acknowledge_learner_context(string $runid, int $learnercontextrevision): array {
+        return $this->request(
+            'POST',
+            '/api/runs/' . urlencode($runid) . '/core-context/learner-context/acknowledgment',
+            ['learner_context_revision' => $learnercontextrevision]
+        );
+    }
+
     /** Selects/deselects Quiz and Assignment explicitly for one sealed section. */
     public function set_activity_intents(string $runid, string $sectionref, bool $quiz, bool $assignment, array $quizoptions = [], array $assignmentoptions = [], array $semantic = []): array {
         $payload = [

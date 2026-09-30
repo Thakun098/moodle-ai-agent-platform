@@ -129,3 +129,12 @@ export type * from "./syllabus/core-course-design-context.js";
 export type * from "./instructional-design/competency-candidates.js";
 
 export { assertInitialCoreCourseDesignContext } from "./validation/core-course-design-context-validator.js";
+
+export {
+  measureNaturalLanguageSignal,
+  combineNaturalLanguageSignals,
+  dominantNaturalLanguage,
+  derivePrimaryOutputLanguageAuthority,
+  primaryOutputLanguageLabel,
+  type NaturalLanguageSignal,
+} from "./syllabus/output-language.js";

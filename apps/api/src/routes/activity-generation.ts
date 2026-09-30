@@ -80,9 +80,10 @@ function parseInstruction(body: unknown): string | undefined {
   return trimmed;
 }
 
-function titleFor(intent: ActivityIntentRecord, sectionTitle: string): string {
+function titleFor(intent: ActivityIntentRecord, sectionTitle: string, languageCode: "th" | "en" = "en"): string {
   const configured = intent.optionsJson.title;
   if (typeof configured === "string" && configured.trim()) return configured.trim();
+  if (languageCode === "th") return `${intent.activityType === "quiz" ? "แบบทดสอบ" : "งานมอบหมาย"}: ${sectionTitle}`;
   return `${intent.activityType === "quiz" ? "Quiz" : "Assignment"}: ${sectionTitle}`;
 }
 
@@ -181,12 +182,42 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
       reply.status(404).send({ error: { code: "ACTIVITY_INTENT_NOT_FOUND", message: `Activity Intent ${activityRef} not found.`, details: null, request_id: request.id } });
       return;
     }
-    await beginInstructionalDesignMutation(getRunRepo(), runId);
-    const coreContext = typeof (getRunRepo() as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function"
-      ? await (getRunRepo() as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<any> }).getCoreCourseDesignContext(runId)
+    const runRepository = getRunRepo();
+    await beginInstructionalDesignMutation(runRepository, runId);
+    const hasCoreContextReader = typeof (runRepository as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function";
+    const coreContext = hasCoreContextReader
+      ? await (runRepository as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<any> }).getCoreCourseDesignContext(runId)
       : null;
-    if (coreContext && typeof (repo as { updateContextRevision?: unknown }).updateContextRevision === "function") {
-      selected = await repo.updateContextRevision(selected.id, coreContext.revision, coreContext.learner_context.revision) ?? selected;
+    if (hasCoreContextReader && !coreContext) {
+      reply.status(409).send({
+        error: {
+          code: "ACTIVITY_GENERATION_CONTEXT_UNAVAILABLE",
+          message: "Current Core Course Design Context is unavailable; Activity generation cannot verify Learner Context authority.",
+          details: null,
+          request_id: request.id,
+        },
+      });
+      return;
+    }
+    if (coreContext) {
+      if (selected.learnerContextRevision !== null && selected.learnerContextRevision !== undefined
+        && selected.learnerContextRevision !== coreContext.learner_context.revision) {
+        reply.status(409).send({
+          error: {
+            code: "ACTIVITY_INTENT_LEARNER_CONTEXT_STALE",
+            message: "Learner Context revision is stale; reload the current Activity Intent before generating.",
+            details: {
+              learner_context_revision: selected.learnerContextRevision,
+              current_learner_context_revision: coreContext.learner_context.revision,
+            },
+            request_id: request.id,
+          },
+        });
+        return;
+      }
+      if (typeof (repo as { updateContextRevision?: unknown }).updateContextRevision === "function") {
+        selected = await repo.updateContextRevision(selected.id, coreContext.revision, coreContext.learner_context.revision) ?? selected;
+      }
     }
     let generationInstruction: string | undefined;
     try {
@@ -230,13 +261,14 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
             id: selected.id,
             ref: selected.activityRef,
             type: selected.activityType,
-            title: titleFor(selected, section.title),
+            title: titleFor(selected, section.title, coreContext?.primary_output_language?.code ?? "en"),
             purpose: selected.purpose,
             intent_revision: selected.intentRevision,
             selected_objective_ids: selected.selectedObjectiveIdsJson,
             selected_outcome_ids: selected.selectedOutcomeIdsJson,
             learner_context_revision: selected.learnerContextRevision ?? coreContext.learner_context.revision,
-            learner_context_acknowledged: selected.learnerContextAcknowledged,
+            learner_context_acknowledged: coreContext.learner_context.status !== "UNSPECIFIED"
+              || coreContext.learner_context.teacher_acknowledged_unspecified === true,
             options: selected.optionsJson,
             generation_instruction: selected.generationInstruction,
             ...(selected.alignmentOverrideJson ? { alignment_override: selected.alignmentOverrideJson as { kind?: "OUT_OF_SECTION" | "MISSING_ALIGNMENT"; acknowledged: true; reason: string } } : {}),
@@ -268,7 +300,7 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
     const intent = {
       ref: started.activityRef,
       type: started.activityType,
-      title: titleFor(started, section.title),
+      title: titleFor(started, section.title, coreContext?.primary_output_language?.code ?? "en"),
       source_refs: [...context.sourceRefs],
       origin: "teacher_instruction" as const,
       options: started.optionsJson,
@@ -359,14 +391,24 @@ export const activityGenerationRoutes: FastifyPluginAsync<ActivityGenerationRout
       reply.status(404).send({ error: { code: "ACTIVITY_INTENT_NOT_FOUND", message: `Activity Intent ${activityRef} not found.`, details: null, request_id: request.id } });
       return;
     }
-    await beginInstructionalDesignMutation(getRunRepo(), runId);
+    const runRepo = getRunRepo();
+    const hasCoreContextReader = typeof (runRepo as { getCoreCourseDesignContext?: unknown }).getCoreCourseDesignContext === "function";
+    const coreContext = hasCoreContextReader
+      ? await (runRepo as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<any> }).getCoreCourseDesignContext(runId)
+      : null;
+    if (hasCoreContextReader && !coreContext) {
+      reply.status(409).send({ error: { code: "PRIMARY_OUTPUT_LANGUAGE_CONTEXT_UNAVAILABLE", message: "Current Core Course Design Context is unavailable; Empty Activity Shell text cannot verify Primary Output Language authority.", details: null, request_id: request.id } });
+      return;
+    }
+    await beginInstructionalDesignMutation(runRepo, runId);
     try {
+      const languageCode = coreContext?.primary_output_language?.code ?? "en";
       const shell = createEmptyActivityShell({
         ref: intent.activityRef,
         type: intent.activityType,
-        title: titleFor(intent, String(sectionRecord.title ?? sectionRef)),
+        title: titleFor(intent, String(sectionRecord.title ?? sectionRef), languageCode),
         status: intent.status,
-      }, true, policyFromConfig(options.config));
+      }, true, policyFromConfig(options.config), languageCode);
       const saved = await getIntentRepo().confirmShell(intent.id, shell as unknown as Record<string, unknown>);
       if (!saved) {
         reply.status(409).send({ error: { code: "EMPTY_SHELL_NOT_ALLOWED", message: "Empty Activity Shell is only available after INSUFFICIENT_EVIDENCE.", details: null, request_id: request.id } });
