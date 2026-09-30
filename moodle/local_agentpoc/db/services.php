@@ -194,6 +194,11 @@ $services['Teacher AI Assistance 2 Service']['functions'][] = 'local_agentpoc_ge
 
 // Ticket 24 — Moodle-native Competency materialization and readback.
 $ticket24functions = [
+    'local_agentpoc_competency_framework_preflight' => [
+        'classname' => 'local_agentpoc\\external\\competency_framework_preflight', 'methodname' => 'execute',
+        'description' => 'Validate Competency Framework readiness and idempotently provision the canonical default only when absent',
+        'type' => 'write', 'ajax' => true, 'capabilities' => 'local/agentpoc:manage, moodle/competency:competencymanage',
+    ],
     'local_agentpoc_list_competency_frameworks' => [
         'classname' => 'local_agentpoc\\external\\list_competency_frameworks', 'methodname' => 'execute',
         'description' => 'List visible Moodle Competency Frameworks available to the caller', 'type' => 'read', 'ajax' => true,

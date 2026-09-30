@@ -23,16 +23,17 @@ describe("revision-owned execution context", () => {
     await app.close();
   });
   it("rejects retargeting an already-bound creation retry", async () => {
+    const participation = { revision: 1, status: "BYPASSED", reason: "TEACHER_SKIP", framework_id: null, framework_signature: null, message: "Skipped", checked_at: "2026-09-30T00:00:00Z" };
     const planId = randomUUID(); const runId = randomUUID();
     const bindExecutionContext = vi.fn(async () => ({ target: { category_id: 1 } }));
     const manager = { callTool: vi.fn() };
     const app = Fastify();
     await app.register(executionsRoutes, { config: {} as any, mcpClientManager: manager as any,
-      runRepo: { getRun: vi.fn(async () => ({ approvedPlanId: planId, approvedRevision: 1 })) } as any,
+      runRepo: { getRun: vi.fn(async () => ({ approvedPlanId: planId, approvedRevision: 1, competencyParticipation: participation })) } as any,
       planRepo: { bindExecutionContext, getPlanRevision: vi.fn(async () => ({ runId, planType: "course", operation: "create", validationStatus: "valid", rawEnvelope: { plan_type: "course", operation: "create" } })) } as any,
       candidateRepo: { list: vi.fn(async () => []) } as any, activityIntentRepo: {} as any,
       competencyReviewRepo: { review: vi.fn(async () => ({ revision: 0, mappings: [] })) } as any,
-      competencySnapshotRepo: { get: vi.fn(async () => ({ runId, planId, revision: 1, mappingReviewRevision: 0, capturedAt: "2026-09-16T00:00:00.000Z", competencies: [], mappings: [] })) } as any,
+      competencySnapshotRepo: { get: vi.fn(async () => ({ runId, planId, revision: 1, mappingReviewRevision: 0, frameworkId: null, participation, capturedAt: "2026-09-16T00:00:00.000Z", competencies: [], mappings: [] })) } as any,
     });
     const response = await app.inject({ method: "POST", url: `/api/runs/${runId}/execute`, payload: { plan_id: planId, revision: 1, target: { category_id: 2 } } });
     expect(response.statusCode).toBe(409);

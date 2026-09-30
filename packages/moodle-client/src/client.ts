@@ -11,7 +11,7 @@ import {
   parseCreatedCourse,
   parseCreatedQuestion,
   parseCreatedResource,
-  parseCompetencyFrameworks, parseCreatedCompetency, parseCourseCompetencyLink, parseActivityCompetencyLink, parseCourseCompetencyReadback,
+  parseCompetencyFrameworkPreflight, parseCompetencyFrameworks, parseCreatedCompetency, parseCourseCompetencyLink, parseActivityCompetencyLink, parseCourseCompetencyReadback,
   parseCreatedQuiz,
   parseCreatedSection,
   parseQuizDetails,
@@ -103,6 +103,13 @@ export class MoodleClient {
     return parseCreatedSection(raw);
   }
 
+  async competencyFrameworkPreflight(params: import('./types.js').CompetencyFrameworkPreflightParams = {}): Promise<import('./types.js').MoodleCompetencyFrameworkPreflight> {
+    if (params.configuredFrameworkId !== undefined && (!Number.isSafeInteger(params.configuredFrameworkId) || params.configuredFrameworkId <= 0)) throw new Error('configuredFrameworkId must be a positive integer');
+    const raw = await this.http.post('local_agentpoc_competency_framework_preflight', new URLSearchParams({
+      configured_framework_id: String(params.configuredFrameworkId ?? 0), provision_default: params.provisionDefault === false ? '0' : '1',
+    }));
+    return parseCompetencyFrameworkPreflight(raw);
+  }
   async listCompetencyFrameworks(): Promise<MoodleCompetencyFramework[]> { const raw = await this.http.post('local_agentpoc_list_competency_frameworks'); return parseCompetencyFrameworks(raw); }
   async createCompetency(params: CreateCompetencyParams): Promise<MoodleCreatedCompetency> { const raw = await this.http.post('local_agentpoc_create_competency', serializeCreateCompetencyParams(params)); return parseCreatedCompetency(raw); }
   async addCompetencyToCourse(params: AddCompetencyToCourseParams): Promise<MoodleCourseCompetencyLink> { const raw = await this.http.post('local_agentpoc_add_competency_to_course', serializeAddCompetencyToCourseParams(params)); return parseCourseCompetencyLink(raw); }

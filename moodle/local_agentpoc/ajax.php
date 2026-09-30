@@ -183,6 +183,28 @@ try {
             ]);
             break;
 
+        case 'get_competency_participation':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->get_competency_participation($runid);
+            break;
+
+        case 'preflight_competency_framework':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $response['data'] = $client->preflight_competency_framework($runid);
+            break;
+
+        case 'decide_competency_participation':
+            $runid = required_param('run_id', PARAM_ALPHANUMEXT);
+            $choice = required_param('participation_action', PARAM_ALPHA);
+            if (!in_array($choice, ['skip', 'enable'], true)) {
+                throw new \moodle_exception('invalidparameter', 'debug', '', 'Invalid Competency participation action');
+            }
+            $response['data'] = $client->decide_competency_participation($runid, [
+                'action' => $choice,
+                'expected_revision' => required_param('expected_revision', PARAM_INT),
+            ]);
+            break;
+
         case 'get_competency_candidates':
             $runid = required_param('run_id', PARAM_ALPHANUMEXT);
             $response['data'] = $client->get_competency_candidates($runid);
@@ -527,12 +549,16 @@ try {
 
     echo json_encode($response);
 } catch (\Exception $e) {
+    $errorcode = ($e instanceof \moodle_exception) ? $e->errorcode : 'SERVER_ERROR';
+    if ($e instanceof \moodle_exception && is_string($e->debuginfo) && preg_match('/^COMPETENCY_[A-Z_]+$/', $e->debuginfo)) {
+        $errorcode = $e->debuginfo;
+    }
     http_response_code(400);
     echo json_encode([
         'success' => false,
         'error' => [
             'message' => $e->getMessage(),
-            'code' => ($e instanceof \moodle_exception) ? $e->errorcode : 'SERVER_ERROR',
+            'code' => $errorcode,
         ],
     ]);
 }

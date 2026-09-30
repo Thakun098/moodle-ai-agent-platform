@@ -29,9 +29,15 @@ describe('Moodle MCP Server Stdio Subprocess Protocol Smoke Test (P9-D3, T0913)'
       // 1. Tool Discovery Proof (T0913) over Stdio
       const toolList = await client.listTools();
       expect(toolList.tools).toBeDefined();
-      expect(toolList.tools.length).toBe(17);
+      expect(toolList.tools.length).toBe(23);
 
       const toolNames = toolList.tools.map((t) => t.name);
+      expect(toolNames).toContain('moodle_competency_framework_preflight');
+      expect(toolNames).toContain('moodle_list_competency_frameworks');
+      expect(toolNames).toContain('moodle_create_competency');
+      expect(toolNames).toContain('moodle_add_competency_to_course');
+      expect(toolNames).toContain('moodle_add_competency_to_activity');
+      expect(toolNames).toContain('moodle_get_course_competencies');
       expect(toolNames).toContain('moodle_list_course_categories');
       expect(toolNames).toContain('moodle_list_course_formats');
       expect(toolNames).toContain('moodle_create_resource');

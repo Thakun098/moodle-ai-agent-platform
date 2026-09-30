@@ -127,7 +127,9 @@ class ai_platform_client {
             if ($preserveapierror) {
                 throw new risk_api_exception($httpcode, $apicode, $errormsg);
             }
-            throw new \moodle_exception('erroraiplatform', 'local_agentpoc', '', $errormsg);
+            // Retain a machine-readable Competency authority code for Course Builder recovery.
+            $competencycode = preg_match('/^COMPETENCY_[A-Z_]+$/', $apicode) ? $apicode : null;
+            throw new \moodle_exception('erroraiplatform', 'local_agentpoc', '', $errormsg, $competencycode);
         }
 
         if (!is_array($decoded)) {
@@ -569,6 +571,21 @@ class ai_platform_client {
     /** Safely edits an already-approved CLO by withdrawing obsolete authority first. */
     public function edit_approved_learning_outcome(string $runid, array $payload): array {
         return $this->request('POST', '/api/runs/' . urlencode($runid) . '/outcomes/edit-approved', $payload, $this->instructional_design_headers());
+    }
+
+    /** Reads Course-level Competency readiness and participation. */
+    public function get_competency_participation(string $runid): array {
+        return $this->request('GET', '/api/runs/' . urlencode($runid) . '/competency-participation', null, $this->instructional_design_headers());
+    }
+
+    /** Checks Framework readiness deterministically before Candidate derivation. */
+    public function preflight_competency_framework(string $runid): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/competency-preflight', new \stdClass(), $this->instructional_design_headers());
+    }
+
+    /** Persists an explicit Teacher participation choice. */
+    public function decide_competency_participation(string $runid, array $payload): array {
+        return $this->request('POST', '/api/runs/' . urlencode($runid) . '/competency-participation', $payload, $this->instructional_design_headers());
     }
 
     /** Reads persisted Competency Candidate lifecycle state. */

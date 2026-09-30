@@ -332,6 +332,7 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
     const runId = randomUUID();
     const planId = samplePlanId;
     const runStatuses: PocRunStatus[] = [];
+    const participation = { revision: 1, status: "BYPASSED" as const, reason: "TEACHER_SKIP", framework_id: null, framework_signature: null, message: "Skipped", checked_at: "2026-09-30T00:00:00Z" };
     const mappings: ExecutionMappingRecord[] = [];
 
     const mockRunRepo = {
@@ -341,6 +342,7 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
         approvedPlanId: planId,
         approvedRevision: 1,
         syllabusMetadata: { course_format: "tiles" },
+        competencyParticipation: participation,
       } as PocRunRecord),
       updateStatus: vi.fn().mockImplementation(async (rId, status) => {
         runStatuses.push(status);
@@ -397,7 +399,7 @@ describe("Course Execution API Endpoints (T1101 to T1110, P11-D1 to P11-D8)", ()
       candidateRepo: { list: vi.fn(async () => []) } as any,
       activityIntentRepo: {} as any,
       competencyReviewRepo: { review: vi.fn(async () => ({ revision: 0, mappings: [] })) } as any,
-      competencySnapshotRepo: { get: vi.fn(async () => ({ runId, planId, revision: 1, mappingReviewRevision: 0, capturedAt: "2026-09-16T00:00:00.000Z", competencies: [], mappings: [] })) } as any,
+      competencySnapshotRepo: { get: vi.fn(async () => ({ runId, planId, revision: 1, mappingReviewRevision: 0, frameworkId: null, participation, capturedAt: "2026-09-16T00:00:00.000Z", competencies: [], mappings: [] })) } as any,
       mcpClientManager,
     });
 

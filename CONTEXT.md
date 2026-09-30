@@ -185,3 +185,23 @@ _Avoid_: inferred evidence eligibility
 A separate Teacher-confirmed decision that an Activity may count as evidence for a mapped Competency.
 
 _Avoid_: mapping-implies-evidence
+
+## Moodle competency provisioning
+
+**Default Competency Framework**:
+
+The system-owned Moodle Competency Framework used only when the target Moodle site has no visible Competency Framework at all. It provides a deterministic bootstrap target for Teacher-approved Competencies without replacing or silently selecting an institution-managed framework.
+
+_Avoid_: arbitrary existing framework, AI-selected framework, per-course framework
+
+**Competency Participation**:
+
+The Course-level decision describing whether Moodle Competencies participate in the current Course flow: ENABLED when an eligible framework is available and Competencies are in use, or BYPASSED when Competencies are intentionally skipped or unavailable. Candidate review state is preserved across participation changes.
+
+_Avoid_: deleting candidates to skip Competencies, implicit competency disablement
+
+**Competency Framework Preflight**:
+
+The deterministic readiness check performed before Competency Candidate derivation. It resolves an eligible configured or canonical Moodle Competency Framework, may bootstrap the system-owned Default Competency Framework when no visible framework exists, and otherwise records an actionable bypass or selection state before any Candidate derivation occurs.
+
+_Avoid_: approval-time-only framework check, derive-then-discover framework failure

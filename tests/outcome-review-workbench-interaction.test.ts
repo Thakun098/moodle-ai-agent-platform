@@ -313,7 +313,8 @@ function harness(options: { approvedClo?: boolean; reviewedLo?: boolean; confirm
       return { ok: false, json: async () => ({ success: false, error: { message: action + " failed", code: "TEST_FAILURE" } }) };
     }
     let data: any = {};
-    if (action === "get_instructional_design") data = { core_context: coreContext, outcome_proposals: [], competency_candidates: [], coverage: [], structure_revision: structure() };
+    if (action === "get_instructional_design") data = { core_context: coreContext, outcome_proposals: [], competency_candidates: [], coverage: [], structure_revision: structure(), competency_participation: { revision: 1, status: "ENABLED", reason: "CONFIGURED_FRAMEWORK", framework_id: 7, framework_signature: "a".repeat(64), message: "Available", checked_at: "2026-09-30T00:00:00Z" } };
+    else if (action === "preflight_competency_framework") data = { competency_participation: { revision: 1, status: "ENABLED", reason: "CONFIGURED_FRAMEWORK", framework_id: 7, framework_signature: "a".repeat(64), message: "Available", checked_at: "2026-09-30T00:00:00Z" } };
     else if (action === "acknowledge_learner_context") {
       coreContext.revision += 1;
       coreContext.learner_context.teacher_acknowledged_unspecified = true;

@@ -6,6 +6,7 @@ import type {
   CompetencyExecutionSnapshotRepository,
   CompetencyMappingReviewRepository,
   RunRepository,
+  CompetencyParticipation,
 } from "@moodle-agent-poc/agent-runtime";
 import { competencyMappingSignature, reviewCompetencyMappings } from "./competency-mapping-review-service.js";
 
@@ -53,8 +54,12 @@ export async function captureCompetencyExecutionSnapshot(input: {
   planId: string;
   revision: number;
   frameworkId: number | null;
+  participation?: CompetencyParticipation;
   dependencies: CompetencyExecutionSnapshotDependencies;
 }): Promise<CompetencyExecutionSnapshot> {
+  if (input.participation?.status === "BYPASSED") {
+    return input.dependencies.snapshotRepo.save({ runId: input.runId, planId: input.planId, revision: input.revision, mappingReviewRevision: 0, frameworkId: null, participation: input.participation, capturedAt: new Date().toISOString(), competencies: [], mappings: [] });
+  }
   const review = await reviewCompetencyMappings(input.dependencies.reviewRepo, input.runId);
   const candidates = await input.dependencies.candidateRepo.list(input.runId);
   const approved = candidates.filter((candidate) => candidate.status === "APPROVED").sort((a, b) => a.candidateId.localeCompare(b.candidateId));
@@ -82,6 +87,7 @@ export async function captureCompetencyExecutionSnapshot(input: {
     mappingReviewRevision: review.revision,
     frameworkId: input.frameworkId,
     capturedAt: new Date().toISOString(),
+    ...(input.participation ? { participation: input.participation } : {}),
     competencies: approved.map((candidate) => ({
       candidateId: candidate.candidateId,
       competencyRevision: candidate.revision,
@@ -99,6 +105,10 @@ export async function assertCompetencyExecutionSnapshotCurrent(
   snapshot: CompetencyExecutionSnapshot,
   dependencies: Omit<CompetencyExecutionSnapshotDependencies, "snapshotRepo">,
 ): Promise<void> {
+  if (snapshot.participation?.status === "BYPASSED") {
+    if (snapshot.frameworkId !== null || snapshot.competencies.length || snapshot.mappings.length) throw Object.assign(new Error("Bypassed snapshot cannot materialize Competencies."), { code: "COMPETENCY_EXECUTION_SNAPSHOT_STALE" });
+    return;
+  }
   const currentCandidates = await dependencies.candidateRepo.list(snapshot.runId);
   const approved = currentCandidates.filter((candidate) => candidate.status === "APPROVED");
   await assertApprovedOutcomeAuthority(snapshot.runId, approved, dependencies.runRepo);

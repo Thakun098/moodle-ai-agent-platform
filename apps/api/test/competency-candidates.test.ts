@@ -42,11 +42,33 @@ function candidateRepo() {
 }
 
 const runRepo = (current: CoreCourseDesignContext) => ({
-  getRun: vi.fn().mockResolvedValue({ runId: "run-competency", status: "planning" }),
+  getRun: vi.fn().mockResolvedValue({ runId: "run-competency", status: "planning", competencyParticipation: { revision: 1, status: "ENABLED", reason: "CONFIGURED_FRAMEWORK", framework_id: 7, framework_signature: "a".repeat(64), message: "Available", checked_at: "2026-09-30T00:00:00Z" } }),
   getCoreCourseDesignContext: vi.fn().mockResolvedValue(current),
 });
+const mcp = { callTool: vi.fn().mockResolvedValue({ status: "success", data: { status: "ENABLED", reason: "CONFIGURED_FRAMEWORK", framework_id: 7, framework_signature: "a".repeat(64), message: "Available" } }) };
 
 describe("Ticket 19 Competency Candidate API", () => {
+  it("requires Framework preflight before spending Competency derivation tokens", async () => {
+    const model = { chat: vi.fn(), listModels: vi.fn(), ping: vi.fn() };
+    const unresolvedRepo = runRepo(context());
+    unresolvedRepo.getRun.mockResolvedValue({ runId: "run-competency", status: "planning" } as any);
+    const app = buildApp({ config, runRepo: unresolvedRepo as any, candidateRepo: candidateRepo() as any, modelClient: model as any, fastifyOptions: { logger: false } });
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-competency/competency-candidates/derive", headers: { "x-agentpoc-instructional-design-key": "test-key" } });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("COMPETENCY_PREFLIGHT_REQUIRED");
+    expect(model.chat).not.toHaveBeenCalled();
+    await app.close();
+  });
+  it.each(["BYPASSED", "CHECK_FAILED", "SELECTION_REQUIRED"])("spends zero model calls when participation is %s", async status => {
+    const model = { chat: vi.fn(), listModels: vi.fn(), ping: vi.fn() };
+    const repo = runRepo(context());
+    repo.getRun.mockResolvedValue({ runId: "run-competency", status: "planning", competencyParticipation: { revision: 1, status, framework_id: null, framework_signature: null } } as any);
+    const app = buildApp({ config, runRepo: repo as any, candidateRepo: candidateRepo() as any, modelClient: model as any, fastifyOptions: { logger: false } });
+    const response = await app.inject({ method: "POST", url: "/api/runs/run-competency/competency-candidates/derive", headers: { "x-agentpoc-instructional-design-key": "test-key" } });
+    expect(response.statusCode).toBe(409);
+    expect(model.chat).not.toHaveBeenCalled();
+    await app.close();
+  });
   it("blocks derivation without approved Outcomes and persists many-to-many proposals", async () => {
     const blockedApp = buildApp({ config, runRepo: runRepo(context(false)) as any, candidateRepo: candidateRepo() as any, modelClient: { chat: vi.fn(), listModels: vi.fn(), ping: vi.fn() } as any, fastifyOptions: { logger: false } });
     const blocked = await blockedApp.inject({ method: "POST", url: "/api/runs/run-competency/competency-candidates/derive", headers: { "x-agentpoc-instructional-design-key": "test-key" } });
@@ -55,7 +77,7 @@ describe("Ticket 19 Competency Candidate API", () => {
 
     const repo = candidateRepo();
     const model = { chat: vi.fn().mockResolvedValue({ rawText: JSON.stringify({ candidates: [{ name: "Program design", description: "Design programs", rationale: "Combines outcomes", derived_from_outcome_ids: ["outcome-1", "outcome-2"] }] }) }), listModels: vi.fn(), ping: vi.fn() };
-    const app = buildApp({ config, runRepo: runRepo(context()) as any, candidateRepo: repo as any, modelClient: model as any, fastifyOptions: { logger: false } });
+    const app = buildApp({ config, runRepo: runRepo(context()) as any, mcpClientManager: mcp as any, candidateRepo: repo as any, modelClient: model as any, fastifyOptions: { logger: false } });
     const response = await app.inject({ method: "POST", url: "/api/runs/run-competency/competency-candidates/derive", headers: { "x-agentpoc-instructional-design-key": "test-key" } });
     expect(response.statusCode).toBe(200);
     expect(response.json().operation).toBe("DERIVE_COMPETENCIES");
@@ -67,7 +89,7 @@ describe("Ticket 19 Competency Candidate API", () => {
   it("requires an explicit override before approving an unaligned edited Candidate and reloads state", async () => {
     const repo = candidateRepo();
     const model = { chat: vi.fn().mockResolvedValue({ rawText: JSON.stringify({ candidates: [{ name: "Program design", description: "Design programs", rationale: "Combines outcomes", derived_from_outcome_ids: ["outcome-1"] }] }) }), listModels: vi.fn(), ping: vi.fn() };
-    const app = buildApp({ config, runRepo: runRepo(context()) as any, candidateRepo: repo as any, modelClient: model as any, fastifyOptions: { logger: false } });
+    const app = buildApp({ config, runRepo: runRepo(context()) as any, mcpClientManager: mcp as any, candidateRepo: repo as any, modelClient: model as any, fastifyOptions: { logger: false } });
     const headers = { "x-agentpoc-instructional-design-key": "test-key" };
     await app.inject({ method: "POST", url: "/api/runs/run-competency/competency-candidates/derive", headers });
     const id = repo.rows[0].candidateId;

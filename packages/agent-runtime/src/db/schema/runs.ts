@@ -1,4 +1,5 @@
 import type { NormalizedSyllabus } from "@moodle-agent-poc/contracts";
+import type { CompetencyParticipation } from "../../competency-participation.js";
 import { integer, jsonb, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 export interface SyllabusMetadata {
@@ -29,6 +30,7 @@ export const pocRun = pgTable("poc_run", {
   normalizedSyllabus: jsonb("normalized_syllabus").$type<NormalizedSyllabus>(),
   model: varchar("model", { length: 64 }).notNull(),
   finalResult: jsonb("final_result"),
+  competencyParticipation: jsonb("competency_participation").$type<CompetencyParticipation>(),
   error: text("error"),
   approvedPlanId: varchar("approved_plan_id", { length: 36 }),
   approvedRevision: integer("approved_revision"),

@@ -31,7 +31,7 @@ export async function beginInstructionalDesignMutation(runRepo: RunRepository, r
 /** Claims the exact approval immediately before the first Moodle mutation. */
 export async function claimApprovedExecution(
   runRepo: RunRepository,
-  input: { runId: string; planId: string; revision: number },
+  input: { runId: string; planId: string; revision: number; competencyParticipationRevision?: number },
 ): Promise<PocRunRecord> {
   const atomic = (runRepo as RunRepository & { claimApprovedExecution?: (value: typeof input) => Promise<PocRunRecord> }).claimApprovedExecution;
   if (typeof atomic === "function") return atomic.call(runRepo, input);
@@ -41,6 +41,7 @@ export async function claimApprovedExecution(
   if (run.approvedPlanId !== input.planId || run.approvedRevision !== input.revision) {
     throw lifecycleError("PLAN_NOT_APPROVED", `Plan revision ${input.revision} is not the current approved authority.`);
   }
+  if (input.competencyParticipationRevision !== undefined && run.competencyParticipation?.revision !== input.competencyParticipationRevision) throw lifecycleError("COMPETENCY_EXECUTION_SNAPSHOT_STALE", "Competency participation changed before Execute.");
   if (!["preview", "failed"].includes(run.status)) {
     throw lifecycleError("RUN_STATE_INVALID", `Run ${input.runId} cannot start execution from ${run.status}.`);
   }

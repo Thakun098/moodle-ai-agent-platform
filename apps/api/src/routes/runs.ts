@@ -12,6 +12,7 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
 import { captureCompetencyExecutionSnapshot } from "../services/competency-execution-snapshot-service.js";
+import { assertCompetencyFrameworkCurrent, getCompetencyParticipation } from "../services/competency-preflight-service.js";
 
 const SUPPORTED_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".docx", ".pdf"]);
 
@@ -335,25 +336,33 @@ export const runsRoutes: FastifyPluginAsync<RunsRoutesOptions> = async (
       return;
     }
 
-    const db = (!injectedCandidateRepo || !injectedActivityIntentRepo || !injectedCompetencyReviewRepo || !injectedCompetencySnapshotRepo) ? getDatabase() : undefined;
-    await captureCompetencyExecutionSnapshot({
-      runId,
-      planId: plan_id,
-      revision: revNum,
-      frameworkId: options.config.moodleCompetencyFrameworkId ?? null,
-      dependencies: {
-        candidateRepo: injectedCandidateRepo ?? new CompetencyCandidateRepository(db!),
-        activityIntentRepo: injectedActivityIntentRepo ?? new ActivityIntentRepository(db!),
-        reviewRepo: injectedCompetencyReviewRepo ?? new CompetencyMappingReviewRepository(db!),
-        snapshotRepo: injectedCompetencySnapshotRepo ?? new CompetencyExecutionSnapshotRepository(db!),
-        runRepo,
-      },
-    });
+    let participationRevision: number | undefined;
+    if (planRevision.planType === "course" && planRevision.operation === "create") {
+      const participation = await getCompetencyParticipation(runRepo, runId);
+      participationRevision = participation.revision;
+      if (participation.status !== "BYPASSED") await assertCompetencyFrameworkCurrent({ runId, participation, config, manager: injectedMcp, runRepo, recordFailure: true });
+      const db = (!injectedCandidateRepo || !injectedActivityIntentRepo || !injectedCompetencyReviewRepo || !injectedCompetencySnapshotRepo) ? getDatabase() : undefined;
+      await captureCompetencyExecutionSnapshot({
+        runId,
+        planId: plan_id,
+        revision: revNum,
+        frameworkId: participation.framework_id,
+        participation,
+        dependencies: {
+          candidateRepo: injectedCandidateRepo ?? new CompetencyCandidateRepository(db!),
+          activityIntentRepo: injectedActivityIntentRepo ?? new ActivityIntentRepository(db!),
+          reviewRepo: injectedCompetencyReviewRepo ?? new CompetencyMappingReviewRepository(db!),
+          snapshotRepo: injectedCompetencySnapshotRepo ?? new CompetencyExecutionSnapshotRepository(db!),
+          runRepo,
+        },
+      });
+    }
 
     const updatedRun = await runRepo.approvePlan({
       runId,
       planId: plan_id,
       revision: revNum,
+      ...(participationRevision !== undefined ? { competencyParticipationRevision: participationRevision } : {}),
       ...(moodle_user_id !== undefined ? { approvedByMoodleUserId: String(moodle_user_id) } : {}),
     });
 

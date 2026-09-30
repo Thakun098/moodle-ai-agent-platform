@@ -316,6 +316,7 @@ export type AddQuestionToQuizInput = z.infer<typeof AddQuestionToQuizInputSchema
 
 // Ticket 24 — Moodle-native Competency tools.
 export const ListCompetencyFrameworksInputSchema = z.object({}).strict();
+export const CompetencyFrameworkPreflightInputSchema = z.object({ configured_framework_id: z.number().int().positive().optional(), provision_default: z.boolean().default(true) }).strict();
 export const CreateCompetencyInputSchema = z.object({
   framework_id: z.number().int().positive(),
   idnumber: z.string().trim().min(1),

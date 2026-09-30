@@ -66,6 +66,7 @@ describe("Approval Gate & Lifecycle Integration (Phase 16)", () => {
         runId,
         status: "preview",
         model: testConfig.modelName,
+        competencyParticipation: { revision: 1, status: "BYPASSED", reason: "TEACHER_SKIP", framework_id: null, framework_signature: null, message: "Skipped", checked_at: "2026-09-30T00:00:00Z" },
       } as PocRunRecord),
       approvePlan: vi.fn().mockImplementation(async (data) => {
         approvedData = {
@@ -127,12 +128,13 @@ describe("Approval Gate & Lifecycle Integration (Phase 16)", () => {
       planId: samplePlanId,
       revision: 1,
       approvedByMoodleUserId: "42",
+      competencyParticipationRevision: 1,
     });
   });
 
   it("requires acknowledgment for a Plan revision flagged for missing Activity alignment", async () => {
     const runId = randomUUID();
-    const mockRunRepo = { getRun: vi.fn().mockResolvedValue({ runId, status: "preview", model: testConfig.modelName } as PocRunRecord), approvePlan: vi.fn().mockResolvedValue({ runId, status: "preview", approvedPlanId: samplePlanId, approvedRevision: 1, approvedByMoodleUserId: "42" } as PocRunRecord) } as unknown as RunRepository;
+    const mockRunRepo = { getRun: vi.fn().mockResolvedValue({ runId, status: "preview", model: testConfig.modelName, competencyParticipation: { revision: 1, status: "BYPASSED", reason: "TEACHER_SKIP", framework_id: null, framework_signature: null, message: "Skipped", checked_at: "2026-09-30T00:00:00Z" } } as PocRunRecord), approvePlan: vi.fn().mockResolvedValue({ runId, status: "preview", approvedPlanId: samplePlanId, approvedRevision: 1, approvedByMoodleUserId: "42" } as PocRunRecord) } as unknown as RunRepository;
     const mockPlanRepo = { getPlanRevision: vi.fn().mockResolvedValue({ id: randomUUID(), planId: samplePlanId, revision: 1, runId, planType: "course", operation: "create", validationStatus: "valid", rawEnvelope: sampleCoursePlanEnvelope, reviewRequirements: [{ code: "ALIGNMENT_REVIEW_REQUIRED", activity_ref: "assignment-01" }] } as unknown as PocPlanRevisionRecord) } as unknown as PlanRepository;
     const app = buildApp({ config: testConfig, runRepo: mockRunRepo, planRepo: mockPlanRepo, candidateRepo: { list: vi.fn(async () => []) } as any, activityIntentRepo: {} as any, competencyReviewRepo: { review: vi.fn(async () => ({ revision: 0, mappings: [] })) } as any, competencySnapshotRepo: { save: vi.fn(async (snapshot: any) => snapshot) } as any });
     const rejected = await app.inject({ method: "POST", url: `/api/runs/${runId}/approve`, payload: { plan_id: samplePlanId, revision: 1, moodle_user_id: "42" } });

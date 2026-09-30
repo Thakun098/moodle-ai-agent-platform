@@ -284,6 +284,10 @@ export const CourseCompetencyReadbackDataSchema = z.object({
   activity_links: z.array(ActivityCompetencyLinkDataSchema),
 }).strict();
 export const ListCompetencyFrameworksOutputSchema = createSuccessEnvelopeSchema(ListCompetencyFrameworksDataSchema);
+export const CompetencyFrameworkPreflightOutputSchema = createSuccessEnvelopeSchema(z.object({
+  status: z.enum(['ENABLED', 'SELECTION_REQUIRED', 'BYPASSED', 'CHECK_FAILED']), reason: z.string(),
+  framework_id: z.number().int().positive().nullable(), framework_signature: z.string().regex(/^[a-f0-9]{64}$/).nullable(), message: z.string(),
+}).strict());
 export const CreateCompetencyOutputSchema = createSuccessEnvelopeSchema(CreatedCompetencyDataSchema);
 export const AddCompetencyToCourseOutputSchema = createSuccessEnvelopeSchema(CourseCompetencyLinkDataSchema);
 export const AddCompetencyToActivityOutputSchema = createSuccessEnvelopeSchema(ActivityCompetencyLinkDataSchema);

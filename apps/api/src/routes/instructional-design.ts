@@ -1,5 +1,5 @@
 import type { CoreCourseDesignContext } from "@moodle-agent-poc/contracts";
-import { ActivityIntentRepository, CompetencyCandidateRepository, CourseStructureRevisionRepository, projectWeekReviews, getDatabase, OutcomeReviewRepository, RunRepository, type CompetencyCandidateRecord, type ModelClient } from "@moodle-agent-poc/agent-runtime";
+import { ActivityIntentRepository, CompetencyCandidateRepository, CourseStructureRevisionRepository, projectWeekReviews, getDatabase, OutcomeReviewRepository, RunRepository, type CompetencyCandidateRecord, type ModelClient, type McpClientManager } from "@moodle-agent-poc/agent-runtime";
 import {
   assertOutcomeCoverage,
   assertRequiredOutcomeApprovals,
@@ -16,6 +16,7 @@ import { editApprovedOutcome } from "../services/approved-outcome-edit-service.j
 import { applyCompetencyCandidateDecision } from "../services/competency-candidate-decision-service.js";
 import { approveReviewedLearningOutcome } from "../services/learning-outcome-approval-service.js";
 import { beginInstructionalDesignMutation } from "../services/instructional-design-run-lifecycle-service.js";
+import { assertCompetencyFrameworkCurrent, getCompetencyParticipation, preflightCompetencies, participationError } from "../services/competency-preflight-service.js";
 
 export interface InstructionalDesignRoutesOptions {
   config: AppConfig;
@@ -26,6 +27,7 @@ export interface InstructionalDesignRoutesOptions {
   activityIntentRepo?: ActivityIntentRepository;
   enforceOutcomeReview?: boolean;
   modelClient?: ModelClient;
+  mcpClientManager?: McpClientManager;
 }
 
 function serializeStructureRevision(value: unknown): unknown {
@@ -143,6 +145,7 @@ export const instructionalDesignRoutes: FastifyPluginAsync<InstructionalDesignRo
       coverage,
       alignment_matrix: coverage.map((item) => ({ outcome_id: item.outcome_id, state: item.state, section_refs: item.section_refs })),
       competency_candidates: competencyCandidates,
+      competency_participation: await getCompetencyParticipation(repo, request.params.runId),
     };
   });
 
@@ -313,6 +316,31 @@ export const instructionalDesignRoutes: FastifyPluginAsync<InstructionalDesignRo
   });
 
 
+  fastify.get<{ Params: { runId: string } }>("/api/runs/:runId/competency-participation", async (request, reply) => {
+    if (!authorize(request, options.config, reply)) return;
+    return { competency_participation: await getCompetencyParticipation(getRunRepo(), request.params.runId) };
+  });
+  fastify.post<{ Params: { runId: string } }>("/api/runs/:runId/competency-preflight", async (request, reply) => {
+    if (!authorize(request, options.config, reply)) return;
+    try {
+      return { competency_participation: await preflightCompetencies({ runId: request.params.runId, runRepo: getRunRepo(), config: options.config, manager: options.mcpClientManager }) };
+    } catch (error) { return sendCodedApplicationError(reply, error); }
+  });
+  fastify.post<{ Params: { runId: string }; Body: { action?: string; expected_revision?: number } }>("/api/runs/:runId/competency-participation", async (request, reply) => {
+    if (!authorize(request, options.config, reply)) return;
+    const { action, expected_revision } = request.body ?? {};
+    if (!["skip", "enable"].includes(action ?? "") || !Number.isSafeInteger(expected_revision) || Number(expected_revision) < 0) return reply.status(400).send({ error: { code: "BAD_REQUEST", message: "action and expected_revision are required." } });
+    const repo = getRunRepo();
+    try {
+      const current = await getCompetencyParticipation(repo, request.params.runId);
+      if (current.revision !== expected_revision) throw participationError("COMPETENCY_PARTICIPATION_CONFLICT", "Competency participation changed; reload before retrying.");
+      const value = action === "enable"
+        ? await preflightCompetencies({ runId: request.params.runId, runRepo: repo, config: options.config, manager: options.mcpClientManager, enable: true, expectedRevision: expected_revision })
+        : await repo.saveCompetencyParticipation(request.params.runId, { revision: current.revision, status: "BYPASSED", reason: "TEACHER_SKIP", framework_id: null, framework_signature: null, message: "Skipped by Teacher for this Course. Candidate reviews are preserved.", checked_at: new Date().toISOString() }, current.revision);
+      return { competency_participation: value };
+    } catch (error) { return sendCodedApplicationError(reply, error); }
+  });
+
   fastify.get<{ Params: { runId: string } }>("/api/runs/:runId/competency-candidates", async (request, reply) => {
     if (!authorize(request, options.config, reply)) return;
     const runRepo = getRunRepo();
@@ -329,12 +357,21 @@ export const instructionalDesignRoutes: FastifyPluginAsync<InstructionalDesignRo
     const context = asContext(await (runRepo as RunRepository & { getCoreCourseDesignContext: (id: string) => Promise<unknown> }).getCoreCourseDesignContext(request.params.runId));
     if (!context) return reply.status(404).send({ error: { code: "CORE_CONTEXT_NOT_FOUND", message: "Core Course Design Context is not available." } });
     if (context.approved_learning_outcomes.length === 0) return reply.status(422).send({ error: { code: "APPROVED_OUTCOMES_REQUIRED", message: "Competency derivation requires at least one Teacher-approved Learning Outcome." } });
+    const participation = await getCompetencyParticipation(runRepo, request.params.runId);
+    try {
+      await assertCompetencyFrameworkCurrent({ runId: request.params.runId, participation, config: options.config, manager: options.mcpClientManager, runRepo, recordFailure: true });
+      const latest = await getCompetencyParticipation(runRepo, request.params.runId);
+      if (latest.revision !== participation.revision) throw participationError("COMPETENCY_PARTICIPATION_CONFLICT", "Competency participation changed before derivation; reload.");
+    } catch (error) { return sendCodedApplicationError(reply, error); }
     try {
       const candidates = await deriveCompetencyCandidates(context, options.modelClient ?? (await import("../config/model-client-factory.js")).createConfiguredModelClient(options.config), { model: options.config.modelName, timeoutMs: options.config.agentModelTimeoutMs });
       await beginInstructionalDesignMutation(runRepo, request.params.runId);
-      const saved = await repo.saveProposed(request.params.runId, candidates);
+      const latest = await getCompetencyParticipation(runRepo, request.params.runId);
+      if (latest.revision !== participation.revision || latest.status !== "ENABLED") throw participationError("COMPETENCY_PARTICIPATION_CONFLICT", "Competency participation changed during derivation; proposals were not saved.");
+      const saved = await repo.saveProposed(request.params.runId, candidates, { participationRevision: participation.revision, contextRevision: context.revision });
       return { run_id: request.params.runId, context_revision: context.revision, candidates: saved.map(serializeCompetencyCandidate), operation: "DERIVE_COMPETENCIES" };
     } catch (error) {
+      if (typeof (error as { statusCode?: unknown }).statusCode === "number") return sendCodedApplicationError(reply, error);
       const details = candidateError(error);
       return reply.status(422).send({ error: { code: "COMPETENCY_DERIVATION_INVALID", ...details } });
     }

@@ -2,6 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { MoodleClient } from '@moodle-agent-poc/moodle-client';
 import { formatMcpError, formatMcpSuccess } from '../errors.js';
 import {
+  CompetencyFrameworkPreflightInputSchema,
+  CompetencyFrameworkPreflightOutputSchema,
   AddCompetencyToActivityInputSchema,
   AddCompetencyToActivityOutputSchema,
   AddCompetencyToCourseInputSchema,
@@ -15,6 +17,16 @@ import {
 } from '../schemas/index.js';
 
 export function registerCompetencyTools(server: McpServer, moodleClient: MoodleClient): void {
+  server.registerTool('moodle_competency_framework_preflight', {
+    description: 'Deterministically validate Competency Framework readiness; bootstrap only the canonical default when confirmed absent. Set provision_default=false for read-only approval/Execute validation.',
+    inputSchema: CompetencyFrameworkPreflightInputSchema, outputSchema: CompetencyFrameworkPreflightOutputSchema,
+  }, async (raw) => {
+    try {
+      const a = CompetencyFrameworkPreflightInputSchema.parse(raw);
+      const r = await moodleClient.competencyFrameworkPreflight({ ...(a.configured_framework_id === undefined ? {} : { configuredFrameworkId: a.configured_framework_id }), provisionDefault: a.provision_default });
+      return formatMcpSuccess({ status: r.status, reason: r.reason, framework_id: r.frameworkId, framework_signature: r.frameworkSignature, message: r.message }, r.message);
+    } catch (error) { return formatMcpError(error); }
+  });
   server.registerTool('moodle_list_competency_frameworks', {
     description: 'List visible Moodle Competency Frameworks and whether the caller can manage each framework.',
     inputSchema: ListCompetencyFrameworksInputSchema,

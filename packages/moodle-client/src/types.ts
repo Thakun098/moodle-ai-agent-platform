@@ -237,6 +237,14 @@ export interface MoodleCreatedSection {
 }
 
 export interface MoodleCompetencyFramework { frameworkId: number; shortname: string; idnumber: string; visible: boolean; canManage: boolean; }
+export interface CompetencyFrameworkPreflightParams { configuredFrameworkId?: number; provisionDefault?: boolean; }
+export interface MoodleCompetencyFrameworkPreflight {
+  status: 'ENABLED' | 'SELECTION_REQUIRED' | 'BYPASSED' | 'CHECK_FAILED';
+  reason: string;
+  frameworkId: number | null;
+  frameworkSignature: string | null;
+  message: string;
+}
 export interface MoodleCreatedCompetency { competencyId: number; frameworkId: number; idnumber: string; shortname: string; created: boolean; }
 export interface MoodleCourseCompetencyLink { courseId: number; competencyId: number; linked: boolean; }
 export interface MoodleActivityCompetencyLink { linkId: number; activityId: number; competencyId: number; ruleOutcome: number; }

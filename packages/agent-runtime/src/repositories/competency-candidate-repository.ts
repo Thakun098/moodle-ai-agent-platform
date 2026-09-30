@@ -25,7 +25,20 @@ export class CompetencyCandidateRepository {
     return record ?? null;
   }
 
-  async saveProposed(runId: string, candidates: readonly CompetencyCandidate[]): Promise<CompetencyCandidateRecord[]> {
+  async saveProposed(runId: string, candidates: readonly CompetencyCandidate[], authority?: { participationRevision: number; contextRevision: number }): Promise<CompetencyCandidateRecord[]> {
+    if (authority) {
+      return this.db.transaction(async tx => {
+        const [run] = await tx.select().from(pocRun).where(eq(pocRun.runId, runId)).for("update");
+        if (!run) throw Object.assign(new Error("Run not found."), { code: "NOT_FOUND", statusCode: 404 });
+        if (["executing", "awaiting_verification", "completed"].includes(run.status)) throw Object.assign(new Error("Competency derivation cannot be saved during Execute."), { code: "INSTRUCTIONAL_DESIGN_MUTATION_LOCKED", statusCode: 409 });
+        if (run.competencyParticipation?.status !== "ENABLED" || run.competencyParticipation.revision !== authority.participationRevision) throw Object.assign(new Error("Competency participation changed during derivation; reload before retrying."), { code: "COMPETENCY_PARTICIPATION_CONFLICT", statusCode: 409 });
+        const [context] = await tx.select().from(coreCourseDesignContexts).where(eq(coreCourseDesignContexts.runId, runId)).orderBy(desc(coreCourseDesignContexts.revision)).limit(1);
+        if (context?.revision !== authority.contextRevision) throw Object.assign(new Error("Approved Outcome authority changed during derivation."), { code: "COMPETENCY_CANDIDATE_REVISION_CONFLICT", statusCode: 409 });
+        const saved = await new CompetencyCandidateRepository(tx as unknown as AppDatabase).saveProposed(runId, candidates);
+        await tx.update(pocRun).set({ approvedPlanId: null, approvedRevision: null, approvedAt: null, approvedByMoodleUserId: null, updatedAt: new Date().toISOString() }).where(eq(pocRun.runId, runId));
+        return saved;
+      });
+    }
     const saved: CompetencyCandidateRecord[] = [];
     for (const candidate of candidates) {
       const existing = await this.get(runId, candidate.candidate_id);

@@ -50,6 +50,8 @@ export {
 } from './response-validators.js';
 
 export type {
+  CompetencyFrameworkPreflightParams,
+  MoodleCompetencyFrameworkPreflight,
   AddQuestionToQuizParams,
   CreateAssignmentParams,
   CreateCourseParams,

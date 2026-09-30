@@ -46,6 +46,9 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         outcomeProposals: [],
         outcomeCoverage: [],
         competencyCandidates: [],
+        competencyParticipation: null,
+        competencyPreflightInFlight: false,
+        competencyAutoPreflightRunId: null,
         coreContextRevision: null,
         coreContext: null,
         outcomeReviews: [],
@@ -929,6 +932,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
     function reloadInstructionalDesignAuthority() {
         if (!state.runId) return Promise.resolve(null);
         return callBff('get_instructional_design', {run_id: state.runId}).then(function(result) {
+            state.competencyParticipation = result.competency_participation || null;
             showCoreContext(result.core_context);
             state.coreContextRevision = result.core_context.revision;
             state.outcomeProposals = result.outcome_proposals || [];
@@ -979,6 +983,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
 
     function updateStructureContinueState() {
         var $button = $('#btn-review-continue');
+        if (state.stagedMode && !competencyParticipationResolved()) {
+            $button.prop('disabled', true).text('Resolve Competency participation to continue');
+            return;
+        }
         if ((state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION'; })) {
             $button.prop('disabled', true).text('Resolve outcome revisions to continue');
             return;
@@ -1113,18 +1121,104 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         };
         return presentations[status] || presentations.PROPOSED;
     }
+    function competencyParticipationResolved() {
+        var status = state.competencyParticipation && state.competencyParticipation.status;
+        return !state.competencyPreflightInFlight && (status === 'ENABLED' || status === 'BYPASSED');
+    }
+
+    function competencyDerivationEnabled() {
+        return !state.competencyPreflightInFlight && !!state.competencyParticipation && state.competencyParticipation.status === 'ENABLED';
+    }
+
+    function checkCompetencyReadiness() {
+        if (state.competencyPreflightInFlight || !state.runId) return Promise.resolve(null);
+        state.competencyAutoPreflightRunId = state.runId;
+        state.competencyPreflightInFlight = true;
+        updateStructureContinueState();
+        return callBff('preflight_competency_framework', {run_id: state.runId}).then(function(result) {
+            var participation = result && result.competency_participation;
+            if (!participation || ['ENABLED', 'BYPASSED', 'SELECTION_REQUIRED', 'CHECK_FAILED'].indexOf(participation.status) === -1) {
+                throw new Error('Moodle Competency readiness returned an indeterminate response.');
+            }
+            state.competencyParticipation = result.competency_participation;
+        }).catch(function(err) {
+            state.competencyParticipation = Object.assign({}, state.competencyParticipation || {}, {
+                status: 'CHECK_FAILED', message: 'Could not check Moodle Competency readiness. Retry; if it persists, ask an administrator to check connectivity, token, permissions and the Competencies subsystem.'
+            });
+            showError('Competency check failed: ' + err.message, err.details);
+        }).then(function() {
+            state.competencyPreflightInFlight = false;
+            if (state.currentStructure) renderAlignmentReview(state.currentStructure);
+        });
+    }
+
+    function renderCompetencyParticipation($root) {
+        var participation = state.competencyParticipation || {status: 'UNRESOLVED'};
+        var status = participation.status;
+        var $panel = $('<div class="card card-body mt-3 mb-2 competency-participation" aria-live="polite"></div>');
+        $panel.attr('data-participation-status', status);
+        var label = 'Competency Framework readiness · Not checked';
+        if (state.competencyPreflightInFlight) label = 'Checking Competency Framework readiness…';
+        else if (status === 'ENABLED') label = 'Competencies Available / Enabled';
+        else if (status === 'BYPASSED') label = participation.reason === 'TEACHER_SKIP'
+            ? 'Competencies Skipped by Teacher' : 'Competencies Skipped because infrastructure is unavailable';
+        else if (status === 'SELECTION_REQUIRED') label = 'Competency Framework selection required';
+        else if (status === 'CHECK_FAILED') label = 'Competency check failed · Admin action may be required';
+        $panel.append($('<div class="font-weight-bold mb-1"></div>').text(label));
+        if (participation.message) $panel.append($('<p class="small mb-2"></p>').text(participation.message));
+        if (status === 'BYPASSED') $panel.append($('<p class="small mb-2"></p>').text('Continue to Activity Structure without Competencies. Existing Candidate decisions are retained; no Competencies or mappings will be created for this Course.'));
+        if (status === 'SELECTION_REQUIRED') $panel.append($('<p class="small mb-2"></p>').text('Ask an administrator to configure a Framework, or skip Competencies for this Course.'));
+        var $actions = $('<div class="d-flex flex-wrap"></div>');
+        if (status === 'UNRESOLVED' || status === 'CHECK_FAILED' || status === 'SELECTION_REQUIRED') {
+            var $retry = $('<button type="button" class="btn btn-sm btn-outline-primary mr-2"></button>').text(status === 'UNRESOLVED' ? 'Check readiness' : 'Retry Competency check').prop('disabled', state.competencyPreflightInFlight);
+            $retry.on('click', function() { $retry.prop('disabled', true); checkCompetencyReadiness(); });
+            $actions.append($retry);
+        }
+        if (status === 'ENABLED' || status === 'SELECTION_REQUIRED' || status === 'BYPASSED' ||
+                (status === 'CHECK_FAILED' && participation.reason === 'FRAMEWORK_AUTHORITY_CHANGED')) {
+            var action = status === 'BYPASSED' ? 'enable' : 'skip';
+            var $choice = $('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(action === 'skip' ? 'Skip Competencies for this Course' : 'Use Competencies for this Course').prop('disabled', state.competencyPreflightInFlight);
+            $choice.on('click', function() {
+                $actions.find('button').prop('disabled', true);
+                state.competencyPreflightInFlight = true;
+                updateStructureContinueState();
+                callBff('decide_competency_participation', {run_id: state.runId, participation_action: action, expected_revision: participation.revision}).then(function(result) {
+                    state.competencyParticipation = result.competency_participation;
+                }).catch(function(err) {
+                    showError('Could not change Competency participation: ' + err.message, err.details);
+                    return reloadInstructionalDesignAuthority();
+                }).then(function() {
+                    state.competencyPreflightInFlight = false;
+                    if (state.currentStructure) renderAlignmentReview(state.currentStructure);
+                }, function(err) {
+                    state.competencyPreflightInFlight = false;
+                    if (state.currentStructure) renderAlignmentReview(state.currentStructure);
+                    showError('Could not reload Competency participation: ' + err.message, err.details);
+                });
+            });
+            $actions.append($choice);
+        }
+        $panel.append($actions);
+        $root.append($panel);
+        if (status === 'UNRESOLVED' && !state.competencyPreflightInFlight && state.competencyAutoPreflightRunId !== state.runId) checkCompetencyReadiness();
+    }
+
     function renderCompetencyCandidates($root) {
-        if (!state.coreContext || !Array.isArray(state.coreContext.approved_learning_outcomes) || !state.coreContext.approved_learning_outcomes.length) return;
+        if (!state.coreContext) return;
+        renderCompetencyParticipation($root);
+        if (!Array.isArray(state.coreContext.approved_learning_outcomes) || !state.coreContext.approved_learning_outcomes.length) return;
         $root.append($('<div class="font-weight-bold mt-3 mb-2"></div>').text('Competency Candidates · Teacher review required'));
         if (!(state.competencyCandidates || []).length) {
-            var $derive = $('<button type="button" class="btn btn-sm btn-outline-primary mb-2"></button>').text('Derive Competency Candidates');
+            var $derive = $('<button type="button" class="btn btn-sm btn-outline-primary mb-2"></button>').text('Derive Competency Candidates').prop('disabled', !competencyDerivationEnabled());
             $derive.on('click', function() {
+                if (!competencyDerivationEnabled()) return;
+                clearError();
                 $derive.prop('disabled', true).text('Deriving...');
                 callBff('derive_competency_candidates', {run_id: state.runId}).then(function(result) {
                     state.competencyCandidates = result.candidates || [];
                     renderAlignmentReview(state.currentStructure);
                 }).catch(function(err) {
-                    $derive.prop('disabled', false).text('Derive Competency Candidates');
+                    $derive.prop('disabled', !competencyDerivationEnabled()).text('Derive Competency Candidates');
                     showError('Failed to derive Competency Candidates: ' + err.message, err.details);
                 });
             });
@@ -1877,6 +1971,10 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
     function refreshCompetencyMappings($container, editable) {
         var runId = state.runId;
         $container.empty().append($('<h5></h5>').text('Competency mappings and evidence'));
+        if (state.competencyParticipation && state.competencyParticipation.status === 'BYPASSED') {
+            $container.append($('<p class="small text-muted"></p>').text('Competencies are skipped for this Course. Existing Candidate and mapping decisions are retained but will not materialize during Execute.'));
+            return Promise.resolve(null);
+        }
         var $body = $('<div></div>');
         $container.append($('<p class="small text-muted"></p>').text('Outcome alignment proposes a mapping. Confirm the mapping first, then separately decide whether this Activity may serve as Competency Evidence.'));
         var $refresh = $('<button type="button" class="btn btn-sm btn-outline-secondary mb-2"></button>').text('Refresh mappings');
@@ -3275,6 +3373,11 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
     }
 
     function confirmStructureAndShowActivities() {
+        if (state.stagedMode && !competencyParticipationResolved()) {
+            showError('Resolve Competency readiness or explicitly skip Competencies before continuing to Activity Structure.');
+            updateStructureContinueState();
+            return;
+        }
         if (!state.stagedMode) { setStep(3); return; }
         if ((state.outcomeReviews || []).some(function(item) { return item.status === 'NEEDS_REVISION'; })) {
             showError('Resolve every Outcome marked Needs revision before confirming the Course Structure.');
@@ -3312,6 +3415,21 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
         }).catch(function(err) {
             updateStructureContinueState();
             showError('Failed to confirm course structure: ' + err.message, err.details);
+        });
+    }
+
+    function recoverCompetencyApprovalError(err) {
+        var code = err.details && err.details.error && err.details.error.code;
+        if (['COMPETENCY_FRAMEWORK_STALE', 'COMPETENCY_PREFLIGHT_REQUIRED', 'COMPETENCY_EXECUTION_SNAPSHOT_STALE', 'COMPETENCY_EXECUTION_SNAPSHOT_CONFLICT', 'COMPETENCY_PARTICIPATION_CONFLICT'].indexOf(code) === -1) return null;
+        state.approvedRevision = null;
+        state.stagedMode = true;
+        return reloadInstructionalDesignAuthority().then(function() {
+            setStep(2);
+            if (state.currentStructure) renderAlignmentReview(state.currentStructure);
+            showError('Competency Framework readiness changed. Review readiness, retry the check or choose the available Course bypass before approving again. Existing Candidate decisions are retained.', err.details);
+        }).catch(function(reloadErr) {
+            setStep(2);
+            showError('Could not reload Competency readiness: ' + reloadErr.message, reloadErr.details);
         });
     }
 
@@ -3381,6 +3499,8 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             setStep(6);
         }).catch(function(err) {
             $('#btn-approve-execute').prop('disabled', state.requiresAiReview && !$('#ack-ai-expanded-content').is(':checked'));
+            var competencyRecovery = recoverCompetencyApprovalError(err);
+            if (competencyRecovery) return competencyRecovery;
             setStep(4);
             showError('Execution failed: ' + err.message, err.details);
         });
@@ -3534,6 +3654,7 @@ define(['jquery', 'local_agentpoc/contract_helpers', 'local_agentpoc/core_contex
             if (contextRunId) {
                 state.runId = contextRunId;
                 callBff('get_instructional_design', {run_id: contextRunId}).then(function(result) {
+                    state.competencyParticipation = result.competency_participation || null;
                     showCoreContext(result.core_context);
                     state.coreContextRevision = result.core_context.revision;
                     state.outcomeProposals = result.outcome_proposals || [];                    state.competencyCandidates = result.competency_candidates || [];

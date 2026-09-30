@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { CompetencyParticipation } from "../competency-participation.js";
 import { assertInitialCoreCourseDesignContext, derivePrimaryOutputLanguageAuthority } from "@moodle-agent-poc/contracts";
 import { coreCourseDesignContexts } from "../db/schema/core-course-design-contexts.js";
 import { competencyCandidate } from "../db/schema/competency-candidates.js";
@@ -86,6 +87,22 @@ export class RunRepository {
     return row?.context ? normalizePrimaryOutputLanguage(row.context) : null;
   }
 
+  async saveCompetencyParticipation(runId: string, value: CompetencyParticipation, expectedRevision: number): Promise<CompetencyParticipation> {
+    return this.db.transaction(async tx => {
+      const [run] = await tx.select().from(pocRun).where(eq(pocRun.runId, runId)).for("update");
+      if (!run) throw codedError("NOT_FOUND", `Run ${runId} not found.`, 404);
+      if (["executing", "awaiting_verification", "completed"].includes(run.status)) throw codedError("INSTRUCTIONAL_DESIGN_MUTATION_LOCKED", "Competency participation cannot change during or after Execute.");
+      if ((run.competencyParticipation?.revision ?? 0) !== expectedRevision) throw codedError("COMPETENCY_PARTICIPATION_CONFLICT", "Competency participation changed; reload before retrying.");
+      const authority = (state: CompetencyParticipation | null) => state ? { status: state.status, reason: state.status === "BYPASSED" ? state.reason : null, framework_id: state.framework_id, framework_signature: state.framework_signature } : null;
+      const previous = authority(run.competencyParticipation);
+      const next = authority(value);
+      const authorityChanged = canonicalJson(previous) !== canonicalJson(next);
+      const saved = { ...value, revision: expectedRevision + (authorityChanged ? 1 : 0) };
+      await tx.update(pocRun).set({ competencyParticipation: saved, ...(authorityChanged ? { approvedPlanId: null, approvedRevision: null, approvedAt: null, approvedByMoodleUserId: null } : {}), updatedAt: new Date().toISOString() }).where(eq(pocRun.runId, runId));
+      return saved;
+    });
+  }
+
   async acknowledgeUnspecifiedLearnerContext(runId: string, expectedLearnerContextRevision: number): Promise<CoreCourseDesignContext> {
     return this.db.transaction(async tx => {
       const [run] = await tx.select().from(pocRun).where(eq(pocRun.runId, runId)).for("update");
@@ -162,10 +179,11 @@ export class RunRepository {
   }
 
   /** Atomically claims the exact current approval for Course execution. */
-  async claimApprovedExecution(data: { runId: string; planId: string; revision: number }): Promise<PocRunRecord> {
+  async claimApprovedExecution(data: { runId: string; planId: string; revision: number; competencyParticipationRevision?: number }): Promise<PocRunRecord> {
     return this.db.transaction(async (tx) => {
       const [run] = await tx.select().from(pocRun).where(eq(pocRun.runId, data.runId)).for("update");
       if (!run) throw codedError("NOT_FOUND", `Run ${data.runId} not found.`);
+      if (data.competencyParticipationRevision !== undefined && run.competencyParticipation?.revision !== data.competencyParticipationRevision) throw codedError("COMPETENCY_EXECUTION_SNAPSHOT_STALE", "Competency participation changed before Execute.");
       if (run.approvedPlanId !== data.planId || run.approvedRevision !== data.revision) {
         throw codedError(
           "PLAN_NOT_APPROVED",
@@ -345,10 +363,11 @@ export class RunRepository {
     return updated;
   }
 
-  async approvePlan(data: { runId: string; planId: string; revision: number; approvedByMoodleUserId?: string | undefined }): Promise<PocRunRecord> {
+  async approvePlan(data: { runId: string; planId: string; revision: number; approvedByMoodleUserId?: string | undefined; competencyParticipationRevision?: number }): Promise<PocRunRecord> {
     return this.db.transaction(async (tx) => {
       const [run] = await tx.select().from(pocRun).where(eq(pocRun.runId, data.runId)).for("update");
       if (!run) throw codedError("NOT_FOUND", `Run not found for approval: ${data.runId}`);
+      if (data.competencyParticipationRevision !== undefined && run.competencyParticipation?.revision !== data.competencyParticipationRevision) throw codedError("COMPETENCY_PARTICIPATION_CONFLICT", "Competency participation changed during approval. Finalize and approve the current revision.");
       if (run.status !== "preview") {
         throw codedError("RUN_STATE_INVALID", `Run ${data.runId} cannot publish approval while in ${run.status}; Finalize must return it to preview first.`);
       }

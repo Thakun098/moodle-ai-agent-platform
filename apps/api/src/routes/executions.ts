@@ -35,6 +35,7 @@ import { PlanningError, assertExecutionTargetCompatible } from "@moodle-agent-po
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config/config-loader.js";
 import { assertCompetencyExecutionSnapshotCurrent } from "../services/competency-execution-snapshot-service.js";
+import { assertSnapshotParticipationCurrent } from "../services/competency-preflight-service.js";
 import { claimApprovedExecution } from "../services/instructional-design-run-lifecycle-service.js";
 
 export interface ExecutionsRoutesOptions {
@@ -146,6 +147,7 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
         return;
       }
       try {
+        await assertSnapshotParticipationCurrent(competencySnapshot, getRunRepo(), options.config, options.mcpClientManager);
         await assertCompetencyExecutionSnapshotCurrent(competencySnapshot, {
           candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(db!),
           activityIntentRepo: options.activityIntentRepo ?? new ActivityIntentRepository(db!),
@@ -192,13 +194,14 @@ export const executionsRoutes: FastifyPluginAsync<ExecutionsRoutesOptions> = asy
           competencySnapshot,
           competencyFrameworkId: competencySnapshot?.frameworkId ?? undefined,
           beforeMutation: async () => {
+            await assertSnapshotParticipationCurrent(competencySnapshot!, getRunRepo(), options.config, manager);
             await assertCompetencyExecutionSnapshotCurrent(competencySnapshot!, {
               candidateRepo: options.candidateRepo ?? new CompetencyCandidateRepository(getDatabase()),
               activityIntentRepo: options.activityIntentRepo ?? new ActivityIntentRepository(getDatabase()),
               reviewRepo: options.competencyReviewRepo ?? new CompetencyMappingReviewRepository(getDatabase()),
               runRepo: getRunRepo(),
             });
-            await claimApprovedExecution(getRunRepo(), { runId, planId: execRequest.plan_id, revision: execRequest.revision });
+            await claimApprovedExecution(getRunRepo(), { runId, planId: execRequest.plan_id, revision: execRequest.revision, competencyParticipationRevision: competencySnapshot!.participation!.revision });
           },
         });
         reply.send({ run_id: runId, plan_id: execRequest.plan_id, revision: execRequest.revision, status: result.status, course_id: result.courseId, course_shortname: result.courseShortname, course_url: result.courseUrl, created_entities: result.createdEntities, mappings: result.mappings });

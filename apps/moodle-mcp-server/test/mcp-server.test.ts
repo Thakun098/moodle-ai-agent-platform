@@ -44,7 +44,7 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
     it('discovers all canonical Moodle tools with input and output schemas', async () => {
       const response = await client.listTools();
       expect(response.tools).toBeDefined();
-      expect(response.tools.length).toBe(22);
+      expect(response.tools.length).toBe(23);
 
       const expectedToolNames = [
         'moodle_list_course_categories',
@@ -65,6 +65,7 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
         'moodle_update_quiz_question',
         'moodle_add_question_to_quiz',
         'moodle_list_competency_frameworks',
+        'moodle_competency_framework_preflight',
         'moodle_create_competency',
         'moodle_add_competency_to_course',
         'moodle_add_competency_to_activity',
@@ -86,6 +87,25 @@ describe('Moodle MCP Server In-Memory Integration (T0901–T0914)', () => {
   });
 
   describe('T0914 — In-Memory Tool Execution Proofs', () => {
+    it('preflight preserves exact chosen framework and disables provisioning for Execute', async () => {
+      const preflight = vi.spyOn(fakeClient, 'competencyFrameworkPreflight').mockResolvedValue({
+        status: 'ENABLED', reason: 'CONFIGURED_FRAMEWORK', frameworkId: 7, frameworkSignature: 'a'.repeat(64), message: 'Ready',
+      });
+      const result = await client.callTool({ name: 'moodle_competency_framework_preflight', arguments: { configured_framework_id: 7, provision_default: false } });
+      expect(result.isError).toBeFalsy();
+      expect(preflight).toHaveBeenCalledWith({ configuredFrameworkId: 7, provisionDefault: false });
+      expect(result.structuredContent).toMatchObject({ status: 'success', data: { status: 'ENABLED', framework_id: 7, framework_signature: 'a'.repeat(64) } });
+    });
+
+    it('preflight authentication and transport errors remain actionable errors', async () => {
+      const preflight = vi.spyOn(fakeClient, 'competencyFrameworkPreflight');
+      for (const error of [new MoodleAuthenticationError('Invalid token'), new MoodleNetworkError('Offline')]) {
+        preflight.mockRejectedValueOnce(error);
+        const result = await client.callTool({ name: 'moodle_competency_framework_preflight', arguments: {} });
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).not.toMatchObject({ data: { status: 'BYPASSED' } });
+      }
+    });
     it('executes moodle_list_course_categories (T0903)', async () => {
       const result = await client.callTool({
         name: 'moodle_list_course_categories',

@@ -19,6 +19,8 @@ export interface CompetencyExecutionMapping {
 
 /** Immutable Teacher-authorized competency authority captured for one approved Course revision. */
 export interface CompetencyExecutionSnapshot {
+  /** Legacy snapshots omit this; new Course approvals always pin participation. */
+  participation?: import("./competency-participation.js").CompetencyParticipation;
   runId: string;
   planId: string;
   revision: number;

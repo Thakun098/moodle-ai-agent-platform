@@ -1,4 +1,19 @@
 import { MoodleResponseError } from './errors.js';
+import type { MoodleCompetencyFrameworkPreflight } from './types.js';
+
+export function parseCompetencyFrameworkPreflight(raw: unknown): MoodleCompetencyFrameworkPreflight {
+  if (!isObject(raw) || !['ENABLED', 'SELECTION_REQUIRED', 'BYPASSED', 'CHECK_FAILED'].includes(String(raw.status)) ||
+      typeof raw.reason !== 'string' || !raw.reason || typeof raw.message !== 'string') {
+    throw new MoodleResponseError('Invalid Competency Framework preflight response');
+  }
+  const enabled = raw.status === 'ENABLED';
+  if (enabled ? (!Number.isSafeInteger(raw.framework_id) || Number(raw.framework_id) <= 0 || typeof raw.framework_signature !== 'string' || !/^[a-f0-9]{64}$/.test(raw.framework_signature)) :
+      (raw.framework_id !== null || raw.framework_signature !== null)) {
+    throw new MoodleResponseError('Invalid Competency Framework preflight authority');
+  }
+  return { status: raw.status as MoodleCompetencyFrameworkPreflight['status'], reason: raw.reason,
+    frameworkId: raw.framework_id as number | null, frameworkSignature: raw.framework_signature as string | null, message: raw.message };
+}
 import type {
   MoodleAddedQuestionSlot,
   MoodleAssignmentDetails,

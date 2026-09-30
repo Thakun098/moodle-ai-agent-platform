@@ -21,6 +21,10 @@ function canonical(value: unknown): string {
 
 function authoritySignature(snapshot: CompetencyExecutionSnapshot): string {
   const { capturedAt: _capturedAt, ...authority } = snapshot;
+  if (authority.participation) {
+    const state = authority.participation;
+    return canonical({ ...authority, participation: { revision: state.revision, status: state.status, reason: state.status === "BYPASSED" ? state.reason : null, framework_id: state.framework_id, framework_signature: state.framework_signature } });
+  }
   return canonical(authority);
 }
 
